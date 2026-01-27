@@ -1,17 +1,23 @@
 # Android
 *.iml
 .gradle/
-/local.properties
-/.idea/
+local.properties
+.idea/
 .DS_Store
-/build/
-/captures/
+build/
+captures/
 .externalNativeBuild/
 .cxx/
 *.apk
 *.aab
 *.ap_
 *.dex
+
+# Android build outputs (matches android/app/build/, android/build/, etc.)
+**/build/
+**/outputs/
+**/.gradle/
+**/captures/
 
 # Kotlin
 *.class
@@ -25,8 +31,8 @@
 
 # Android Studio
 *.hprof
-/app/release/
-/app/debug/
+**/release/
+**/debug/
 
 # Keystore files
 *.jks
@@ -42,10 +48,6 @@ google-services.json
 
 # Logs
 *.log
-
-# Test outputs
-/app/build/
-/app/outputs/
 
 # Local configuration
 local.properties
