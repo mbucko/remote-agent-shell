@@ -18,12 +18,14 @@ import kotlinx.coroutines.withContext
  * @param onReconnect Callback to trigger reconnection, returns true on success
  * @param onReconnectSuccess Callback to notify UI of successful reconnection
  * @param dispatcher Coroutine dispatcher for background work
+ * @param mainDispatcher Coroutine dispatcher for UI callbacks (Main thread)
  */
 class IpChangeHandler(
     private val ntfySubscriber: NtfySubscriber,
     private val onReconnect: suspend (ip: String, port: Int) -> Boolean,
     private val onReconnectSuccess: () -> Unit,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main
 ) {
     companion object {
         private const val TAG = "IpChangeHandler"
@@ -47,7 +49,7 @@ class IpChangeHandler(
                     if (success) {
                         Log.i(TAG, "Reconnection successful")
                         ntfySubscriber.resetReconnectCounter()
-                        withContext(Dispatchers.Main) {
+                        withContext(mainDispatcher) {
                             onReconnectSuccess()
                         }
                     } else {
