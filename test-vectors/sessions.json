@@ -1,0 +1,502 @@
+{
+  "version": 1,
+  "generated_at": "2026-01-28T00:00:00Z",
+  "description": "Test vectors for Phase 9a Session Management",
+
+  "session_naming": {
+    "description": "Test vectors for session name generation from directory and agent",
+    "format": "ras-<agent>-<sanitized_directory_basename>",
+    "max_length": 50,
+    "vectors": [
+      {
+        "id": "basic",
+        "directory": "/home/user/repos/my-project",
+        "agent": "claude",
+        "expected": "ras-claude-my-project"
+      },
+      {
+        "id": "uppercase",
+        "directory": "/home/user/repos/MyAPI",
+        "agent": "aider",
+        "expected": "ras-aider-myapi"
+      },
+      {
+        "id": "special_chars_underscore",
+        "directory": "/home/user/repos/my_cool.project",
+        "agent": "cursor",
+        "expected": "ras-cursor-my-cool-project"
+      },
+      {
+        "id": "special_chars_spaces",
+        "directory": "/home/user/repos/my project",
+        "agent": "claude",
+        "expected": "ras-claude-my-project"
+      },
+      {
+        "id": "special_chars_parens",
+        "directory": "/home/user/repos/my_project.v2 (copy)",
+        "agent": "aider",
+        "expected": "ras-aider-my-project-v2-copy"
+      },
+      {
+        "id": "long_name",
+        "directory": "/home/user/repos/this-is-a-very-long-project-name-that-exceeds-limits",
+        "agent": "claude",
+        "expected": "ras-claude-this-is-a-very-long-project-name-that-"
+      },
+      {
+        "id": "dots_only",
+        "directory": "/home/user/repos/...",
+        "agent": "aider",
+        "expected": "ras-aider-unnamed"
+      },
+      {
+        "id": "empty_after_sanitize",
+        "directory": "/home/user/repos/!!!",
+        "agent": "cursor",
+        "expected": "ras-cursor-unnamed"
+      },
+      {
+        "id": "leading_trailing_hyphens",
+        "directory": "/home/user/repos/-project-",
+        "agent": "claude",
+        "expected": "ras-claude-project"
+      },
+      {
+        "id": "multiple_hyphens",
+        "directory": "/home/user/repos/my---project",
+        "agent": "aider",
+        "expected": "ras-aider-my-project"
+      },
+      {
+        "id": "numbers",
+        "directory": "/home/user/repos/project123",
+        "agent": "claude",
+        "expected": "ras-claude-project123"
+      },
+      {
+        "id": "mixed_case_agent",
+        "directory": "/home/user/repos/test",
+        "agent": "Claude",
+        "expected": "ras-claude-test",
+        "note": "Agent should be lowercased"
+      }
+    ]
+  },
+
+  "directory_filtering": {
+    "description": "Test vectors for directory access control",
+    "config": {
+      "root": "/home/user",
+      "whitelist": ["/home/user/repos", "/home/user/projects"],
+      "blacklist": ["/home/user/repos/secret", "/home/user/.ssh"]
+    },
+    "vectors": [
+      {
+        "id": "allowed_whitelisted",
+        "path": "/home/user/repos/my-project",
+        "allowed": true
+      },
+      {
+        "id": "allowed_child_of_whitelisted",
+        "path": "/home/user/repos/my-project/src",
+        "allowed": true
+      },
+      {
+        "id": "allowed_whitelisted_exact",
+        "path": "/home/user/repos",
+        "allowed": true
+      },
+      {
+        "id": "blocked_not_whitelisted",
+        "path": "/home/user/documents",
+        "allowed": false
+      },
+      {
+        "id": "blocked_blacklisted",
+        "path": "/home/user/repos/secret",
+        "allowed": false
+      },
+      {
+        "id": "blocked_child_of_blacklisted",
+        "path": "/home/user/repos/secret/data",
+        "allowed": false
+      },
+      {
+        "id": "blocked_outside_root",
+        "path": "/etc/passwd",
+        "allowed": false
+      },
+      {
+        "id": "blocked_traversal",
+        "path": "/home/user/repos/../../../etc",
+        "allowed": false,
+        "note": "Path traversal attempt"
+      },
+      {
+        "id": "blocked_ssh",
+        "path": "/home/user/.ssh",
+        "allowed": false
+      },
+      {
+        "id": "blocked_ssh_child",
+        "path": "/home/user/.ssh/id_rsa",
+        "allowed": false
+      }
+    ]
+  },
+
+  "directory_filtering_no_whitelist": {
+    "description": "Test vectors when whitelist is empty (all under root allowed)",
+    "config": {
+      "root": "/home/user",
+      "whitelist": [],
+      "blacklist": ["/home/user/.ssh", "/home/user/.gnupg"]
+    },
+    "vectors": [
+      {
+        "id": "allowed_any_under_root",
+        "path": "/home/user/documents",
+        "allowed": true
+      },
+      {
+        "id": "allowed_repos",
+        "path": "/home/user/repos/project",
+        "allowed": true
+      },
+      {
+        "id": "blocked_blacklisted",
+        "path": "/home/user/.ssh",
+        "allowed": false
+      },
+      {
+        "id": "blocked_outside_root",
+        "path": "/var/log",
+        "allowed": false
+      }
+    ]
+  },
+
+  "session_event_serialization": {
+    "description": "Test vectors for protobuf event serialization",
+    "vectors": [
+      {
+        "id": "session_created",
+        "event_type": "SessionCreatedEvent",
+        "data": {
+          "session": {
+            "id": "abc123def456",
+            "tmux_name": "ras-claude-myproject",
+            "display_name": "claude-myproject",
+            "directory": "/home/user/repos/my-project",
+            "agent": "claude",
+            "created_at": 1706384400,
+            "last_activity_at": 1706384400,
+            "status": "SESSION_STATUS_ACTIVE"
+          }
+        }
+      },
+      {
+        "id": "session_list_empty",
+        "event_type": "SessionListEvent",
+        "data": {
+          "sessions": []
+        },
+        "note": "Empty list is valid"
+      },
+      {
+        "id": "session_list_multiple",
+        "event_type": "SessionListEvent",
+        "data": {
+          "sessions": [
+            {
+              "id": "abc123",
+              "tmux_name": "ras-claude-project1",
+              "display_name": "claude-project1",
+              "directory": "/home/user/repos/project1",
+              "agent": "claude",
+              "created_at": 1706384400,
+              "last_activity_at": 1706385000,
+              "status": "SESSION_STATUS_ACTIVE"
+            },
+            {
+              "id": "def456",
+              "tmux_name": "ras-aider-project2",
+              "display_name": "aider-project2",
+              "directory": "/home/user/repos/project2",
+              "agent": "aider",
+              "created_at": 1706384000,
+              "last_activity_at": 1706384500,
+              "status": "SESSION_STATUS_ACTIVE"
+            }
+          ]
+        },
+        "note": "Sorted by last_activity_at descending"
+      },
+      {
+        "id": "session_killed",
+        "event_type": "SessionKilledEvent",
+        "data": {
+          "session_id": "abc123def456"
+        }
+      },
+      {
+        "id": "session_renamed",
+        "event_type": "SessionRenamedEvent",
+        "data": {
+          "session_id": "abc123def456",
+          "new_name": "my-custom-name"
+        }
+      },
+      {
+        "id": "session_activity",
+        "event_type": "SessionActivityEvent",
+        "data": {
+          "session_id": "abc123def456",
+          "timestamp": 1706385000
+        }
+      },
+      {
+        "id": "error_dir_not_found",
+        "event_type": "SessionErrorEvent",
+        "data": {
+          "error_code": "DIR_NOT_FOUND",
+          "message": "Directory does not exist",
+          "session_id": ""
+        }
+      },
+      {
+        "id": "error_dir_not_allowed",
+        "event_type": "SessionErrorEvent",
+        "data": {
+          "error_code": "DIR_NOT_ALLOWED",
+          "message": "Directory is not in allowed list",
+          "session_id": ""
+        }
+      },
+      {
+        "id": "error_agent_not_found",
+        "event_type": "SessionErrorEvent",
+        "data": {
+          "error_code": "AGENT_NOT_FOUND",
+          "message": "Agent not installed: codex",
+          "session_id": ""
+        }
+      },
+      {
+        "id": "error_session_not_found",
+        "event_type": "SessionErrorEvent",
+        "data": {
+          "error_code": "SESSION_NOT_FOUND",
+          "message": "Session not found",
+          "session_id": "invalid123"
+        }
+      },
+      {
+        "id": "error_max_sessions",
+        "event_type": "SessionErrorEvent",
+        "data": {
+          "error_code": "MAX_SESSIONS_REACHED",
+          "message": "Maximum of 20 sessions reached",
+          "session_id": ""
+        }
+      }
+    ]
+  },
+
+  "session_command_serialization": {
+    "description": "Test vectors for protobuf command serialization",
+    "vectors": [
+      {
+        "id": "list_sessions",
+        "command_type": "ListSessionsCommand",
+        "data": {}
+      },
+      {
+        "id": "create_session",
+        "command_type": "CreateSessionCommand",
+        "data": {
+          "directory": "/home/user/repos/my-project",
+          "agent": "claude"
+        }
+      },
+      {
+        "id": "kill_session",
+        "command_type": "KillSessionCommand",
+        "data": {
+          "session_id": "abc123def456"
+        }
+      },
+      {
+        "id": "rename_session",
+        "command_type": "RenameSessionCommand",
+        "data": {
+          "session_id": "abc123def456",
+          "new_name": "my-custom-name"
+        }
+      },
+      {
+        "id": "get_agents",
+        "command_type": "GetAgentsCommand",
+        "data": {}
+      },
+      {
+        "id": "get_directories_root",
+        "command_type": "GetDirectoriesCommand",
+        "data": {
+          "parent": ""
+        }
+      },
+      {
+        "id": "get_directories_child",
+        "command_type": "GetDirectoriesCommand",
+        "data": {
+          "parent": "/home/user/repos"
+        }
+      },
+      {
+        "id": "refresh_agents",
+        "command_type": "RefreshAgentsCommand",
+        "data": {}
+      }
+    ]
+  },
+
+  "agents_list": {
+    "description": "Test vectors for agent detection",
+    "builtin_agents": [
+      {"name": "Claude Code", "binary": "claude"},
+      {"name": "Aider", "binary": "aider"},
+      {"name": "Cursor", "binary": "cursor"},
+      {"name": "Cline", "binary": "cline"},
+      {"name": "Open Code", "binary": "opencode"},
+      {"name": "Codex", "binary": "codex"}
+    ],
+    "vectors": [
+      {
+        "id": "all_available",
+        "installed": ["claude", "aider", "cursor", "cline", "opencode", "codex"],
+        "expected": [
+          {"name": "Claude Code", "binary": "claude", "available": true},
+          {"name": "Aider", "binary": "aider", "available": true},
+          {"name": "Cursor", "binary": "cursor", "available": true},
+          {"name": "Cline", "binary": "cline", "available": true},
+          {"name": "Open Code", "binary": "opencode", "available": true},
+          {"name": "Codex", "binary": "codex", "available": true}
+        ]
+      },
+      {
+        "id": "partial",
+        "installed": ["claude", "aider"],
+        "expected": [
+          {"name": "Claude Code", "binary": "claude", "available": true},
+          {"name": "Aider", "binary": "aider", "available": true},
+          {"name": "Cursor", "binary": "cursor", "available": false},
+          {"name": "Cline", "binary": "cline", "available": false},
+          {"name": "Open Code", "binary": "opencode", "available": false},
+          {"name": "Codex", "binary": "codex", "available": false}
+        ]
+      },
+      {
+        "id": "none_available",
+        "installed": [],
+        "expected": [
+          {"name": "Claude Code", "binary": "claude", "available": false},
+          {"name": "Aider", "binary": "aider", "available": false},
+          {"name": "Cursor", "binary": "cursor", "available": false},
+          {"name": "Cline", "binary": "cline", "available": false},
+          {"name": "Open Code", "binary": "opencode", "available": false},
+          {"name": "Codex", "binary": "codex", "available": false}
+        ]
+      }
+    ]
+  },
+
+  "session_persistence": {
+    "description": "Test vectors for sessions.json file format",
+    "valid_file": {
+      "version": 1,
+      "sessions": [
+        {
+          "id": "abc123def456",
+          "tmux_name": "ras-claude-myproject",
+          "display_name": "claude-myproject",
+          "directory": "/home/user/repos/my-project",
+          "agent": "claude",
+          "created_at": 1706384400,
+          "last_activity_at": 1706385000
+        }
+      ],
+      "recent_directories": [
+        "/home/user/repos/my-project",
+        "/home/user/repos/other-project"
+      ]
+    },
+    "reconciliation_vectors": [
+      {
+        "id": "json_matches_tmux",
+        "json_sessions": ["ras-claude-project1"],
+        "tmux_sessions": ["ras-claude-project1"],
+        "expected_active": ["ras-claude-project1"]
+      },
+      {
+        "id": "json_has_extra",
+        "json_sessions": ["ras-claude-project1", "ras-aider-project2"],
+        "tmux_sessions": ["ras-claude-project1"],
+        "expected_active": ["ras-claude-project1"],
+        "note": "project2 removed from JSON"
+      },
+      {
+        "id": "tmux_has_extra",
+        "json_sessions": ["ras-claude-project1"],
+        "tmux_sessions": ["ras-claude-project1", "ras-aider-project2"],
+        "expected_active": ["ras-claude-project1", "ras-aider-project2"],
+        "note": "project2 adopted with defaults"
+      },
+      {
+        "id": "both_empty",
+        "json_sessions": [],
+        "tmux_sessions": [],
+        "expected_active": []
+      },
+      {
+        "id": "ignore_non_ras",
+        "json_sessions": [],
+        "tmux_sessions": ["my-personal-session", "ras-claude-project"],
+        "expected_active": ["ras-claude-project"],
+        "note": "Only ras-* sessions are adopted"
+      }
+    ]
+  },
+
+  "error_codes": {
+    "description": "All defined error codes and their meanings",
+    "codes": [
+      {"code": "DIR_NOT_FOUND", "message": "Directory does not exist"},
+      {"code": "DIR_NOT_ALLOWED", "message": "Directory is not in allowed list"},
+      {"code": "AGENT_NOT_FOUND", "message": "Agent not installed"},
+      {"code": "SESSION_NOT_FOUND", "message": "Session not found"},
+      {"code": "SESSION_EXISTS", "message": "Session with that name already exists"},
+      {"code": "TMUX_ERROR", "message": "Failed to create/kill tmux session"},
+      {"code": "KILL_FAILED", "message": "Failed to kill session"},
+      {"code": "MAX_SESSIONS_REACHED", "message": "Maximum sessions limit reached"},
+      {"code": "INVALID_NAME", "message": "Invalid session name"},
+      {"code": "RATE_LIMITED", "message": "Too many requests"}
+    ]
+  },
+
+  "session_id_generation": {
+    "description": "Session ID requirements",
+    "format": "16 hex characters (64 bits from CSPRNG)",
+    "examples": [
+      "abc123def456789a",
+      "1234567890abcdef",
+      "fedcba9876543210"
+    ],
+    "invalid_examples": [
+      "short",
+      "not-hex-chars!!!",
+      "sequential-001"
+    ]
+  }
+}
