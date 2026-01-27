@@ -163,7 +163,7 @@ class TestPeerConnectionIntegration:
         async def on_message_2(msg):
             received_peer2.append(msg)
 
-        async with PeerConnection() as peer1, PeerConnection() as peer2:
+        async with PeerConnection(stun_servers=[]) as peer1, PeerConnection(stun_servers=[]) as peer2:
             peer1.on_message(on_message_1)
             peer2.on_message(on_message_2)
 

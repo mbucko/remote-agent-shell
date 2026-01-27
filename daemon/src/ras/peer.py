@@ -68,7 +68,10 @@ class PeerConnection:
 
     def _create_pc(self) -> None:
         """Create the underlying RTCPeerConnection."""
-        config = RTCConfiguration(iceServers=[RTCIceServer(urls=self.stun_servers)])
+        if self.stun_servers:
+            config = RTCConfiguration(iceServers=[RTCIceServer(urls=self.stun_servers)])
+        else:
+            config = RTCConfiguration(iceServers=[])
         self._pc = self._pc_factory(config)
 
         @self._pc.on("connectionstatechange")

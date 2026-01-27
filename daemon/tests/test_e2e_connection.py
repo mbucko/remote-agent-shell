@@ -23,7 +23,7 @@ class TestE2EConnection:
         async def on_message_2(msg):
             received_peer2.append(msg)
 
-        async with PeerConnection() as peer1, PeerConnection() as peer2:
+        async with PeerConnection(stun_servers=[]) as peer1, PeerConnection(stun_servers=[]) as peer2:
             peer1.on_message(on_message_1)
             peer2.on_message(on_message_2)
 
@@ -77,7 +77,7 @@ class TestE2EConnection:
             session_id = server.create_session()
 
             # Create a client peer
-            client_peer = PeerConnection()
+            client_peer = PeerConnection(stun_servers=[])
             client_received = []
 
             async def on_client_message(msg):
@@ -122,7 +122,7 @@ class TestE2EConnection:
         """Peers can exchange multiple messages."""
         received = {"peer1": [], "peer2": []}
 
-        async with PeerConnection() as peer1, PeerConnection() as peer2:
+        async with PeerConnection(stun_servers=[]) as peer1, PeerConnection(stun_servers=[]) as peer2:
             peer1.on_message(lambda m: received["peer1"].append(m))
             peer2.on_message(lambda m: received["peer2"].append(m))
 
