@@ -1,0 +1,205 @@
+"""Cryptographic operations for RAS daemon.
+
+This module provides:
+- Secure secret generation
+- Key derivation using HKDF
+- AES-256-GCM authenticated encryption
+- HMAC-SHA256 for authentication
+
+Security notes:
+- Uses `cryptography` library (well-audited, NIST recommended)
+- Keys must be exactly 32 bytes (256 bits)
+- Random nonces for encryption (12 bytes for AES-GCM)
+- Constant-time comparison for HMAC verification
+"""
+
+import hashlib
+import hmac
+import secrets
+from dataclasses import dataclass
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+from ras.errors import CryptoError
+
+# Re-export CryptoError for convenience
+__all__ = [
+    "CryptoError",
+    "KeyBundle",
+    "generate_secret",
+    "derive_keys",
+    "encrypt",
+    "decrypt",
+    "compute_hmac",
+    "verify_hmac",
+]
+
+# Constants
+KEY_LENGTH = 32  # 256 bits
+NONCE_LENGTH = 12  # 96 bits for AES-GCM
+TAG_LENGTH = 16  # 128 bits for AES-GCM tag
+TOPIC_LENGTH = 12  # 12 hex chars for ntfy topic
+
+
+def generate_secret() -> bytes:
+    """Generate a 32-byte cryptographically secure secret.
+
+    Uses Python's `secrets` module which provides access to the
+    most secure source of randomness available on the platform.
+
+    Returns:
+        32-byte random secret.
+    """
+    return secrets.token_bytes(KEY_LENGTH)
+
+
+@dataclass(frozen=True)
+class KeyBundle:
+    """Bundle of derived keys from master secret.
+
+    All fields are immutable (frozen dataclass).
+
+    Attributes:
+        auth_key: 32-byte key for authentication (HMAC).
+        encrypt_key: 32-byte key for message encryption (AES-GCM).
+        ntfy_key: 32-byte key for ntfy IP update encryption.
+        topic: 12-char hex string for ntfy topic name.
+    """
+
+    auth_key: bytes
+    encrypt_key: bytes
+    ntfy_key: bytes
+    topic: str
+
+
+def derive_keys(master_secret: bytes) -> KeyBundle:
+    """Derive all keys from master secret using HKDF.
+
+    Uses HKDF (RFC 5869) with SHA-256 to derive purpose-specific keys.
+    Each key is derived with a unique info string to ensure independence.
+
+    Args:
+        master_secret: 32-byte master secret (from QR code).
+
+    Returns:
+        KeyBundle with all derived keys.
+
+    Raises:
+        ValueError: If master_secret is not 32 bytes.
+    """
+    if len(master_secret) != KEY_LENGTH:
+        raise ValueError(f"Master secret must be {KEY_LENGTH} bytes")
+
+    def derive(purpose: str) -> bytes:
+        """Derive a key for a specific purpose."""
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=KEY_LENGTH,
+            salt=None,  # No salt (secret has enough entropy)
+            info=purpose.encode(),
+        )
+        return hkdf.derive(master_secret)
+
+    # Derive topic from SHA256 hash (first 12 hex chars)
+    topic = hashlib.sha256(master_secret).hexdigest()[:TOPIC_LENGTH]
+
+    return KeyBundle(
+        auth_key=derive("ras-auth"),
+        encrypt_key=derive("ras-encrypt"),
+        ntfy_key=derive("ras-ntfy"),
+        topic=topic,
+    )
+
+
+def encrypt(key: bytes, plaintext: bytes) -> bytes:
+    """Encrypt plaintext using AES-256-GCM.
+
+    Format: nonce (12 bytes) || ciphertext || tag (16 bytes)
+
+    The nonce is randomly generated for each encryption, ensuring
+    that the same plaintext produces different ciphertext.
+
+    Args:
+        key: 32-byte encryption key.
+        plaintext: Data to encrypt (can be empty).
+
+    Returns:
+        Encrypted data with prepended nonce.
+
+    Raises:
+        ValueError: If key is not 32 bytes.
+    """
+    if len(key) != KEY_LENGTH:
+        raise ValueError(f"Key must be {KEY_LENGTH} bytes")
+
+    nonce = secrets.token_bytes(NONCE_LENGTH)
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+
+    return nonce + ciphertext
+
+
+def decrypt(key: bytes, data: bytes) -> bytes:
+    """Decrypt data using AES-256-GCM.
+
+    Expects: nonce (12 bytes) || ciphertext || tag (16 bytes)
+
+    Args:
+        key: 32-byte encryption key.
+        data: Encrypted data with prepended nonce.
+
+    Returns:
+        Decrypted plaintext.
+
+    Raises:
+        ValueError: If key is not 32 bytes.
+        CryptoError: If decryption fails (wrong key, tampered data, etc.).
+    """
+    if len(key) != KEY_LENGTH:
+        raise ValueError(f"Key must be {KEY_LENGTH} bytes")
+
+    min_length = NONCE_LENGTH + TAG_LENGTH
+    if len(data) < min_length:
+        raise CryptoError(f"Data too short (minimum {min_length} bytes)")
+
+    nonce = data[:NONCE_LENGTH]
+    ciphertext = data[NONCE_LENGTH:]
+
+    try:
+        aesgcm = AESGCM(key)
+        return aesgcm.decrypt(nonce, ciphertext, None)
+    except Exception as e:
+        raise CryptoError(f"Decryption failed: {e}") from e
+
+
+def compute_hmac(key: bytes, data: bytes) -> bytes:
+    """Compute HMAC-SHA256.
+
+    Args:
+        key: HMAC key (any length, but 32 bytes recommended).
+        data: Data to authenticate.
+
+    Returns:
+        32-byte HMAC digest.
+    """
+    return hmac.new(key, data, hashlib.sha256).digest()
+
+
+def verify_hmac(key: bytes, data: bytes, expected: bytes) -> bool:
+    """Verify HMAC-SHA256 in constant time.
+
+    Uses `hmac.compare_digest` for timing-safe comparison
+    to prevent timing attacks.
+
+    Args:
+        key: HMAC key.
+        data: Data that was authenticated.
+        expected: Expected HMAC value.
+
+    Returns:
+        True if HMAC is valid, False otherwise.
+    """
+    computed = compute_hmac(key, data)
+    return hmac.compare_digest(computed, expected)
