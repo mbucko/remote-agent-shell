@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RemoteAgentShell</string>
+
+    <!-- Pairing Screen -->
+    <string name="pairing_title">Scan QR Code</string>
+    <string name="pairing_instruction">Point your camera at the QR code displayed on your computer to connect</string>
+    <string name="pairing_camera_permission_rationale">Camera permission is required to scan the pairing QR code</string>
+
+    <!-- Sessions Screen -->
+    <string name="sessions_title">Sessions</string>
+    <string name="sessions_empty">No active sessions</string>
+    <string name="sessions_new">New Session</string>
+
+    <!-- Terminal Screen -->
+    <string name="terminal_approve">Approve</string>
+    <string name="terminal_reject">Reject</string>
+    <string name="terminal_cancel">Cancel</string>
+    <string name="terminal_input_hint">Enter command...</string>
+    <string name="terminal_send">Send</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_connection">Connection</string>
+    <string name="settings_connected">Connected</string>
+    <string name="settings_disconnected">Disconnected</string>
+    <string name="settings_disconnect">Disconnect</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_ntfy_server">ntfy Server</string>
+    <string name="settings_notify_approvals">Approval requests</string>
+    <string name="settings_notify_completed">Task completed</string>
+    <string name="settings_notify_errors">Errors</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_github">View on GitHub</string>
+
+    <!-- Connection States -->
+    <string name="connection_disconnected">Disconnected</string>
+    <string name="connection_connecting">Connecting...</string>
+    <string name="connection_authenticating">Authenticating...</string>
+    <string name="connection_connected">Connected</string>
+    <string name="connection_reconnecting">Reconnecting (attempt %1$d)...</string>
+
+    <!-- Errors -->
+    <string name="error_qr_invalid">Invalid QR code</string>
+    <string name="error_connection_failed">Connection failed</string>
+    <string name="error_auth_failed">Authentication failed</string>
+    <string name="error_timeout">Connection timed out</string>
+    <string name="error_peer_disconnected">Peer disconnected</string>
+    <string name="error_network_unavailable">Network unavailable</string>
+    <string name="error_generic">An error occurred</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_connection">Connection Status</string>
+    <string name="notification_channel_connection_desc">Shows WebRTC connection status</string>
+    <string name="notification_connected">Connected to %1$s</string>
+    <string name="notification_connecting">Connecting...</string>
+</resources>

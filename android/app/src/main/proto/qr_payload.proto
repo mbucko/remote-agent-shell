@@ -1,0 +1,32 @@
+// QR code payload for pairing
+// Shared between: Python daemon, Android app, iOS app
+
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+option swift_prefix = "RAS";
+
+// QR code payload for pairing
+// Encoded as base64 of serialized protobuf
+message QrPayload {
+  // Protocol version (currently 1)
+  uint32 version = 1;
+
+  // Daemon's public IP address (IPv4 or IPv6)
+  string ip = 2;
+
+  // Daemon's HTTP signaling port
+  uint32 port = 3;
+
+  // 32-byte master secret (raw bytes, not base64)
+  bytes master_secret = 4;
+
+  // Session ID for signaling endpoint (16 bytes hex = 32 chars)
+  string session_id = 5;
+
+  // ntfy topic for IP change notifications
+  string ntfy_topic = 6;
+}
