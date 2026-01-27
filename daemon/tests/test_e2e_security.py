@@ -28,9 +28,9 @@ from ras.crypto import (
     generate_secret,
     verify_hmac,
 )
-from ras.errors import MessageError, NtfyError
+from ras.errors import MessageError
 from ras.message import Message, MessageCodec
-from ras.ntfy import NtfyClient
+from ras.ntfy import NtfyCrypto
 from ras.storage import Device, DeviceStorage
 
 
@@ -312,96 +312,73 @@ class TestNtfyIpUpdateFlow:
 
     def test_ntfy_flow_encrypt_decrypt(self):
         """IP updates can be encrypted and decrypted."""
+        import os
+
         secret = generate_secret()
         keys = derive_keys(secret)
 
-        sender = NtfyClient(
-            server="https://ntfy.sh",
-            topic=keys.topic,
-            ntfy_key=keys.ntfy_key,
-        )
-        receiver = NtfyClient(
-            server="https://ntfy.sh",
-            topic=keys.topic,
-            ntfy_key=keys.ntfy_key,
-        )
+        sender = NtfyCrypto(ntfy_key=keys.ntfy_key)
+        receiver = NtfyCrypto(ntfy_key=keys.ntfy_key)
 
-        encrypted = sender._encrypt_update("192.168.1.100", 8821)
-        ip, port = receiver.decrypt_update(encrypted)
+        nonce = os.urandom(16)
+        encrypted = sender.encrypt_ip_notification(
+            ip="192.168.1.100",
+            port=8821,
+            timestamp=int(time.time()),
+            nonce=nonce,
+        )
+        decrypted = receiver.decrypt_ip_notification(encrypted)
 
-        assert ip == "192.168.1.100"
-        assert port == 8821
+        assert decrypted.ip == "192.168.1.100"
+        assert decrypted.port == 8821
 
     def test_ntfy_flow_wrong_key_fails(self):
         """IP updates encrypted with wrong key can't be decrypted."""
+        import os
+
+        from cryptography.exceptions import InvalidTag
+
         secret1 = generate_secret()
         secret2 = generate_secret()
 
-        sender = NtfyClient(
-            server="https://ntfy.sh",
-            topic="test",
-            ntfy_key=derive_keys(secret1).ntfy_key,
+        sender = NtfyCrypto(ntfy_key=derive_keys(secret1).ntfy_key)
+        receiver = NtfyCrypto(ntfy_key=derive_keys(secret2).ntfy_key)
+
+        nonce = os.urandom(16)
+        encrypted = sender.encrypt_ip_notification(
+            ip="192.168.1.100",
+            port=8821,
+            timestamp=int(time.time()),
+            nonce=nonce,
         )
-        receiver = NtfyClient(
-            server="https://ntfy.sh",
-            topic="test",
-            ntfy_key=derive_keys(secret2).ntfy_key,
-        )
 
-        encrypted = sender._encrypt_update("192.168.1.100", 8821)
+        with pytest.raises(InvalidTag):
+            receiver.decrypt_ip_notification(encrypted)
 
-        with pytest.raises(NtfyError, match="decrypt"):
-            receiver.decrypt_update(encrypted)
+    def test_ntfy_flow_preserves_timestamp_and_nonce(self):
+        """Timestamp and nonce are preserved for replay protection at app layer."""
+        import os
 
-    def test_ntfy_flow_expired_update(self):
-        """Expired IP updates are rejected."""
         secret = generate_secret()
         keys = derive_keys(secret)
 
-        client = NtfyClient(
-            server="https://ntfy.sh",
-            topic=keys.topic,
-            ntfy_key=keys.ntfy_key,
-            max_age=60,
+        crypto = NtfyCrypto(ntfy_key=keys.ntfy_key)
+
+        timestamp = int(time.time())
+        nonce = os.urandom(16)
+
+        encrypted = crypto.encrypt_ip_notification(
+            ip="192.168.1.100",
+            port=8821,
+            timestamp=timestamp,
+            nonce=nonce,
         )
 
-        # Create old update
-        old_payload = {
-            "ip": "192.168.1.100",
-            "port": 8821,
-            "timestamp": int(time.time()) - 120,
-            "nonce": "abc123",
-        }
-        encrypted = encrypt(keys.ntfy_key, json.dumps(old_payload).encode())
+        decrypted = crypto.decrypt_ip_notification(encrypted)
 
-        with pytest.raises(NtfyError, match="expired"):
-            client.decrypt_update(encrypted)
-
-    def test_ntfy_flow_replay_detection(self):
-        """Replayed IP updates are detected."""
-        secret = generate_secret()
-        keys = derive_keys(secret)
-
-        client = NtfyClient(
-            server="https://ntfy.sh",
-            topic=keys.topic,
-            ntfy_key=keys.ntfy_key,
-        )
-
-        payload = {
-            "ip": "192.168.1.100",
-            "port": 8821,
-            "timestamp": int(time.time()),
-            "nonce": "unique123",
-        }
-        encrypted = encrypt(keys.ntfy_key, json.dumps(payload).encode())
-
-        # First decode succeeds
-        client.decrypt_update(encrypted)
-
-        # Replay fails
-        with pytest.raises(NtfyError, match="[Rr]eplay"):
-            client.decrypt_update(encrypted)
+        # App layer can use these for replay/expiration checks
+        assert decrypted.timestamp == timestamp
+        assert decrypted.nonce == nonce
 
 
 class TestDeviceStorageSecurityFlow:
