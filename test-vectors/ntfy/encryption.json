@@ -1,0 +1,44 @@
+{
+  "description": "ntfy IP notification encryption test vectors",
+  "algorithm": "AES-256-GCM",
+  "format": "IV (12 bytes) || Ciphertext || Tag (16 bytes), then base64 encoded",
+  "protobuf_schema": "IpChangeNotification { ip: string, port: uint32, timestamp: int64, nonce: bytes }",
+  "vectors": [
+    {
+      "id": "ipv4_standard",
+      "input": {
+        "ntfy_key_hex": "e3d801b5755b78c380d59c1285c1a65290db0334cc2994dfd048ebff2df8781f",
+        "ip": "192.168.1.100",
+        "port": 8821,
+        "timestamp": 1706384400,
+        "nonce_hex": "00112233445566778899aabbccddeeff",
+        "iv_hex": "aabbccddeeff001122334455"
+      },
+      "expected": {
+        "plaintext_hex": "0a0d3139322e3136382e312e31303010f5441890b8d5ad06221000112233445566778899aabbccddeeff",
+        "ciphertext_base64": "qrvM3e7/ABEiM0RVVlpzDel9pfRPh6QGaeOsmbCwn8cPDv0oeA78kIGlfNwSZBAlVpOmfjem7SWgirh1NoQs8F/7VsMhKQ=="
+      }
+    },
+    {
+      "id": "ipv6_compressed",
+      "input": {
+        "ntfy_key_hex": "e3d801b5755b78c380d59c1285c1a65290db0334cc2994dfd048ebff2df8781f",
+        "ip": "2001:db8::1",
+        "port": 8821,
+        "timestamp": 1706384400,
+        "nonce_hex": "ffeeddccbbaa99887766554433221100",
+        "iv_hex": "112233445566778899aabbcc"
+      },
+      "expected": {
+        "plaintext_hex": "0a0b323030313a6462383a3a3110f5441890b8d5ad062210ffeeddccbbaa99887766554433221100",
+        "ciphertext_base64": "ESIzRFVmd4iZqrvMUFLGHHfDR0a8yNtvx8d0LGk471KMFXrJpsoyDO07UR8hPjhY4FBPYcKKYhuuScpjEcKKleO3tww="
+      }
+    }
+  ],
+  "validation_rules": {
+    "minimum_encrypted_size": 28,
+    "timestamp_window_seconds": 300,
+    "nonce_size_bytes": 16,
+    "nonce_cache_size": 100
+  }
+}

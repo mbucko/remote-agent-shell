@@ -1,0 +1,36 @@
+{
+  "description": "ntfy topic derivation test vectors",
+  "algorithm": "SHA256, first 6 bytes as hex, prefixed with 'ras-'",
+  "vectors": [
+    {
+      "id": "standard",
+      "input": {
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "expected": {
+        "sha256_hex": "4884fdaafea47c29fea7159d0daddd9c085d6200e1359e85bb81736af6b7c837",
+        "topic": "ras-4884fdaafea4"
+      }
+    },
+    {
+      "id": "all_zeros",
+      "input": {
+        "master_secret_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expected": {
+        "sha256_hex": "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925",
+        "topic": "ras-66687aadf862"
+      }
+    },
+    {
+      "id": "all_ones",
+      "input": {
+        "master_secret_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expected": {
+        "sha256_hex": "af9613760f72635fbdb44a5a0a63c39f12af30f950a6ee5c971be188e89c4051",
+        "topic": "ras-af9613760f72"
+      }
+    }
+  ]
+}

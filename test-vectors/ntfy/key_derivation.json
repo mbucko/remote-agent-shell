@@ -1,0 +1,27 @@
+{
+  "description": "ntfy key derivation test vectors",
+  "algorithm": "HKDF-SHA256",
+  "salt": "empty (None)",
+  "info": "ntfy",
+  "output_length": 32,
+  "vectors": [
+    {
+      "id": "standard",
+      "input": {
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "expected": {
+        "ntfy_key_hex": "e3d801b5755b78c380d59c1285c1a65290db0334cc2994dfd048ebff2df8781f"
+      }
+    },
+    {
+      "id": "all_zeros",
+      "input": {
+        "master_secret_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expected": {
+        "ntfy_key_hex": "85c514bd2626c0875f48c7eb2a2296ad7cb628e3b58565c9826a5bd32691d775"
+      }
+    }
+  ]
+}
