@@ -99,36 +99,60 @@ master_secret (32 bytes)
 
 ### Key Derivation Implementation
 
+Uses HKDF (RFC 5869) for standards-compliant key derivation.
+
 ```python
+# Python - using cryptography library
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
 import hashlib
-import hmac
 
 def derive_key(master_secret: bytes, purpose: str) -> bytes:
-    """Derive a purpose-specific key using HKDF-like construction."""
-    return hmac.new(
-        key=master_secret,
-        msg=purpose.encode('utf-8'),
-        digestmod=hashlib.sha256
-    ).digest()
+    """Derive a purpose-specific key using HKDF (RFC 5869)."""
+    if len(master_secret) != 32:
+        raise ValueError("Master secret must be 32 bytes")
+
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=purpose.encode('utf-8'),
+    )
+    return hkdf.derive(master_secret)
 
 def derive_topic(master_secret: bytes) -> str:
     """Derive ntfy topic from master secret."""
+    if len(master_secret) != 32:
+        raise ValueError("Master secret must be 32 bytes")
     hash_bytes = hashlib.sha256(master_secret).digest()
-    return hash_bytes[:6].hex()  # 12 hex characters
+    return "ras-" + hash_bytes[:6].hex()  # "ras-" + 12 hex characters
 ```
 
 ```kotlin
-// Android
+// Android/Kotlin
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+import java.security.MessageDigest
+
 fun deriveKey(masterSecret: ByteArray, purpose: String): ByteArray {
+    require(masterSecret.size == 32) { "Master secret must be 32 bytes" }
+
+    // HKDF-Expand with info = purpose (salt = null, so PRK = IKM)
     val mac = Mac.getInstance("HmacSHA256")
     mac.init(SecretKeySpec(masterSecret, "HmacSHA256"))
-    return mac.doFinal(purpose.toByteArray(Charsets.UTF_8))
+
+    // T(1) = HMAC(PRK, info || 0x01)
+    val info = purpose.toByteArray(Charsets.UTF_8)
+    val input = info + byteArrayOf(0x01)
+
+    return mac.doFinal(input).copyOf(32)
 }
 
 fun deriveTopic(masterSecret: ByteArray): String {
+    require(masterSecret.size == 32) { "Master secret must be 32 bytes" }
     val digest = MessageDigest.getInstance("SHA-256")
     val hash = digest.digest(masterSecret)
-    return hash.take(6).joinToString("") { "%02x".format(it) }
+    return "ras-" + hash.take(6).joinToString("") { "%02x".format(it) }
 }
 ```
 
