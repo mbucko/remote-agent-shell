@@ -35,3 +35,27 @@ class StorageError(RasError):
     """Storage operation error."""
 
     pass
+
+
+class TmuxError(RasError):
+    """tmux operation error."""
+
+    pass
+
+
+class TmuxNotFoundError(TmuxError):
+    """tmux not installed."""
+
+    pass
+
+
+class TmuxVersionError(TmuxError):
+    """tmux version too old."""
+
+    pass
+
+
+class TmuxSessionError(TmuxError):
+    """tmux session error (not found, permission denied, etc.)."""
+
+    pass

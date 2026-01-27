@@ -58,6 +58,81 @@ def version() -> None:
     click.echo(f"ras version {__version__}")
 
 
+@main.group()
+def tmux() -> None:
+    """tmux management commands."""
+    pass
+
+
+@tmux.command("list")
+def tmux_list() -> None:
+    """List tmux sessions."""
+    import asyncio
+
+    from ras.tmux import TmuxService
+
+    async def _list():
+        service = TmuxService()
+        try:
+            await service.verify()
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+            return
+
+        sessions = await service.list_sessions()
+        if not sessions:
+            click.echo("No tmux sessions found.")
+            return
+
+        click.echo(f"{'ID':<6} {'Name':<20} {'Windows':<8} {'Attached'}")
+        click.echo("-" * 50)
+        for s in sessions:
+            attached = "yes" if s.attached else "no"
+            click.echo(f"{s.id:<6} {s.name:<20} {s.windows:<8} {attached}")
+
+    asyncio.run(_list())
+
+
+@tmux.command("status")
+def tmux_status() -> None:
+    """Show tmux status."""
+    import asyncio
+    import re
+
+    from ras.tmux import TmuxService, AsyncCommandExecutor
+    from ras.errors import TmuxError, TmuxVersionError
+
+    async def _status():
+        executor = AsyncCommandExecutor()
+        service = TmuxService(executor=executor)
+
+        # Check if tmux is available
+        try:
+            stdout, _, _ = await executor.run("tmux", "-V")
+            version = stdout.decode().strip()
+            click.echo(f"tmux version: {version}")
+        except Exception:
+            click.echo("tmux: not found", err=True)
+            return
+
+        # Check version compatibility
+        try:
+            await service.verify()
+            click.echo("Version: compatible (>= 2.1)")
+        except TmuxVersionError as e:
+            click.echo(f"Version: incompatible - {e}", err=True)
+            return
+        except TmuxError as e:
+            click.echo(f"Error: {e}", err=True)
+            return
+
+        # List sessions
+        sessions = await service.list_sessions()
+        click.echo(f"Sessions: {len(sessions)}")
+
+    asyncio.run(_status())
+
+
 @main.command()
 @click.option(
     "--timeout",
