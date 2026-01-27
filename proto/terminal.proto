@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+
+// ============ Terminal Data ============
+
+message TerminalOutput {
+    string session_id = 1;        // Which session this output belongs to
+    bytes data = 2;               // Raw terminal output bytes
+    uint64 sequence = 3;          // Sequence number for ordering
+    bool partial = 4;             // True if more data coming in same logical chunk
+}
+
+message TerminalInput {
+    string session_id = 1;        // Target session
+    oneof input {
+        bytes data = 2;           // Raw character data (line-buffered or raw mode)
+        SpecialKey special = 3;   // Special key press
+        TerminalResize resize = 4; // Resize request (future use)
+    }
+}
+
+message SpecialKey {
+    KeyType key = 1;
+    uint32 modifiers = 2;         // Bitmask: 1=Ctrl, 2=Alt, 4=Shift
+}
+
+enum KeyType {
+    KEY_UNKNOWN = 0;
+
+    // Basic
+    KEY_ENTER = 1;
+    KEY_TAB = 2;
+    KEY_BACKSPACE = 3;
+    KEY_ESCAPE = 4;
+    KEY_DELETE = 5;
+    KEY_INSERT = 6;
+
+    // Arrows
+    KEY_UP = 10;
+    KEY_DOWN = 11;
+    KEY_LEFT = 12;
+    KEY_RIGHT = 13;
+
+    // Navigation
+    KEY_HOME = 20;
+    KEY_END = 21;
+    KEY_PAGE_UP = 22;
+    KEY_PAGE_DOWN = 23;
+
+    // Function keys
+    KEY_F1 = 30;
+    KEY_F2 = 31;
+    KEY_F3 = 32;
+    KEY_F4 = 33;
+    KEY_F5 = 34;
+    KEY_F6 = 35;
+    KEY_F7 = 36;
+    KEY_F8 = 37;
+    KEY_F9 = 38;
+    KEY_F10 = 39;
+    KEY_F11 = 40;
+    KEY_F12 = 41;
+
+    // Control characters (sent as special keys for clarity)
+    KEY_CTRL_C = 50;              // 0x03
+    KEY_CTRL_D = 51;              // 0x04
+    KEY_CTRL_Z = 52;              // 0x1A
+}
+
+message TerminalResize {
+    uint32 cols = 1;
+    uint32 rows = 2;
+}
+
+// ============ Terminal Commands ============
+
+message TerminalCommand {
+    oneof command {
+        AttachTerminal attach = 1;
+        DetachTerminal detach = 2;
+        TerminalInput input = 3;
+    }
+}
+
+message AttachTerminal {
+    string session_id = 1;
+    uint64 from_sequence = 2;     // Resume from this sequence (0 = from buffer start)
+}
+
+message DetachTerminal {
+    string session_id = 1;
+}
+
+// ============ Terminal Events ============
+
+message TerminalEvent {
+    oneof event {
+        TerminalOutput output = 1;
+        TerminalAttached attached = 2;
+        TerminalDetached detached = 3;
+        TerminalError error = 4;
+        OutputSkipped skipped = 5;
+    }
+}
+
+message TerminalAttached {
+    string session_id = 1;
+    uint32 cols = 2;              // Current terminal dimensions
+    uint32 rows = 3;
+    uint64 buffer_start_seq = 4;  // First sequence number in buffer
+    uint64 current_seq = 5;       // Current sequence number
+}
+
+message TerminalDetached {
+    string session_id = 1;
+    string reason = 2;            // Why detached (user request, session killed, etc.)
+}
+
+message TerminalError {
+    string session_id = 1;
+    string error_code = 2;
+    string message = 3;
+}
+
+message OutputSkipped {
+    string session_id = 1;
+    uint64 from_sequence = 2;     // First skipped sequence
+    uint64 to_sequence = 3;       // Last skipped sequence
+    uint32 bytes_skipped = 4;     // Approximate bytes lost
+}
+
+// Error codes:
+// - SESSION_NOT_FOUND: Session does not exist
+// - SESSION_KILLING: Session is being killed
+// - NOT_ATTACHED: Trying to send input without being attached
+// - ALREADY_ATTACHED: Already attached to this session (informational)
+// - INVALID_SEQUENCE: Requested sequence not in buffer
+// - PIPE_ERROR: Failed to read/write terminal pipe
+// - PIPE_SETUP_FAILED: Failed to setup tmux pipe-pane
+// - RATE_LIMITED: Too many input messages
+// - INPUT_TOO_LARGE: Input message exceeds size limit
+// - INVALID_SESSION_ID: Session ID format invalid
