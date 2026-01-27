@@ -139,12 +139,9 @@ End-to-end encryption and authentication.
 
 ## Design Documents
 
-| Document | Description | Status |
-|----------|-------------|--------|
-| [features.md](features.md) | Complete feature list (MVP and future) | ✅ Designed |
-| [communication.md](communication.md) | P2P protocol, WebRTC, STUN, signaling | ✅ Designed |
-| [security.md](security.md) | Encryption, authentication, key management | ✅ Designed |
-| [daemon.md](daemon.md) | Laptop daemon architecture, CLI, config | ✅ Designed |
-| [android-app.md](android-app.md) | Android app architecture | 📋 Placeholder |
-| [tmux-integration.md](tmux-integration.md) | tmux session management | 📋 Placeholder |
-| [agent-protocols.md](agent-protocols.md) | Integration with various AI agents | 📋 Placeholder |
+| Document | Description |
+|----------|-------------|
+| [features.md](features.md) | Complete feature list (MVP and future) |
+| [communication.md](communication.md) | P2P protocol, WebRTC, STUN, signaling, multi-device |
+| [security.md](security.md) | Encryption, authentication, key management |
+| [daemon.md](daemon.md) | Laptop daemon architecture, CLI, config |

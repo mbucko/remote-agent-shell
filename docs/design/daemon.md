@@ -395,4 +395,4 @@ systemctl --user start ras
 
 - [communication.md](communication.md) - P2P protocol details
 - [security.md](security.md) - Encryption and authentication
-- [tmux-integration.md](tmux-integration.md) - tmux session management
+- [features.md](features.md) - Complete feature list
