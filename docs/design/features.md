@@ -150,6 +150,12 @@ Features for subsequent releases.
 - [ ] Session sharing (share view with another user)
 - [ ] Annotations (mark important output)
 
+### Daemon Features
+- [ ] Prompt detection - Detect when AI agent is waiting for approval/input (pattern matching)
+- [ ] Image/clipboard handling - Send images from phone to agent via system clipboard
+- [ ] Local echo - Show typed characters immediately for low-latency feel (like Mosh)
+- [ ] Daemon-managed sessions - Daemon creates tmux sessions and starts agents
+
 ---
 
 ## Future / Maybe
