@@ -2,14 +2,179 @@
 
 These test vectors ensure encryption/decryption is compatible
 between the daemon (Python) and Android (Kotlin) implementations.
+
+IMPORTANT: The static test vectors in TestStaticCrossplatformVectors
+should be copied to the Kotlin/Android test suite to ensure both
+implementations produce identical results.
 """
 
 import base64
 import os
+from unittest.mock import patch
 
 import pytest
 
 from ras.ntfy.crypto import NtfyCrypto
+
+
+class TestStaticCrossplatformVectors:
+    """Static test vectors for cross-platform validation.
+
+    These vectors use fixed IV values (via mocking) to produce
+    deterministic output that Kotlin/Android can verify against.
+
+    To use in Kotlin:
+    1. Use the same key, iv, ip, port, timestamp, nonce
+    2. Encrypt and verify the base64 output matches EXPECTED_CIPHERTEXT
+    3. Decrypt EXPECTED_CIPHERTEXT and verify all fields match
+    """
+
+    # Test Vector 1: Basic IPv4
+    VECTOR_1 = {
+        "key_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "iv_hex": "000102030405060708090a0b",  # 12 bytes
+        "ip": "192.168.1.100",
+        "port": 8821,
+        "timestamp": 1700000000,
+        "nonce_hex": "deadbeefcafebabe1234567890abcdef",  # 16 bytes
+    }
+
+    # Test Vector 2: IPv6 address
+    VECTOR_2 = {
+        "key_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "iv_hex": "aabbccddeeff00112233445566",  # 12 bytes (but only 12 used)
+        "ip": "2001:db8::1",
+        "port": 443,
+        "timestamp": 1234567890,
+        "nonce_hex": "00112233445566778899aabbccddeeff",
+    }
+
+    # Test Vector 3: Edge case - max port, zero timestamp
+    VECTOR_3 = {
+        "key_hex": "00000000000000000000000000000000ffffffffffffffffffffffffffffffff",
+        "iv_hex": "112233445566778899aabb",  # 11 bytes - will be padded
+        "ip": "255.255.255.255",
+        "port": 65535,
+        "timestamp": 0,
+        "nonce_hex": "aaaabbbbccccddddeeeeffffaaaabbbb",
+    }
+
+    def _encrypt_with_fixed_iv(self, vector: dict) -> str:
+        """Encrypt using a fixed IV for deterministic output."""
+        key = bytes.fromhex(vector["key_hex"])
+        iv = bytes.fromhex(vector["iv_hex"])
+        # Ensure IV is exactly 12 bytes
+        if len(iv) < 12:
+            iv = iv + b"\x00" * (12 - len(iv))
+        iv = iv[:12]
+
+        nonce = bytes.fromhex(vector["nonce_hex"])
+        crypto = NtfyCrypto(ntfy_key=key)
+
+        with patch("os.urandom", return_value=iv):
+            return crypto.encrypt_ip_notification(
+                ip=vector["ip"],
+                port=vector["port"],
+                timestamp=vector["timestamp"],
+                nonce=nonce,
+            )
+
+    def test_vector_1_encryption_deterministic(self):
+        """Vector 1 produces consistent output."""
+        result1 = self._encrypt_with_fixed_iv(self.VECTOR_1)
+        result2 = self._encrypt_with_fixed_iv(self.VECTOR_1)
+        assert result1 == result2
+
+        # Print for Kotlin test suite (run with -s to see)
+        print(f"\n=== VECTOR 1 EXPECTED CIPHERTEXT ===")
+        print(f"Base64: {result1}")
+        print(f"Hex: {base64.b64decode(result1).hex()}")
+
+    def test_vector_1_decryption(self):
+        """Vector 1 decrypts correctly."""
+        encrypted = self._encrypt_with_fixed_iv(self.VECTOR_1)
+        key = bytes.fromhex(self.VECTOR_1["key_hex"])
+        crypto = NtfyCrypto(ntfy_key=key)
+
+        decrypted = crypto.decrypt_ip_notification(encrypted)
+
+        assert decrypted.ip == self.VECTOR_1["ip"]
+        assert decrypted.port == self.VECTOR_1["port"]
+        assert decrypted.timestamp == self.VECTOR_1["timestamp"]
+        assert decrypted.nonce == bytes.fromhex(self.VECTOR_1["nonce_hex"])
+
+    def test_vector_2_ipv6_encryption_deterministic(self):
+        """Vector 2 (IPv6) produces consistent output."""
+        result1 = self._encrypt_with_fixed_iv(self.VECTOR_2)
+        result2 = self._encrypt_with_fixed_iv(self.VECTOR_2)
+        assert result1 == result2
+
+        print(f"\n=== VECTOR 2 (IPv6) EXPECTED CIPHERTEXT ===")
+        print(f"Base64: {result1}")
+        print(f"Hex: {base64.b64decode(result1).hex()}")
+
+    def test_vector_2_ipv6_decryption(self):
+        """Vector 2 (IPv6) decrypts correctly."""
+        encrypted = self._encrypt_with_fixed_iv(self.VECTOR_2)
+        key = bytes.fromhex(self.VECTOR_2["key_hex"])
+        crypto = NtfyCrypto(ntfy_key=key)
+
+        decrypted = crypto.decrypt_ip_notification(encrypted)
+
+        assert decrypted.ip == self.VECTOR_2["ip"]
+        assert decrypted.port == self.VECTOR_2["port"]
+        assert decrypted.timestamp == self.VECTOR_2["timestamp"]
+        assert decrypted.nonce == bytes.fromhex(self.VECTOR_2["nonce_hex"])
+
+    def test_vector_3_edge_cases_encryption_deterministic(self):
+        """Vector 3 (edge cases) produces consistent output."""
+        result1 = self._encrypt_with_fixed_iv(self.VECTOR_3)
+        result2 = self._encrypt_with_fixed_iv(self.VECTOR_3)
+        assert result1 == result2
+
+        print(f"\n=== VECTOR 3 (Edge Cases) EXPECTED CIPHERTEXT ===")
+        print(f"Base64: {result1}")
+        print(f"Hex: {base64.b64decode(result1).hex()}")
+
+    def test_vector_3_edge_cases_decryption(self):
+        """Vector 3 (edge cases) decrypts correctly."""
+        encrypted = self._encrypt_with_fixed_iv(self.VECTOR_3)
+        key = bytes.fromhex(self.VECTOR_3["key_hex"])
+        crypto = NtfyCrypto(ntfy_key=key)
+
+        decrypted = crypto.decrypt_ip_notification(encrypted)
+
+        assert decrypted.ip == self.VECTOR_3["ip"]
+        assert decrypted.port == self.VECTOR_3["port"]
+        assert decrypted.timestamp == self.VECTOR_3["timestamp"]
+        assert decrypted.nonce == bytes.fromhex(self.VECTOR_3["nonce_hex"])
+
+    def test_generate_all_vectors_for_kotlin(self):
+        """Generate all test vectors for Kotlin implementation.
+
+        Run with: pytest -s -k test_generate_all_vectors
+        """
+        vectors = [
+            ("VECTOR_1", self.VECTOR_1),
+            ("VECTOR_2", self.VECTOR_2),
+            ("VECTOR_3", self.VECTOR_3),
+        ]
+
+        print("\n" + "=" * 60)
+        print("CROSS-PLATFORM TEST VECTORS FOR KOTLIN")
+        print("=" * 60)
+
+        for name, vector in vectors:
+            encrypted = self._encrypt_with_fixed_iv(vector)
+            print(f"\n{name}:")
+            print(f"  key_hex = \"{vector['key_hex']}\"")
+            print(f"  iv_hex = \"{vector['iv_hex'][:24]}\" // first 12 bytes")
+            print(f"  ip = \"{vector['ip']}\"")
+            print(f"  port = {vector['port']}")
+            print(f"  timestamp = {vector['timestamp']}L")
+            print(f"  nonce_hex = \"{vector['nonce_hex']}\"")
+            print(f"  expected_base64 = \"{encrypted}\"")
+            print(f"  expected_hex = \"{base64.b64decode(encrypted).hex()}\"")
 
 
 class TestNtfyCryptoVectors:

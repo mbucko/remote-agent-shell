@@ -14,6 +14,22 @@ DEFAULT_STUN_SERVERS = [
 
 
 @dataclass
+class NtfyConfig:
+    """ntfy notification configuration."""
+
+    server: str = "https://ntfy.sh"
+    enabled: bool = True
+
+
+@dataclass
+class IpMonitorConfig:
+    """IP monitoring configuration."""
+
+    check_interval: float = 30.0  # seconds
+    enabled: bool = True
+
+
+@dataclass
 class Config:
     """Daemon configuration."""
 
@@ -24,6 +40,8 @@ class Config:
     log_level: str = "INFO"
     log_file: str | None = None
     stun_servers: list[str] = field(default_factory=lambda: DEFAULT_STUN_SERVERS.copy())
+    ntfy: NtfyConfig = field(default_factory=NtfyConfig)
+    ip_monitor: IpMonitorConfig = field(default_factory=IpMonitorConfig)
 
 
 def get_config_path(custom_path: Path | None = None) -> Path:
@@ -74,6 +92,22 @@ def load_config(
     if data is None:
         return Config()
 
+    # Parse ntfy config section
+    ntfy_data = data.get("ntfy", {})
+    ntfy_config = NtfyConfig(
+        server=ntfy_data.get("server", NtfyConfig.server),
+        enabled=ntfy_data.get("enabled", NtfyConfig.enabled),
+    )
+
+    # Parse ip_monitor config section
+    ip_monitor_data = data.get("ip_monitor", {})
+    ip_monitor_config = IpMonitorConfig(
+        check_interval=ip_monitor_data.get(
+            "check_interval", IpMonitorConfig.check_interval
+        ),
+        enabled=ip_monitor_data.get("enabled", IpMonitorConfig.enabled),
+    )
+
     return Config(
         port=data.get("port", Config.port),
         bind_address=data.get("bind_address", Config.bind_address),
@@ -82,4 +116,6 @@ def load_config(
         log_level=data.get("log_level", Config.log_level),
         log_file=data.get("log_file", Config.log_file),
         stun_servers=data.get("stun_servers", DEFAULT_STUN_SERVERS.copy()),
+        ntfy=ntfy_config,
+        ip_monitor=ip_monitor_config,
     )

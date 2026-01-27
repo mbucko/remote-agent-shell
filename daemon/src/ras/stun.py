@@ -63,7 +63,8 @@ class StunClient:
 
                 for candidate in gatherer.getLocalCandidates():
                     if candidate.type == "srflx":  # Server reflexive
-                        logger.info(f"Discovered public IP: {candidate.ip}:{candidate.port}")
+                        logger.info("Discovered public IP via STUN")
+                        logger.debug(f"Public IP: {candidate.ip}:{candidate.port}")
                         return (candidate.ip, candidate.port)
 
                 raise StunError("No server reflexive candidate found")
