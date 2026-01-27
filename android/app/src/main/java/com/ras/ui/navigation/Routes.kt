@@ -17,6 +17,9 @@ sealed class Routes(val route: String) {
 
     /** App settings */
     data object Settings : Routes("settings")
+
+    /** Create new session wizard */
+    data object CreateSession : Routes("create_session")
 }
 
 /**

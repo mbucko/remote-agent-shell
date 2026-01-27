@@ -8,6 +8,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.ras.ui.pairing.PairingScreen
+import com.ras.ui.sessions.CreateSessionScreen
 import com.ras.ui.sessions.SessionsScreen
 import com.ras.ui.settings.SettingsScreen
 import com.ras.ui.terminal.TerminalScreen
@@ -43,6 +44,20 @@ fun NavGraph(
                 },
                 onNavigateToSettings = {
                     navController.navigate(Routes.Settings.route)
+                },
+                onNavigateToCreateSession = {
+                    navController.navigate(Routes.CreateSession.route)
+                }
+            )
+        }
+
+        composable(Routes.CreateSession.route) {
+            CreateSessionScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onSessionCreated = { sessionId ->
+                    navController.popBackStack()
+                    // Optionally navigate to the new session
+                    // navController.navigate(Routes.Terminal.createRoute(sessionId))
                 }
             )
         }

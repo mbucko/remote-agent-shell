@@ -1,0 +1,245 @@
+package com.ras.sessions
+
+import app.cash.turbine.test
+import com.ras.data.sessions.SessionEvent
+import com.ras.data.sessions.SessionInfo
+import com.ras.data.sessions.SessionRepository
+import com.ras.data.sessions.SessionStatus
+import com.ras.data.sessions.SessionsScreenState
+import com.ras.ui.sessions.SessionsUiEvent
+import com.ras.ui.sessions.SessionsViewModel
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.time.Instant
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class SessionsViewModelTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+    private lateinit var repository: SessionRepository
+    private lateinit var sessionsFlow: MutableStateFlow<List<SessionInfo>>
+    private lateinit var eventsFlow: MutableSharedFlow<SessionEvent>
+    private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
+
+    @Before
+    fun setup() {
+        Dispatchers.setMain(testDispatcher)
+        sessionsFlow = MutableStateFlow(emptyList())
+        eventsFlow = MutableSharedFlow()
+        isConnectedFlow = MutableStateFlow(true)
+
+        repository = mockk(relaxed = true) {
+            every { sessions } returns sessionsFlow
+            every { events } returns eventsFlow
+            every { isConnected } returns isConnectedFlow
+        }
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `initial state is Loading`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.screenState.value is SessionsScreenState.Loading)
+    }
+
+    @Test
+    fun `sessions from repository update screen state`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val sessions = listOf(createSession("1"), createSession("2"))
+        sessionsFlow.value = sessions
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.screenState.value
+        assertTrue(state is SessionsScreenState.Loaded)
+        assertEquals(2, (state as SessionsScreenState.Loaded).sessions.size)
+    }
+
+    @Test
+    fun `refreshSessions calls repository`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.refreshSessions()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify(atLeast = 2) { repository.listSessions() }
+    }
+
+    @Test
+    fun `showKillDialog updates dialog state`() = runTest {
+        val viewModel = createViewModel()
+        val session = createSession("1")
+
+        viewModel.showKillDialog(session)
+
+        assertEquals(session, viewModel.showKillDialog.value)
+    }
+
+    @Test
+    fun `dismissKillDialog clears dialog state`() = runTest {
+        val viewModel = createViewModel()
+        val session = createSession("1")
+
+        viewModel.showKillDialog(session)
+        viewModel.dismissKillDialog()
+
+        assertNull(viewModel.showKillDialog.value)
+    }
+
+    @Test
+    fun `confirmKillSession calls repository and clears dialog`() = runTest {
+        val viewModel = createViewModel()
+        val session = createSession("1")
+
+        viewModel.showKillDialog(session)
+        viewModel.confirmKillSession()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { repository.killSession("1") }
+        assertNull(viewModel.showKillDialog.value)
+    }
+
+    @Test
+    fun `showRenameDialog updates dialog state`() = runTest {
+        val viewModel = createViewModel()
+        val session = createSession("1")
+
+        viewModel.showRenameDialog(session)
+
+        assertEquals(session, viewModel.showRenameDialog.value)
+    }
+
+    @Test
+    fun `dismissRenameDialog clears dialog state`() = runTest {
+        val viewModel = createViewModel()
+        val session = createSession("1")
+
+        viewModel.showRenameDialog(session)
+        viewModel.dismissRenameDialog()
+
+        assertNull(viewModel.showRenameDialog.value)
+    }
+
+    @Test
+    fun `confirmRenameSession calls repository and clears dialog`() = runTest {
+        val viewModel = createViewModel()
+        val session = createSession("1")
+
+        viewModel.showRenameDialog(session)
+        viewModel.confirmRenameSession("New Name")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { repository.renameSession("1", "New Name") }
+        assertNull(viewModel.showRenameDialog.value)
+    }
+
+    @Test
+    fun `SessionCreated event emits UI event`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            eventsFlow.emit(SessionEvent.SessionCreated(createSession("1")))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is SessionsUiEvent.SessionCreated)
+        }
+    }
+
+    @Test
+    fun `SessionKilled event emits UI event`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            eventsFlow.emit(SessionEvent.SessionKilled("1"))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is SessionsUiEvent.SessionKilled)
+        }
+    }
+
+    @Test
+    fun `SessionRenamed event emits UI event`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            eventsFlow.emit(SessionEvent.SessionRenamed("1", "New Name"))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is SessionsUiEvent.SessionRenamed)
+            assertEquals("New Name", (event as SessionsUiEvent.SessionRenamed).newName)
+        }
+    }
+
+    @Test
+    fun `SessionError event emits UI event`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            eventsFlow.emit(SessionEvent.SessionError("ERROR", "Error message", null))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is SessionsUiEvent.Error)
+            assertEquals("Error message", (event as SessionsUiEvent.Error).message)
+        }
+    }
+
+    @Test
+    fun `isConnected reflects repository state`() = runTest {
+        val viewModel = createViewModel()
+
+        assertTrue(viewModel.isConnected.value)
+
+        isConnectedFlow.value = false
+
+        assertEquals(false, viewModel.isConnected.value)
+    }
+
+    private fun createViewModel() = SessionsViewModel(repository)
+
+    private fun createSession(
+        id: String,
+        displayName: String = "Session $id"
+    ) = SessionInfo(
+        id = id,
+        tmuxName = "ras-claude-project-$id",
+        displayName = displayName,
+        directory = "/home/user/repos/project-$id",
+        agent = "claude",
+        createdAt = Instant.now(),
+        lastActivityAt = Instant.now(),
+        status = SessionStatus.ACTIVE
+    )
+}

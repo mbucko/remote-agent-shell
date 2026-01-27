@@ -1,0 +1,149 @@
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+
+// ============ Session Data ============
+
+message Session {
+    string id = 1;                    // Unique ID (e.g., "abc123def456")
+    string tmux_name = 2;             // tmux session name (e.g., "ras-claude-myproject")
+    string display_name = 3;          // Human-friendly name (e.g., "claude-myproject")
+    string directory = 4;             // Working directory
+    string agent = 5;                 // Agent name (e.g., "claude", "aider") or empty
+    int64 created_at = 6;             // Unix timestamp (seconds)
+    int64 last_activity_at = 7;       // Unix timestamp of last output
+    SessionStatus status = 8;         // Current status
+}
+
+enum SessionStatus {
+    SESSION_STATUS_UNKNOWN = 0;
+    SESSION_STATUS_ACTIVE = 1;        // tmux session exists
+    SESSION_STATUS_CREATING = 2;      // Being created
+    SESSION_STATUS_KILLING = 3;       // Being killed
+}
+
+// ============ Commands (Phone → Daemon) ============
+
+message SessionCommand {
+    oneof command {
+        ListSessionsCommand list = 1;
+        CreateSessionCommand create = 2;
+        KillSessionCommand kill = 3;
+        RenameSessionCommand rename = 4;
+        GetAgentsCommand get_agents = 5;
+        GetDirectoriesCommand get_directories = 6;
+        RefreshAgentsCommand refresh_agents = 7;
+    }
+}
+
+message ListSessionsCommand {
+    // No fields - just request current list
+}
+
+message CreateSessionCommand {
+    string directory = 1;             // Working directory path
+    string agent = 2;                 // Agent to start (e.g., "claude")
+}
+
+message KillSessionCommand {
+    string session_id = 1;            // Session to kill
+}
+
+message RenameSessionCommand {
+    string session_id = 1;            // Session to rename
+    string new_name = 2;              // New display name
+}
+
+message GetAgentsCommand {
+    // No fields - request list of detected agents
+}
+
+message GetDirectoriesCommand {
+    string parent = 1;                // Parent directory to list (empty = root)
+}
+
+message RefreshAgentsCommand {
+    // No fields - re-scan for installed agents
+}
+
+// ============ Events (Daemon → Phone) ============
+
+message SessionEvent {
+    oneof event {
+        SessionListEvent list = 1;
+        SessionCreatedEvent created = 2;
+        SessionKilledEvent killed = 3;
+        SessionRenamedEvent renamed = 4;
+        SessionActivityEvent activity = 5;
+        SessionErrorEvent error = 6;
+        AgentsListEvent agents = 7;
+        DirectoriesListEvent directories = 8;
+    }
+}
+
+message SessionListEvent {
+    repeated Session sessions = 1;    // Full session list (sorted by last_activity_at desc)
+}
+
+message SessionCreatedEvent {
+    Session session = 1;              // The new session
+}
+
+message SessionKilledEvent {
+    string session_id = 1;            // ID of killed session
+}
+
+message SessionRenamedEvent {
+    string session_id = 1;
+    string new_name = 2;
+}
+
+message SessionActivityEvent {
+    string session_id = 1;
+    int64 timestamp = 2;              // Last activity timestamp
+}
+
+message SessionErrorEvent {
+    string error_code = 1;            // Machine-readable code (see Error Codes)
+    string message = 2;               // Human-readable message
+    string session_id = 3;            // Related session (if applicable, empty otherwise)
+}
+
+// Error codes:
+// - DIR_NOT_FOUND: Directory does not exist
+// - DIR_NOT_ALLOWED: Directory not in whitelist or in blacklist
+// - AGENT_NOT_FOUND: Agent binary not found or not installed
+// - SESSION_NOT_FOUND: Session ID does not exist
+// - SESSION_EXISTS: Session with that name already exists
+// - TMUX_ERROR: Failed to create/kill tmux session
+// - MAX_SESSIONS_REACHED: Too many concurrent sessions
+// - INVALID_NAME: Invalid session name
+// - RATE_LIMITED: Too many requests
+
+// ============ Agent & Directory Data ============
+
+message Agent {
+    string name = 1;                  // Display name (e.g., "Claude Code")
+    string binary = 2;                // Binary name (e.g., "claude")
+    string path = 3;                  // Full path (e.g., "/usr/local/bin/claude")
+    bool available = 4;               // Whether binary was found and executable
+}
+
+message AgentsListEvent {
+    repeated Agent agents = 1;        // All known agents (available and unavailable)
+}
+
+message DirectoryEntry {
+    string name = 1;                  // Directory name (basename)
+    string path = 2;                  // Full path
+    bool is_directory = 3;            // Always true for browsing
+}
+
+message DirectoriesListEvent {
+    string parent = 1;                // Parent path (empty = root)
+    repeated DirectoryEntry entries = 2;  // Child directories
+    repeated string recent = 3;       // Recent directories (only when parent is empty)
+}
