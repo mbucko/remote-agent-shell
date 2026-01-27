@@ -74,9 +74,12 @@ Thumbs.db
 node_modules/
 npm-debug.log
 
-# Python (if we add server components)
+# Python (daemon)
 __pycache__/
 *.py[cod]
 *$py.class
 .venv/
 venv/
+.coverage
+htmlcov/
+.pytest_cache/
