@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+
+// IP change notification payload (encrypted before sending to ntfy)
+message IpChangeNotification {
+    string ip = 1;           // New public IP address
+    uint32 port = 2;         // Signaling port
+    int64 timestamp = 3;     // Unix timestamp (seconds)
+    bytes nonce = 4;         // 16 random bytes for replay protection
+}
