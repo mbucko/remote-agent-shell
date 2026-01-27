@@ -3,10 +3,12 @@ package com.ras.ui.sessions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.sessions.AgentInfo
+import com.ras.data.sessions.AgentNameValidator
 import com.ras.data.sessions.AgentsListState
 import com.ras.data.sessions.CreateSessionState
 import com.ras.data.sessions.DirectoryBrowserState
 import com.ras.data.sessions.DirectoryEntryInfo
+import com.ras.data.sessions.DirectoryPathValidator
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -79,6 +81,12 @@ class CreateSessionViewModel @Inject constructor(
                         _createState.value = CreateSessionState.Failed(event.code, event.message)
                         _uiEvents.emit(CreateSessionUiEvent.Error(event.message))
                     }
+                    is SessionEvent.DirectoriesLoaded -> {
+                        updateDirectories(event.parent, event.entries, event.recentDirectories)
+                    }
+                    is SessionEvent.AgentsLoaded -> {
+                        updateAgents(event.agents)
+                    }
                     else -> { /* Ignore other events */ }
                 }
             }
@@ -145,9 +153,7 @@ class CreateSessionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 sessionRepository.getDirectories(path)
-                // In a real implementation, we'd listen for the DirectoriesListEvent
-                // For now, simulate with a placeholder
-                // The actual data will come through the event handler
+                // Directory data will arrive via DirectoriesLoaded event
             } catch (e: Exception) {
                 _directoryState.value = DirectoryBrowserState.Error(
                     e.message ?: "Failed to load directories"
@@ -158,16 +164,32 @@ class CreateSessionViewModel @Inject constructor(
 
     /**
      * Select a directory for the new session.
+     *
+     * @param directory The directory path to select (must be valid absolute path)
      */
     fun selectDirectory(directory: String) {
+        if (!DirectoryPathValidator.isValid(directory)) {
+            viewModelScope.launch {
+                _uiEvents.emit(CreateSessionUiEvent.Error("Invalid directory path"))
+            }
+            return
+        }
         _selectedDirectory.value = directory
         _createState.value = CreateSessionState.DirectorySelected(directory)
     }
 
     /**
      * Select a recent directory.
+     *
+     * @param directory The directory path to select (must be valid absolute path)
      */
     fun selectRecentDirectory(directory: String) {
+        if (!DirectoryPathValidator.isValid(directory)) {
+            viewModelScope.launch {
+                _uiEvents.emit(CreateSessionUiEvent.Error("Invalid directory path"))
+            }
+            return
+        }
         _selectedDirectory.value = directory
         _createState.value = CreateSessionState.DirectorySelected(directory)
     }
@@ -181,15 +203,47 @@ class CreateSessionViewModel @Inject constructor(
 
     /**
      * Select an agent for the new session.
+     *
+     * @param agent The agent binary name (must be valid and available)
      */
     fun selectAgent(agent: String) {
+        // Validate agent name format
+        if (!AgentNameValidator.isValid(agent)) {
+            viewModelScope.launch {
+                _uiEvents.emit(CreateSessionUiEvent.Error("Invalid agent name"))
+            }
+            return
+        }
+
+        // Validate agent exists and is available
+        val agentsList = (_agentsState.value as? AgentsListState.Loaded)?.agents ?: emptyList()
+        val agentInfo = agentsList.find { it.binary == agent }
+        if (agentInfo == null) {
+            viewModelScope.launch {
+                _uiEvents.emit(CreateSessionUiEvent.Error("Agent not found"))
+            }
+            return
+        }
+        if (!agentInfo.available) {
+            viewModelScope.launch {
+                _uiEvents.emit(CreateSessionUiEvent.Error("Agent is not available"))
+            }
+            return
+        }
+
         _selectedAgent.value = agent
     }
 
     /**
      * Create the session with selected directory and agent.
+     * This method is guarded against concurrent calls.
      */
     fun createSession() {
+        // Guard against concurrent calls
+        if (_createState.value is CreateSessionState.Creating) {
+            return
+        }
+
         val directory = _selectedDirectory.value ?: return
         val agent = _selectedAgent.value ?: return
 
@@ -198,6 +252,7 @@ class CreateSessionViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 sessionRepository.createSession(directory, agent)
+                // Success will be handled via SessionCreated event
             } catch (e: Exception) {
                 _createState.value = CreateSessionState.Failed(
                     "UNKNOWN",

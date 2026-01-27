@@ -2,7 +2,10 @@ package com.ras.sessions
 
 import app.cash.turbine.test
 import com.ras.data.sessions.AgentInfo
+import com.ras.data.sessions.AgentsListState
 import com.ras.data.sessions.CreateSessionState
+import com.ras.data.sessions.DirectoryBrowserState
+import com.ras.data.sessions.DirectoryEntryInfo
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionRepository
@@ -12,6 +15,7 @@ import com.ras.ui.sessions.CreateSessionViewModel
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import org.junit.Assert.assertFalse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -253,6 +257,215 @@ class CreateSessionViewModelTest {
         val result = viewModel.navigateBack()
 
         assertTrue(!result || viewModel.currentPath.value.isEmpty())
+    }
+
+    // ==========================================================================
+    // Validation Tests
+    // ==========================================================================
+
+    @Test
+    fun `selectDirectory with invalid path emits error`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            viewModel.selectDirectory("relative/path")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is CreateSessionUiEvent.Error)
+            assertTrue((event as CreateSessionUiEvent.Error).message.contains("Invalid"))
+        }
+
+        // State should not change
+        assertNull(viewModel.selectedDirectory.value)
+    }
+
+    @Test
+    fun `selectDirectory with path traversal emits error`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            viewModel.selectDirectory("/home/../etc/passwd")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is CreateSessionUiEvent.Error)
+        }
+
+        assertNull(viewModel.selectedDirectory.value)
+    }
+
+    @Test
+    fun `selectRecentDirectory with invalid path emits error`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            viewModel.selectRecentDirectory("")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is CreateSessionUiEvent.Error)
+        }
+    }
+
+    @Test
+    fun `selectAgent with invalid name emits error`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            viewModel.selectAgent("invalid/agent")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is CreateSessionUiEvent.Error)
+            assertTrue((event as CreateSessionUiEvent.Error).message.contains("Invalid"))
+        }
+
+        assertNull(viewModel.selectedAgent.value)
+    }
+
+    @Test
+    fun `selectAgent with unavailable agent emits error`() = runTest {
+        agentsFlow.value = listOf(
+            AgentInfo("Claude", "claude", "/usr/bin/claude", true),
+            AgentInfo("Aider", "aider", "/usr/bin/aider", false)
+        )
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            viewModel.selectAgent("aider")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is CreateSessionUiEvent.Error)
+            assertTrue((event as CreateSessionUiEvent.Error).message.contains("not available"))
+        }
+
+        assertNull(viewModel.selectedAgent.value)
+    }
+
+    @Test
+    fun `selectAgent with non-existent agent emits error`() = runTest {
+        agentsFlow.value = listOf(
+            AgentInfo("Claude", "claude", "/usr/bin/claude", true)
+        )
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            viewModel.selectAgent("nonexistent")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is CreateSessionUiEvent.Error)
+            assertTrue((event as CreateSessionUiEvent.Error).message.contains("not found"))
+        }
+    }
+
+    @Test
+    fun `selectAgent with valid available agent succeeds`() = runTest {
+        agentsFlow.value = listOf(
+            AgentInfo("Claude", "claude", "/usr/bin/claude", true)
+        )
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.selectAgent("claude")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("claude", viewModel.selectedAgent.value)
+    }
+
+    // ==========================================================================
+    // Concurrent Create Session Tests
+    // ==========================================================================
+
+    @Test
+    fun `createSession while already creating does nothing`() = runTest {
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.startDirectorySelection()
+        viewModel.selectDirectory("/home/user/project")
+        viewModel.proceedToAgentSelection()
+        viewModel.selectAgent("claude")
+
+        // First create
+        viewModel.createSession()
+
+        // Second create while still creating - should be ignored
+        viewModel.createSession()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should only have called once
+        coVerify(exactly = 1) { repository.createSession(any(), any()) }
+    }
+
+    // ==========================================================================
+    // Event Flow Integration Tests
+    // ==========================================================================
+
+    @Test
+    fun `DirectoriesLoaded event updates directory state`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val entries = listOf(
+            DirectoryEntryInfo("projects", "/home/user/projects", true),
+            DirectoryEntryInfo("docs", "/home/user/docs", true)
+        )
+        val recent = listOf("/home/user/projects", "/home/user/work")
+
+        eventsFlow.emit(SessionEvent.DirectoriesLoaded("/home/user", entries, recent))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.directoryState.value
+        assertTrue(state is DirectoryBrowserState.Loaded)
+        val loaded = state as DirectoryBrowserState.Loaded
+        assertEquals("/home/user", loaded.parent)
+        assertEquals(2, loaded.entries.size)
+        assertEquals("projects", loaded.entries[0].name)
+        assertEquals(2, loaded.recentDirectories.size)
+    }
+
+    @Test
+    fun `AgentsLoaded event updates agents state`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val agents = listOf(
+            AgentInfo("Claude Code", "claude", "/usr/bin/claude", true),
+            AgentInfo("Aider", "aider", "/usr/bin/aider", false)
+        )
+
+        eventsFlow.emit(SessionEvent.AgentsLoaded(agents))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = viewModel.agentsState.value
+        assertTrue(state is AgentsListState.Loaded)
+        val loaded = state as AgentsListState.Loaded
+        assertEquals(2, loaded.agents.size)
+        assertEquals("claude", loaded.agents[0].binary)
+        assertTrue(loaded.agents[0].available)
+        assertFalse(loaded.agents[1].available)
+    }
+
+    @Test
+    fun `recentDirectories flow updates when DirectoriesLoaded has recent`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val recent = listOf("/home/user/project1", "/home/user/project2")
+        eventsFlow.emit(SessionEvent.DirectoriesLoaded("/home/user", emptyList(), recent))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(recent, viewModel.recentDirectories.value)
     }
 
     private fun createViewModel() = CreateSessionViewModel(repository)

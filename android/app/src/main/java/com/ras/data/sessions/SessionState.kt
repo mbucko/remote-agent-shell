@@ -168,6 +168,12 @@ sealed class SessionEvent {
     data class SessionRenamed(val sessionId: String, val newName: String) : SessionEvent()
     data class SessionActivity(val sessionId: String, val timestamp: Instant) : SessionEvent()
     data class SessionError(val code: String, val message: String, val sessionId: String?) : SessionEvent()
+    data class DirectoriesLoaded(
+        val parent: String,
+        val entries: List<DirectoryEntryInfo>,
+        val recentDirectories: List<String>
+    ) : SessionEvent()
+    data class AgentsLoaded(val agents: List<AgentInfo>) : SessionEvent()
 }
 
 /**
@@ -301,6 +307,53 @@ object DisplayNameValidator {
         val result = validate(name)
         require(result is ValidationResult.Valid) {
             (result as ValidationResult.Invalid).reason
+        }
+        return name!!
+    }
+}
+
+/**
+ * Agent name validation utilities.
+ *
+ * Agent names must:
+ * - Be 1-32 characters
+ * - Alphanumeric, dashes, and underscores only
+ * - No path separators or dangerous characters
+ */
+object AgentNameValidator {
+    private const val MIN_LENGTH = 1
+    private const val MAX_LENGTH = 32
+    private val ALLOWED_CHARS = Regex("^[a-zA-Z0-9\\-_]+$")
+
+    /**
+     * Validate an agent name.
+     *
+     * @param name The agent name to validate
+     * @return true if valid, false otherwise
+     */
+    fun isValid(name: String?): Boolean {
+        if (name.isNullOrEmpty()) return false
+        if (name.length > MAX_LENGTH) return false
+
+        // Reject dangerous sequences
+        if (name.contains("..")) return false
+        if (name.contains("/")) return false
+        if (name.contains("\\")) return false
+        if (name.contains("\u0000")) return false
+
+        return ALLOWED_CHARS.matches(name)
+    }
+
+    /**
+     * Validate and return the agent name, or throw if invalid.
+     *
+     * @param name The agent name to validate
+     * @return The validated agent name
+     * @throws IllegalArgumentException if the agent name is invalid
+     */
+    fun requireValid(name: String?): String {
+        require(isValid(name)) {
+            "Invalid agent name: must be 1-32 alphanumeric characters, dashes, or underscores"
         }
         return name!!
     }

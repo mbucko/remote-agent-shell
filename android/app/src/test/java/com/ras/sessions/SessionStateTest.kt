@@ -1,5 +1,7 @@
 package com.ras.sessions
 
+import com.ras.data.sessions.AgentInfo
+import com.ras.data.sessions.AgentNameValidator
 import com.ras.data.sessions.DirectoryPathValidator
 import com.ras.data.sessions.DisplayNameValidator
 import com.ras.data.sessions.SessionErrorCodes
@@ -31,6 +33,38 @@ class SessionStateTest {
         assertEquals(3, SessionStatus.KILLING.toProto())
     }
 
+    // ==================== AgentInfo Tests ====================
+
+    @Test
+    fun `AgentInfo shortName capitalizes first char`() {
+        val agent = AgentInfo("Claude Code", "claude", "/usr/bin/claude", true)
+        assertEquals("Claude", agent.shortName)
+    }
+
+    @Test
+    fun `AgentInfo shortName handles empty binary`() {
+        val agent = AgentInfo("Unknown", "", "/path", false)
+        assertEquals("", agent.shortName)
+    }
+
+    @Test
+    fun `AgentInfo shortName handles single char binary`() {
+        val agent = AgentInfo("A Agent", "a", "/path", true)
+        assertEquals("A", agent.shortName)
+    }
+
+    @Test
+    fun `AgentInfo shortName handles already uppercase`() {
+        val agent = AgentInfo("AGENT", "AGENT", "/path", true)
+        assertEquals("AGENT", agent.shortName)
+    }
+
+    @Test
+    fun `AgentInfo shortName handles numeric first char`() {
+        val agent = AgentInfo("123 Agent", "123agent", "/path", true)
+        assertEquals("123agent", agent.shortName)
+    }
+
     @Test
     fun `SessionInfo displayText uses displayName when present`() {
         val session = createSession(displayName = "My Session")
@@ -52,6 +86,24 @@ class SessionStateTest {
     @Test
     fun `SessionInfo directoryBasename handles root path`() {
         val session = createSession(directory = "/")
+        assertEquals("", session.directoryBasename)
+    }
+
+    @Test
+    fun `SessionInfo directoryBasename handles trailing slash`() {
+        val session = createSession(directory = "/home/user/project/")
+        assertEquals("", session.directoryBasename)
+    }
+
+    @Test
+    fun `SessionInfo directoryBasename handles single level path`() {
+        val session = createSession(directory = "/home")
+        assertEquals("home", session.directoryBasename)
+    }
+
+    @Test
+    fun `SessionInfo directoryBasename handles empty path`() {
+        val session = createSession(directory = "")
         assertEquals("", session.directoryBasename)
     }
 
@@ -356,6 +408,91 @@ class SessionStateTest {
     @Test(expected = IllegalArgumentException::class)
     fun `DirectoryPathValidator requireValid throws for null`() {
         DirectoryPathValidator.requireValid(null)
+    }
+
+    // ==================== AgentNameValidator Tests ====================
+
+    @Test
+    fun `AgentNameValidator accepts valid agent names`() {
+        assertTrue(AgentNameValidator.isValid("claude"))
+        assertTrue(AgentNameValidator.isValid("aider"))
+        assertTrue(AgentNameValidator.isValid("claude-code"))
+        assertTrue(AgentNameValidator.isValid("my_agent"))
+        assertTrue(AgentNameValidator.isValid("Agent123"))
+        assertTrue(AgentNameValidator.isValid("a"))
+        assertTrue(AgentNameValidator.isValid("A".repeat(32)))
+    }
+
+    @Test
+    fun `AgentNameValidator rejects null`() {
+        assertFalse(AgentNameValidator.isValid(null))
+    }
+
+    @Test
+    fun `AgentNameValidator rejects empty string`() {
+        assertFalse(AgentNameValidator.isValid(""))
+    }
+
+    @Test
+    fun `AgentNameValidator rejects names exceeding max length`() {
+        assertFalse(AgentNameValidator.isValid("A".repeat(33)))
+        assertFalse(AgentNameValidator.isValid("A".repeat(100)))
+    }
+
+    @Test
+    fun `AgentNameValidator rejects spaces`() {
+        assertFalse(AgentNameValidator.isValid("my agent"))
+        assertFalse(AgentNameValidator.isValid(" agent"))
+        assertFalse(AgentNameValidator.isValid("agent "))
+    }
+
+    @Test
+    fun `AgentNameValidator rejects special characters`() {
+        assertFalse(AgentNameValidator.isValid("agent@123"))
+        assertFalse(AgentNameValidator.isValid("agent#test"))
+        assertFalse(AgentNameValidator.isValid("agent!"))
+        assertFalse(AgentNameValidator.isValid("agent.exe"))
+    }
+
+    @Test
+    fun `AgentNameValidator rejects path traversal`() {
+        assertFalse(AgentNameValidator.isValid(".."))
+        assertFalse(AgentNameValidator.isValid("../evil"))
+        assertFalse(AgentNameValidator.isValid("agent/.."))
+    }
+
+    @Test
+    fun `AgentNameValidator rejects slashes`() {
+        assertFalse(AgentNameValidator.isValid("agent/test"))
+        assertFalse(AgentNameValidator.isValid("/usr/bin/agent"))
+        assertFalse(AgentNameValidator.isValid("agent\\test"))
+    }
+
+    @Test
+    fun `AgentNameValidator rejects null bytes`() {
+        assertFalse(AgentNameValidator.isValid("agent\u0000"))
+        assertFalse(AgentNameValidator.isValid("\u0000agent"))
+    }
+
+    @Test
+    fun `AgentNameValidator requireValid returns valid name`() {
+        assertEquals("claude", AgentNameValidator.requireValid("claude"))
+        assertEquals("my-agent_123", AgentNameValidator.requireValid("my-agent_123"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `AgentNameValidator requireValid throws for invalid name`() {
+        AgentNameValidator.requireValid("invalid/agent")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `AgentNameValidator requireValid throws for null`() {
+        AgentNameValidator.requireValid(null)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `AgentNameValidator requireValid throws for empty`() {
+        AgentNameValidator.requireValid("")
     }
 
     private fun createSession(

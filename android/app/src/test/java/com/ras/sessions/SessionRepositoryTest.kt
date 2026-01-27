@@ -171,13 +171,46 @@ class SessionRepositoryTest {
         coVerify { mockWebRtcClient.send(any()) }
     }
 
-    @Test
-    fun `commands not sent when disconnected`() = runTest {
+    @Test(expected = IllegalStateException::class)
+    fun `listSessions throws when disconnected`() = runTest {
         // Don't connect
         repository.listSessions()
-        testDispatcher.scheduler.advanceUntilIdle()
+    }
 
-        coVerify(exactly = 0) { mockWebRtcClient.send(any()) }
+    @Test(expected = IllegalStateException::class)
+    fun `createSession throws when disconnected`() = runTest {
+        // Don't connect
+        repository.createSession("/home/user/project", "claude")
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun `killSession throws when disconnected`() = runTest {
+        // Don't connect
+        repository.killSession("abc123def456")
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun `renameSession throws when disconnected`() = runTest {
+        // Don't connect
+        repository.renameSession("abc123def456", "New Name")
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun `getAgents throws when disconnected`() = runTest {
+        // Don't connect
+        repository.getAgents()
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun `getDirectories throws when disconnected`() = runTest {
+        // Don't connect
+        repository.getDirectories("/home")
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun `refreshAgents throws when disconnected`() = runTest {
+        // Don't connect
+        repository.refreshAgents()
     }
 
     // ==========================================================================
@@ -251,6 +284,74 @@ class SessionRepositoryTest {
     fun `renameSession accepts valid session ID and display name`() = runTest {
         repository.connect(mockWebRtcClient)
         repository.renameSession("abc123def456", "Valid Name")
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify { mockWebRtcClient.send(any()) }
+    }
+
+    // ==========================================================================
+    // createSession Validation Tests
+    // ==========================================================================
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `createSession throws for relative directory path`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("home/user/project", "claude")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `createSession throws for empty directory`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("", "claude")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `createSession throws for path traversal in directory`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("/home/../etc/passwd", "claude")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `createSession throws for double slashes in directory`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("/home//user", "claude")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `createSession throws for empty agent`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("/home/user/project", "")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `createSession throws for agent with slashes`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("/home/user/project", "../evil")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `createSession throws for agent with spaces`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("/home/user/project", "my agent")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `createSession throws for agent name too long`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("/home/user/project", "a".repeat(33))
+    }
+
+    @Test
+    fun `createSession accepts valid directory and agent`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("/home/user/project", "claude")
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify { mockWebRtcClient.send(any()) }
+    }
+
+    @Test
+    fun `createSession accepts agent with dashes and underscores`() = runTest {
+        repository.connect(mockWebRtcClient)
+        repository.createSession("/home/user/project", "claude-code_v2")
         testDispatcher.scheduler.advanceUntilIdle()
         coVerify { mockWebRtcClient.send(any()) }
     }

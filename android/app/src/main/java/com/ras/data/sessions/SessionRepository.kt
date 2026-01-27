@@ -92,15 +92,16 @@ class SessionRepository @Inject constructor(
     private fun processEvent(data: ByteArray) {
         try {
             val event = ProtoSessionEvent.parseFrom(data)
+            // Each handler is wrapped to prevent one failure from stopping event processing
             when {
-                event.hasList() -> handleSessionList(event.list)
-                event.hasCreated() -> handleSessionCreated(event.created)
-                event.hasKilled() -> handleSessionKilled(event.killed)
-                event.hasRenamed() -> handleSessionRenamed(event.renamed)
-                event.hasActivity() -> handleSessionActivity(event.activity)
-                event.hasError() -> handleSessionError(event.error)
-                event.hasAgents() -> handleAgentsList(event.agents)
-                event.hasDirectories() -> handleDirectoriesList(event.directories)
+                event.hasList() -> runCatching { handleSessionList(event.list) }
+                event.hasCreated() -> runCatching { handleSessionCreated(event.created) }
+                event.hasKilled() -> runCatching { handleSessionKilled(event.killed) }
+                event.hasRenamed() -> runCatching { handleSessionRenamed(event.renamed) }
+                event.hasActivity() -> runCatching { handleSessionActivity(event.activity) }
+                event.hasError() -> runCatching { handleSessionError(event.error) }
+                event.hasAgents() -> runCatching { handleAgentsList(event.agents) }
+                event.hasDirectories() -> runCatching { handleDirectoriesList(event.directories) }
             }
         } catch (e: Exception) {
             // Invalid protobuf, ignore
@@ -156,11 +157,21 @@ class SessionRepository @Inject constructor(
     }
 
     private fun handleAgentsList(event: com.ras.proto.AgentsListEvent) {
-        _agents.value = event.agentsList.map { it.toDomain() }
+        val agents = event.agentsList.map { it.toDomain() }
+        _agents.value = agents
+        _events.tryEmit(SessionEvent.AgentsLoaded(agents))
     }
 
     private fun handleDirectoriesList(event: com.ras.proto.DirectoriesListEvent) {
-        // Directory listing is handled via callback in the command methods
+        val entries = event.entriesList.map { it.toDomain() }
+        val recent = event.recentList.toList()
+        _events.tryEmit(
+            SessionEvent.DirectoriesLoaded(
+                parent = event.parent,
+                entries = entries,
+                recentDirectories = recent
+            )
+        )
     }
 
     // ==========================================================================
@@ -180,8 +191,14 @@ class SessionRepository @Inject constructor(
 
     /**
      * Create a new session.
+     *
+     * @param directory The working directory (must be valid absolute path)
+     * @param agent The agent binary name (must be valid agent name)
+     * @throws IllegalArgumentException if directory or agent is invalid
      */
     suspend fun createSession(directory: String, agent: String) {
+        DirectoryPathValidator.requireValid(directory)
+        AgentNameValidator.requireValid(agent)
         sendCommand(
             SessionCommand.newBuilder()
                 .setCreate(
@@ -272,8 +289,15 @@ class SessionRepository @Inject constructor(
         )
     }
 
+    /**
+     * Send a command to the daemon.
+     *
+     * @throws IllegalStateException if not connected
+     */
     private suspend fun sendCommand(command: SessionCommand) {
-        webRtcClient?.send(command.toByteArray())
+        val client = webRtcClient
+            ?: throw IllegalStateException("Not connected to daemon")
+        client.send(command.toByteArray())
     }
 }
 

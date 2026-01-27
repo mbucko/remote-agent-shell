@@ -538,6 +538,149 @@ class SessionE2ETest {
         }
     }
 
+    @Test
+    fun `agents list event also emits AgentsLoaded event`() = runTest {
+        repository.connect(mockWebRtcClient)
+        advanceUntilIdle()
+
+        repository.events.test {
+            receiveChannel.send(
+                createAgentsListEvent(
+                    listOf(
+                        createProtoAgent("Claude Code", "claude", "/usr/bin/claude", true),
+                        createProtoAgent("Aider", "aider", "/usr/bin/aider", false)
+                    )
+                ).toByteArray()
+            )
+            advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is SessionEvent.AgentsLoaded)
+            val agentsLoaded = event as SessionEvent.AgentsLoaded
+            assertEquals(2, agentsLoaded.agents.size)
+            assertEquals("claude", agentsLoaded.agents[0].binary)
+            assertTrue(agentsLoaded.agents[0].available)
+            assertFalse(agentsLoaded.agents[1].available)
+        }
+    }
+
+    // ==========================================================================
+    // Directories List Event Tests
+    // ==========================================================================
+
+    @Test
+    fun `directories list event emits DirectoriesLoaded event`() = runTest {
+        repository.connect(mockWebRtcClient)
+        advanceUntilIdle()
+
+        repository.events.test {
+            receiveChannel.send(
+                createDirectoriesListEvent(
+                    parent = "/home/user",
+                    entries = listOf(
+                        createProtoDirectoryEntry("projects", "/home/user/projects", true),
+                        createProtoDirectoryEntry("documents", "/home/user/documents", true),
+                        createProtoDirectoryEntry("file.txt", "/home/user/file.txt", false)
+                    ),
+                    recent = listOf("/home/user/projects", "/home/user/work")
+                ).toByteArray()
+            )
+            advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is SessionEvent.DirectoriesLoaded)
+            val dirEvent = event as SessionEvent.DirectoriesLoaded
+            assertEquals("/home/user", dirEvent.parent)
+            assertEquals(3, dirEvent.entries.size)
+            assertEquals("projects", dirEvent.entries[0].name)
+            assertEquals("/home/user/projects", dirEvent.entries[0].path)
+            assertTrue(dirEvent.entries[0].isDirectory)
+            assertFalse(dirEvent.entries[2].isDirectory)
+            assertEquals(2, dirEvent.recentDirectories.size)
+            assertEquals("/home/user/projects", dirEvent.recentDirectories[0])
+        }
+    }
+
+    @Test
+    fun `directories list event with empty entries`() = runTest {
+        repository.connect(mockWebRtcClient)
+        advanceUntilIdle()
+
+        repository.events.test {
+            receiveChannel.send(
+                createDirectoriesListEvent(
+                    parent = "/empty",
+                    entries = emptyList(),
+                    recent = emptyList()
+                ).toByteArray()
+            )
+            advanceUntilIdle()
+
+            val event = awaitItem() as SessionEvent.DirectoriesLoaded
+            assertEquals("/empty", event.parent)
+            assertTrue(event.entries.isEmpty())
+            assertTrue(event.recentDirectories.isEmpty())
+        }
+    }
+
+    @Test
+    fun `directories list event at root`() = runTest {
+        repository.connect(mockWebRtcClient)
+        advanceUntilIdle()
+
+        repository.events.test {
+            receiveChannel.send(
+                createDirectoriesListEvent(
+                    parent = "",
+                    entries = listOf(
+                        createProtoDirectoryEntry("home", "/home", true),
+                        createProtoDirectoryEntry("usr", "/usr", true),
+                        createProtoDirectoryEntry("etc", "/etc", true)
+                    ),
+                    recent = emptyList()
+                ).toByteArray()
+            )
+            advanceUntilIdle()
+
+            val event = awaitItem() as SessionEvent.DirectoriesLoaded
+            assertEquals("", event.parent)
+            assertEquals(3, event.entries.size)
+        }
+    }
+
+    @Test
+    fun `multiple directory list events update correctly`() = runTest {
+        repository.connect(mockWebRtcClient)
+        advanceUntilIdle()
+
+        repository.events.test {
+            // First event - root
+            receiveChannel.send(
+                createDirectoriesListEvent(
+                    parent = "",
+                    entries = listOf(createProtoDirectoryEntry("home", "/home", true)),
+                    recent = emptyList()
+                ).toByteArray()
+            )
+            advanceUntilIdle()
+            val event1 = awaitItem() as SessionEvent.DirectoriesLoaded
+            assertEquals("", event1.parent)
+
+            // Second event - navigate into home
+            receiveChannel.send(
+                createDirectoriesListEvent(
+                    parent = "/home",
+                    entries = listOf(createProtoDirectoryEntry("user", "/home/user", true)),
+                    recent = listOf("/home")
+                ).toByteArray()
+            )
+            advanceUntilIdle()
+            val event2 = awaitItem() as SessionEvent.DirectoriesLoaded
+            assertEquals("/home", event2.parent)
+            assertEquals(1, event2.recentDirectories.size)
+        }
+    }
+
     // ==========================================================================
     // Command Tests - Full Request/Response Cycle
     // ==========================================================================
@@ -861,6 +1004,31 @@ class SessionE2ETest {
             .setAgents(
                 AgentsListEvent.newBuilder()
                     .addAllAgents(agents)
+                    .build()
+            )
+            .build()
+
+    private fun createProtoDirectoryEntry(
+        name: String,
+        path: String,
+        isDirectory: Boolean
+    ): DirectoryEntry = DirectoryEntry.newBuilder()
+        .setName(name)
+        .setPath(path)
+        .setIsDirectory(isDirectory)
+        .build()
+
+    private fun createDirectoriesListEvent(
+        parent: String,
+        entries: List<DirectoryEntry>,
+        recent: List<String>
+    ): ProtoSessionEvent =
+        ProtoSessionEvent.newBuilder()
+            .setDirectories(
+                DirectoriesListEvent.newBuilder()
+                    .setParent(parent)
+                    .addAllEntries(entries)
+                    .addAllRecent(recent)
                     .build()
             )
             .build()
