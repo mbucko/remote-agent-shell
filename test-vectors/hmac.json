@@ -1,0 +1,23 @@
+{
+  "description": "HMAC-SHA256 test vectors",
+  "vectors": [
+    {
+      "id": "hmac_auth_challenge",
+      "key_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "message_hex": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "expected_hmac_hex": "fc620ba9fee2a44f2ea7a4cdf04348f2fa7299feb84ea028c48f80bba0bdddb0"
+    },
+    {
+      "id": "hmac_empty_message",
+      "key_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "message_hex": "",
+      "expected_hmac_hex": "c7b5e12ec029a887022abbdc648f8380db2f41e44220ec1530553c24d81d2fee"
+    },
+    {
+      "id": "hmac_long_message",
+      "key_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "message_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "expected_hmac_hex": "cecc4a1eb9d85d1e061c0d16f0e830c3a50d76cfab314fc420e149e83133e91d"
+    }
+  ]
+}

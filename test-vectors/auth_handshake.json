@@ -1,0 +1,126 @@
+{
+  "description": "Authentication handshake test vectors",
+  "test_master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "test_auth_key_hex": "bec0c3289e346d890ea330014e23e6e7cf95f82c8bd7f5f133850c89ac165a43",
+  "vectors": [
+    {
+      "id": "full_handshake_success",
+      "description": "Complete successful handshake",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": "AuthChallenge",
+          "nonce_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "direction": "client_to_server",
+          "message": "AuthResponse",
+          "expected_hmac_hex": "281fabaa1b23bb37b2830688d327dcdfcf460699d5978e7472de171d4eada4f0",
+          "nonce_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "direction": "server_to_client",
+          "message": "AuthVerify",
+          "expected_hmac_hex": "841576054c7a813daf790e5957e0732e067b750821a15f163ab5533f8ae04bc8"
+        },
+        {
+          "direction": "server_to_client",
+          "message": "AuthSuccess",
+          "device_id": "test-device-123"
+        }
+      ],
+      "expected_result": "AUTHENTICATED"
+    },
+    {
+      "id": "wrong_client_hmac",
+      "description": "Client sends wrong HMAC",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": "AuthChallenge",
+          "nonce_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "direction": "client_to_server",
+          "message": "AuthResponse",
+          "hmac_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "nonce_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "direction": "server_to_client",
+          "message": "AuthError",
+          "expected_error_code": "INVALID_HMAC"
+        }
+      ],
+      "expected_result": "FAILED"
+    },
+    {
+      "id": "wrong_server_hmac",
+      "description": "Server sends wrong HMAC (client should reject)",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": "AuthChallenge",
+          "nonce_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "direction": "client_to_server",
+          "message": "AuthResponse",
+          "expected_hmac_hex": "281fabaa1b23bb37b2830688d327dcdfcf460699d5978e7472de171d4eada4f0",
+          "nonce_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "direction": "server_to_client",
+          "message": "AuthVerify",
+          "hmac_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "expected_result": "FAILED",
+      "expected_client_action": "CLOSE_CONNECTION"
+    },
+    {
+      "id": "invalid_nonce_length",
+      "description": "Server sends nonce with wrong length",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": "AuthChallenge",
+          "nonce_hex": "aabbccdd"
+        }
+      ],
+      "expected_result": "FAILED",
+      "expected_client_action": "CLOSE_CONNECTION"
+    },
+    {
+      "id": "unexpected_message_type",
+      "description": "Receive AuthVerify before AuthChallenge",
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": "AuthVerify",
+          "hmac_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "expected_result": "FAILED",
+      "expected_error_code": "PROTOCOL_ERROR"
+    },
+    {
+      "id": "timeout",
+      "description": "No response within timeout period",
+      "timeout_ms": 10000,
+      "steps": [
+        {
+          "direction": "server_to_client",
+          "message": "AuthChallenge",
+          "nonce_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "action": "wait",
+          "duration_ms": 15000
+        }
+      ],
+      "expected_result": "FAILED",
+      "expected_error_code": "TIMEOUT"
+    }
+  ]
+}

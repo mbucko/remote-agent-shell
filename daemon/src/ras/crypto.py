@@ -16,6 +16,7 @@ Security notes:
 import hashlib
 import hmac
 import secrets
+import struct
 from dataclasses import dataclass
 
 from cryptography.hazmat.primitives import hashes
@@ -29,11 +30,15 @@ __all__ = [
     "CryptoError",
     "KeyBundle",
     "generate_secret",
+    "generate_master_secret",  # Alias for generate_secret
     "derive_keys",
+    "derive_key",
+    "derive_ntfy_topic",
     "encrypt",
     "decrypt",
     "compute_hmac",
     "verify_hmac",
+    "compute_signaling_hmac",
 ]
 
 # Constants
@@ -203,3 +208,86 @@ def verify_hmac(key: bytes, data: bytes, expected: bytes) -> bool:
     """
     computed = compute_hmac(key, data)
     return hmac.compare_digest(computed, expected)
+
+
+# Alias for compatibility with pairing code
+generate_master_secret = generate_secret
+
+
+def derive_key(master_secret: bytes, purpose: str) -> bytes:
+    """Derive a purpose-specific key using HKDF (RFC 5869).
+
+    Uses purpose strings as defined in the pairing protocol:
+    - "auth" for authentication key
+    - "encrypt" for encryption key
+    - "ntfy" for ntfy notification key
+
+    Args:
+        master_secret: 32-byte master secret from QR code.
+        purpose: Key purpose ("auth", "encrypt", "ntfy").
+
+    Returns:
+        32-byte derived key.
+
+    Raises:
+        ValueError: If master_secret is not 32 bytes.
+    """
+    if len(master_secret) != KEY_LENGTH:
+        raise ValueError(f"Master secret must be {KEY_LENGTH} bytes")
+
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=KEY_LENGTH,
+        salt=None,
+        info=purpose.encode("utf-8"),
+    )
+    return hkdf.derive(master_secret)
+
+
+def derive_ntfy_topic(master_secret: bytes) -> str:
+    """Derive ntfy topic from master secret.
+
+    The topic is derived as: "ras-" + first 12 hex chars of SHA256(master_secret)
+
+    Args:
+        master_secret: 32-byte master secret.
+
+    Returns:
+        Topic string like "ras-9f86d081884c".
+
+    Raises:
+        ValueError: If master_secret is not 32 bytes.
+    """
+    if len(master_secret) != KEY_LENGTH:
+        raise ValueError(f"Master secret must be {KEY_LENGTH} bytes")
+
+    hash_bytes = hashlib.sha256(master_secret).digest()
+    return "ras-" + hash_bytes[:6].hex()
+
+
+def compute_signaling_hmac(
+    auth_key: bytes,
+    session_id: str,
+    timestamp: int,
+    body: bytes,
+) -> bytes:
+    """Compute HMAC for HTTP signaling request.
+
+    The HMAC input is constructed as:
+        UTF8(session_id) || BigEndian64(timestamp) || body
+
+    Args:
+        auth_key: 32-byte authentication key (derived from master secret).
+        session_id: Pairing session ID.
+        timestamp: Unix timestamp in seconds.
+        body: Request body bytes.
+
+    Returns:
+        32-byte HMAC.
+    """
+    hmac_input = (
+        session_id.encode("utf-8")
+        + struct.pack(">Q", timestamp)
+        + body
+    )
+    return compute_hmac(auth_key, hmac_input)

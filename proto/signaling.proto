@@ -1,0 +1,43 @@
+// HTTP signaling messages for WebRTC connection establishment
+// Shared between: Python daemon, Android app, iOS app
+
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+option swift_prefix = "RAS";
+
+// HTTP POST /signal/{session_id}
+// Header: X-RAS-Signature: <hmac_hex>
+// Header: X-RAS-Timestamp: <unix_timestamp>
+message SignalRequest {
+  // WebRTC SDP offer (full ICE candidates included)
+  string sdp_offer = 1;
+
+  // Device name (e.g., "Pixel 8")
+  string device_name = 2;
+
+  // Device unique ID (generated on first app launch)
+  string device_id = 3;
+}
+
+message SignalResponse {
+  // WebRTC SDP answer (full ICE candidates included)
+  string sdp_answer = 1;
+}
+
+message SignalError {
+  // Error code (generic, doesn't leak info)
+  ErrorCode code = 1;
+
+  enum ErrorCode {
+    UNKNOWN = 0;
+    INVALID_REQUEST = 1;       // Malformed request
+    INVALID_SESSION = 2;       // Session ID not found or expired
+    AUTHENTICATION_FAILED = 3; // HMAC verification failed
+    RATE_LIMITED = 4;          // Too many requests
+    INTERNAL_ERROR = 5;        // Server error
+  }
+}

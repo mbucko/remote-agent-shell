@@ -1,0 +1,165 @@
+{
+  "description": "QR code payload test vectors",
+  "format": "protobuf",
+  "vectors": [
+    {
+      "id": "valid_ipv4",
+      "fields": {
+        "version": 1,
+        "ip": "192.168.1.100",
+        "port": 8821,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-4884fdaafea4"
+      },
+      "note": "Protobuf hex computed by implementation tests"
+    },
+    {
+      "id": "valid_ipv6_full",
+      "fields": {
+        "version": 1,
+        "ip": "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+        "port": 8821,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-4884fdaafea4"
+      }
+    },
+    {
+      "id": "valid_ipv6_compressed",
+      "fields": {
+        "version": 1,
+        "ip": "2001:db8::1",
+        "port": 8821,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-4884fdaafea4"
+      }
+    },
+    {
+      "id": "valid_ipv6_localhost",
+      "fields": {
+        "version": 1,
+        "ip": "::1",
+        "port": 8821,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-4884fdaafea4"
+      }
+    },
+    {
+      "id": "port_min",
+      "fields": {
+        "version": 1,
+        "ip": "192.168.1.1",
+        "port": 1,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-4884fdaafea4"
+      }
+    },
+    {
+      "id": "port_max",
+      "fields": {
+        "version": 1,
+        "ip": "192.168.1.1",
+        "port": 65535,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-4884fdaafea4"
+      }
+    }
+  ],
+  "error_cases": [
+    {
+      "id": "invalid_version",
+      "description": "Unsupported protocol version",
+      "fields": {
+        "version": 999,
+        "ip": "192.168.1.1",
+        "port": 8821,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-abc123"
+      },
+      "expected_error": "UNSUPPORTED_VERSION"
+    },
+    {
+      "id": "missing_ip",
+      "description": "IP field is empty",
+      "fields": {
+        "version": 1,
+        "ip": "",
+        "port": 8821,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-abc123"
+      },
+      "expected_error": "MISSING_FIELD"
+    },
+    {
+      "id": "invalid_secret_length_short",
+      "description": "Master secret too short (16 bytes instead of 32)",
+      "fields": {
+        "version": 1,
+        "ip": "192.168.1.1",
+        "port": 8821,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-abc123"
+      },
+      "expected_error": "INVALID_SECRET_LENGTH"
+    },
+    {
+      "id": "invalid_secret_length_long",
+      "description": "Master secret too long (64 bytes instead of 32)",
+      "fields": {
+        "version": 1,
+        "ip": "192.168.1.1",
+        "port": 8821,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-abc123"
+      },
+      "expected_error": "INVALID_SECRET_LENGTH"
+    },
+    {
+      "id": "port_zero",
+      "description": "Port 0 is invalid",
+      "fields": {
+        "version": 1,
+        "ip": "192.168.1.1",
+        "port": 0,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-abc123"
+      },
+      "expected_error": "INVALID_PORT"
+    },
+    {
+      "id": "port_too_large",
+      "description": "Port > 65535 is invalid",
+      "fields": {
+        "version": 1,
+        "ip": "192.168.1.1",
+        "port": 65536,
+        "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "session_id": "abc123def456ghij",
+        "ntfy_topic": "ras-abc123"
+      },
+      "expected_error": "INVALID_PORT"
+    },
+    {
+      "id": "malformed_protobuf",
+      "description": "Invalid protobuf bytes",
+      "raw_bytes_hex": "ffffffff",
+      "expected_error": "PARSE_ERROR"
+    },
+    {
+      "id": "truncated_protobuf",
+      "description": "Protobuf truncated mid-field",
+      "raw_bytes_hex": "0801120a",
+      "expected_error": "PARSE_ERROR"
+    }
+  ]
+}

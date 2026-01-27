@@ -1,0 +1,42 @@
+{
+  "description": "HKDF key derivation test vectors",
+  "algorithm": "HKDF-SHA256",
+  "salt": "empty (None)",
+  "vectors": [
+    {
+      "id": "derive_auth_key_1",
+      "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "purpose": "auth",
+      "expected_key_hex": "bec0c3289e346d890ea330014e23e6e7cf95f82c8bd7f5f133850c89ac165a43"
+    },
+    {
+      "id": "derive_encrypt_key_1",
+      "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "purpose": "encrypt",
+      "expected_key_hex": "fdb096356d535edd24a3eee6f2126b77018c51dff15c86ccf6bc3c76f086c2a0"
+    },
+    {
+      "id": "derive_ntfy_key_1",
+      "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "purpose": "ntfy",
+      "expected_key_hex": "e3d801b5755b78c380d59c1285c1a65290db0334cc2994dfd048ebff2df8781f"
+    },
+    {
+      "id": "derive_topic_1",
+      "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "expected_topic": "ras-4884fdaafea4"
+    },
+    {
+      "id": "derive_auth_key_zeros",
+      "master_secret_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "purpose": "auth",
+      "expected_key_hex": "31df6cff2f7200af61bee50e3b01fad553d8e430c2b0c376e498598956d7e809"
+    },
+    {
+      "id": "derive_auth_key_ones",
+      "master_secret_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "purpose": "auth",
+      "expected_key_hex": "c24fcd4ea4a6a0c8c02fb2417b5fc998cd8191e681808cc9fa5209c9e65b0790"
+    }
+  ]
+}

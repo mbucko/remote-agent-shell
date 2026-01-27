@@ -141,62 +141,100 @@ def tmux_status() -> None:
     default=300,
     help="Timeout in seconds waiting for connection.",
 )
+@click.option(
+    "--browser",
+    "-b",
+    is_flag=True,
+    help="Open QR code in browser.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Save QR code to file.",
+)
 @click.pass_context
-def pair(ctx: click.Context, timeout: int) -> None:
+def pair(ctx: click.Context, timeout: int, browser: bool, output: str | None) -> None:
     """Generate QR code for device pairing."""
     import asyncio
 
     async def _pair():
         config = ctx.obj["config"]
 
-        from ras.connection import ConnectionInfo
-        from ras.signaling import SignalingServer
+        from ras.pairing import PairingManager, PairingState
         from ras.stun import StunClient, StunError
 
-        # Get public IP
+        # Determine display mode
+        if browser:
+            display_mode = "browser"
+        elif output:
+            display_mode = "file"
+        else:
+            display_mode = "terminal"
+
+        # Create STUN client adapter
+        class StunClientAdapter:
+            def __init__(self):
+                self._client = StunClient(servers=config.stun_servers)
+
+            async def get_public_ip(self) -> str:
+                ip, _ = await self._client.get_public_ip()
+                return ip
+
+        # Create device store (placeholder)
+        class MemoryDeviceStore:
+            async def add_device(
+                self, device_id: str, device_name: str, master_secret: bytes
+            ) -> None:
+                pass  # TODO: Implement persistent storage
+
         click.echo("Discovering public IP...")
-        stun = StunClient(servers=config.stun_servers)
+        stun_adapter = StunClientAdapter()
         try:
-            ip, _ = await stun.get_public_ip()
+            ip = await stun_adapter.get_public_ip()
+            click.echo(f"Public address: {ip}:{config.port}")
         except StunError as e:
             click.echo(f"Error: Could not get public IP: {e}", err=True)
             return
 
-        # Create signaling server and session
-        server = SignalingServer(
+        # Create pairing manager
+        manager = PairingManager(
+            stun_client=stun_adapter,
+            device_store=MemoryDeviceStore(),
             host=config.bind_address,
             port=config.port,
-            stun_servers=config.stun_servers,
         )
-        session_id = server.create_session()
 
-        info = ConnectionInfo(ip=ip, port=config.port, session_id=session_id)
+        # Track pairing completion
+        pairing_complete = asyncio.Event()
+        paired_device = {"id": None, "name": None}
 
-        click.echo(f"\nPublic address: {ip}:{config.port}")
-        click.echo(f"Session: {session_id}\n")
-        info.print_qr_terminal()
-        click.echo("\nScan this QR code with the RemoteAgentShell app")
-        click.echo("Waiting for connection...\n")
+        async def on_complete(device_id: str, device_name: str) -> None:
+            paired_device["id"] = device_id
+            paired_device["name"] = device_name
+            pairing_complete.set()
 
-        # Wait for connection
-        connected = asyncio.Event()
-        connected_peer = None
+        manager.on_pairing_complete(on_complete)
 
-        async def on_connected(sid, peer):
-            nonlocal connected_peer
-            click.echo(f"Device connected! Session: {sid}")
-            connected_peer = peer
-            connected.set()
+        # Start pairing
+        session = await manager.start_pairing(
+            display_mode=display_mode,
+            output_path=output,
+        )
 
-        server.on_connected(on_connected)
-        await server.start()
+        if display_mode == "terminal":
+            click.echo("\nScan this QR code with the RemoteAgentShell app")
 
+        # Wait for pairing or timeout
         try:
-            await asyncio.wait_for(connected.wait(), timeout=timeout)
-            click.echo("Pairing successful!")
+            await asyncio.wait_for(pairing_complete.wait(), timeout=timeout)
+            click.echo(
+                f"\nPairing successful! Device: {paired_device['name']}"
+            )
         except asyncio.TimeoutError:
-            click.echo("Timeout waiting for connection", err=True)
+            click.echo("\nTimeout waiting for connection", err=True)
         finally:
-            await server.close()
+            await manager.stop()
 
     asyncio.run(_pair())

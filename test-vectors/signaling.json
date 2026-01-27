@@ -1,0 +1,57 @@
+{
+  "description": "HTTP signaling HMAC test vectors",
+  "hmac_algorithm": "HMAC-SHA256",
+  "hmac_input_format": "UTF8(session_id) || BigEndian64(timestamp) || body_bytes",
+  "vectors": [
+    {
+      "id": "signaling_valid",
+      "auth_key_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "session_id": "abc123def456",
+      "timestamp": 1706400000,
+      "body_hex": "0a1048656c6c6f20576f726c6421",
+      "expected_signature_hex": "02e33be48610056e45744447a401a5bd9a3da2bd62b82de72a3c370b9699a4ee"
+    },
+    {
+      "id": "signaling_different_session",
+      "auth_key_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "session_id": "xyz789",
+      "timestamp": 1706400000,
+      "body_hex": "0a1048656c6c6f20576f726c6421",
+      "expected_signature_hex": "4d6f2cafd7bcfccb79f7dfa9150b50d07b87bc7714e6914f1c5a821a38e8c084"
+    },
+    {
+      "id": "signaling_different_timestamp",
+      "auth_key_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "session_id": "abc123def456",
+      "timestamp": 1706400100,
+      "body_hex": "0a1048656c6c6f20576f726c6421",
+      "expected_signature_hex": "6321f4c664c4c9dfb713269a1266c12ee249d9515b5478ac5c68c5b275da059c"
+    }
+  ],
+  "error_cases": [
+    {
+      "id": "timestamp_too_old",
+      "description": "Timestamp more than 30 seconds in past",
+      "current_time": 1706400100,
+      "request_timestamp": 1706400000,
+      "expected_error": "AUTHENTICATION_FAILED"
+    },
+    {
+      "id": "timestamp_in_future",
+      "description": "Timestamp more than 30 seconds in future",
+      "current_time": 1706400000,
+      "request_timestamp": 1706400100,
+      "expected_error": "AUTHENTICATION_FAILED"
+    },
+    {
+      "id": "wrong_signature",
+      "description": "HMAC doesn't match",
+      "expected_error": "AUTHENTICATION_FAILED"
+    },
+    {
+      "id": "unknown_session",
+      "description": "Session ID not found",
+      "expected_error": "INVALID_SESSION"
+    }
+  ]
+}

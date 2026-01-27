@@ -1,0 +1,62 @@
+// Authentication handshake messages over WebRTC data channel
+// Shared between: Python daemon, Android app, iOS app
+
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+option swift_prefix = "RAS";
+
+// Sent over WebRTC data channel "ras-control"
+// All messages wrapped in AuthEnvelope
+message AuthEnvelope {
+  oneof message {
+    AuthChallenge challenge = 1;
+    AuthResponse response = 2;
+    AuthVerify verify = 3;
+    AuthSuccess success = 4;
+    AuthError error = 5;
+  }
+}
+
+// Server -> Client: Initial challenge
+message AuthChallenge {
+  // 32 random bytes (CSPRNG)
+  bytes nonce = 1;
+}
+
+// Client -> Server: Response to challenge + client's challenge
+message AuthResponse {
+  // HMAC-SHA256(auth_key, server_nonce)
+  bytes hmac = 1;
+
+  // 32 random bytes (CSPRNG) - client's challenge to server
+  bytes nonce = 2;
+}
+
+// Server -> Client: Server proves it knows the secret
+message AuthVerify {
+  // HMAC-SHA256(auth_key, client_nonce)
+  bytes hmac = 1;
+}
+
+// Server -> Client: Authentication successful
+message AuthSuccess {
+  // Device was registered/updated
+  string device_id = 1;
+}
+
+// Either direction: Authentication failed
+message AuthError {
+  ErrorCode code = 1;
+
+  enum ErrorCode {
+    UNKNOWN = 0;
+    INVALID_HMAC = 1;     // HMAC verification failed
+    INVALID_NONCE = 2;    // Nonce format invalid
+    TIMEOUT = 3;          // Handshake took too long
+    PROTOCOL_ERROR = 4;   // Unexpected message type
+  }
+}
