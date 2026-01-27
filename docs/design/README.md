@@ -77,6 +77,7 @@ Direct peer-to-peer connection between phone and laptop.
 - STUN for NAT traversal (no relay/TURN)
 - QR code for initial pairing
 - Encrypted IP updates via ntfy when address changes
+- **Protocol Buffers** for efficient message serialization (shared schema in `/proto/`)
 
 **Status:** Designed. See [communication.md](communication.md)
 

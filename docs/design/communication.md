@@ -296,14 +296,65 @@ ntfy.sh is used only for IP change notifications.
 
 ## Message Protocol
 
-After authentication, all messages use this format:
+After authentication, all messages use **Protocol Buffers (protobuf)** for efficient binary serialization.
 
-```json
-{
-  "type": "message_type",
-  "id": "unique-message-id",
-  "timestamp": 1706384400,
-  "payload": { ... }
+### Why Protobuf?
+
+- **Compact**: Smaller payloads than JSON (important for terminal output streaming)
+- **Fast**: Binary parsing is faster than JSON text parsing
+- **Type-safe**: Schema validation, code generation for Kotlin and Python
+- **Versioned**: Easy to add fields without breaking compatibility
+
+### Proto Schema Location
+
+Shared proto files are in the repository root:
+
+```
+remote-agent-shell/
+├── proto/                    # Shared protobuf schemas
+│   ├── messages.proto        # Message envelope and common types
+│   ├── sessions.proto        # Session management messages
+│   ├── terminal.proto        # Terminal input/output messages
+│   └── clipboard.proto       # Clipboard/image transfer messages
+├── daemon/                   # Python daemon (uses protobuf)
+└── android/                  # Android app (uses protobuf)
+```
+
+### Message Envelope
+
+All messages are wrapped in a `MessageEnvelope`:
+
+```protobuf
+message MessageEnvelope {
+  uint64 id = 1;
+  uint64 timestamp = 2;
+
+  oneof payload {
+    // Session management
+    ListSessionsRequest list_sessions = 10;
+    SessionsList sessions_list = 11;
+    AttachRequest attach = 12;
+    AttachResponse attached = 13;
+    DetachRequest detach = 14;
+
+    // Terminal
+    TerminalInput input = 20;
+    TerminalOutput output = 21;
+    SpecialKey key = 22;
+    ResizeTerminal resize = 23;
+    ScrollbackRequest scrollback = 24;
+
+    // Clipboard
+    ClipboardStart clipboard_start = 30;
+    ClipboardChunk clipboard_chunk = 31;
+    ClipboardEnd clipboard_end = 32;
+    ClipboardResult clipboard_result = 33;
+
+    // Control
+    Ping ping = 40;
+    Pong pong = 41;
+    Error error = 50;
+  }
 }
 ```
 
@@ -311,16 +362,19 @@ After authentication, all messages use this format:
 
 | Type | Direction | Description |
 |------|-----------|-------------|
-| `output` | Laptop → Phone | Terminal output from agent |
-| `input` | Phone → Laptop | User input to send to agent |
-| `prompt` | Laptop → Phone | Agent is waiting for approval |
-| `approve` | Phone → Laptop | User approves action |
-| `reject` | Phone → Laptop | User rejects action |
-| `status` | Laptop → Phone | Agent status update |
-| `ping` | Both | Keepalive |
-| `pong` | Both | Keepalive response |
+| `TerminalOutput` | Laptop → Phone | Terminal output from agent |
+| `TerminalInput` | Phone → Laptop | User input to send to agent |
+| `SpecialKey` | Phone → Laptop | Special key press (Ctrl+C, etc.) |
+| `ListSessionsRequest` | Phone → Laptop | Request session list |
+| `SessionsList` | Laptop → Phone | List of available sessions |
+| `AttachRequest` | Phone → Laptop | Attach to a session |
+| `AttachResponse` | Laptop → Phone | Attach confirmation with terminal size |
+| `ClipboardStart/Chunk/End` | Phone → Laptop | Chunked clipboard transfer |
+| `ClipboardResult` | Laptop → Phone | Clipboard operation result |
+| `Ping/Pong` | Both | Keepalive |
+| `Error` | Both | Error message |
 
-**Detailed message schemas:** TBD
+**Full schema definitions:** See `/proto/*.proto` files
 
 ---
 
