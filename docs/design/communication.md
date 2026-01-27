@@ -103,35 +103,46 @@ First-time setup requires physical access to the laptop.
 
 ### Phase 2: P2P Connection (WebRTC)
 
-After scanning QR code, phone initiates WebRTC connection.
+After scanning QR code, phone connects via HTTP to exchange SDP, then establishes WebRTC.
 
 ```
 ┌──────────┐                                          ┌──────────┐
 │  Phone   │                                          │  Laptop  │
 └────┬─────┘                                          └────┬─────┘
      │                                                     │
-     │  1. Create WebRTC PeerConnection                    │
-     │     (with STUN servers, no TURN)                    │
+     │  1. Scan QR code                                    │
+     │     (get IP, port, session_id)                      │
      │                                                     │
-     │  2. Generate ICE candidates                         │
-     │     (possible ways to reach phone)                  │
+     │  2. Create WebRTC offer                             │
      │                                                     │
-     │  3. Connect to laptop's IP:port from QR             │
+     │  3. POST /signal/{session_id}                       │
+     │     body: { "offer": "sdp..." }                     │
      │─────────────────────────────────────────────────────▶
      │                                                     │
-     │  4. Exchange ICE candidates                         │
+     │  4. Laptop creates answer                           │
+     │                                                     │
+     │  5. Response: { "answer": "sdp..." }                │
      │◀────────────────────────────────────────────────────│
      │                                                     │
-     │  5. ICE negotiation / hole punching                 │
+     │  6. Both set remote descriptions                    │
+     │                                                     │
+     │  7. ICE negotiation / hole punching                 │
      │◀───────────────────────────────────────────────────▶│
      │                                                     │
-     │  6. DTLS handshake (WebRTC built-in)                │
+     │  8. DTLS handshake (WebRTC built-in)                │
      │◀───────────────────────────────────────────────────▶│
      │                                                     │
-     │  7. DataChannel open - P2P established!             │
+     │  9. DataChannel open - P2P established!             │
      │◀═══════════════════════════════════════════════════▶│
      │                                                     │
 ```
+
+**HTTP Signaling Endpoints (Daemon):**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/signal/{session_id}` | POST | Exchange SDP offer/answer |
 
 ### Phase 3: Authentication Handshake
 
