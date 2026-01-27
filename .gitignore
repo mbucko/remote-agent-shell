@@ -1,0 +1,79 @@
+# Android
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Kotlin
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Android Studio
+*.hprof
+/app/release/
+/app/debug/
+
+# Keystore files
+*.jks
+*.keystore
+
+# Google Services (contains API keys)
+google-services.json
+
+# Environment files
+.env
+.env.*
+*.local
+
+# Logs
+*.log
+
+# Test outputs
+/app/build/
+/app/outputs/
+
+# Local configuration
+local.properties
+secrets.properties
+
+# AI assistant instructions (local only)
+CLAUDE.md
+AGENT.md
+.cursorrules
+.github/copilot-instructions.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (if we add a web component)
+node_modules/
+npm-debug.log
+
+# Python (if we add server components)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
