@@ -93,6 +93,11 @@ class PeerConnection:
             logger.info("Data channel open")
             self._channel_open_event.set()
 
+        # If channel is already open (can happen for answerer), set event immediately
+        if channel.readyState == "open":
+            logger.info("Data channel already open")
+            self._channel_open_event.set()
+
         @channel.on("message")
         async def on_message(message):
             if self._message_callback:
