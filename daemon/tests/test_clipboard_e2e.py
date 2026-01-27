@@ -83,7 +83,7 @@ def default_config():
 @pytest.fixture
 def fast_timeout_config():
     """Config with fast timeout for testing."""
-    return ClipboardConfig(transfer_timeout=0.1, paste_timeout=0.1)
+    return ClipboardConfig(transfer_timeout=0.02, paste_timeout=0.02)
 
 
 @pytest.fixture
@@ -1388,7 +1388,7 @@ class TestTimeoutScenarios:
     @pytest.mark.asyncio
     async def test_81_transfer_timeout(self, send_message, send_keys, platform_info_macos, mock_clipboard):
         """81. Transfer times out with no chunks"""
-        config = ClipboardConfig(transfer_timeout=0.1)
+        config = ClipboardConfig(transfer_timeout=0.02)
         manager = ClipboardManager(
             config=config,
             send_message=send_message,
@@ -1401,7 +1401,7 @@ class TestTimeoutScenarios:
             image_start=ImageStart(transfer_id="t", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
 
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
 
         error_msgs = [m[0][0] for m in send_message.call_args_list if get_message_type(m[0][0]) == "error"]
         assert len(error_msgs) == 1
@@ -1412,7 +1412,7 @@ class TestTimeoutScenarios:
     @pytest.mark.asyncio
     async def test_82_timeout_clears_state(self, send_message, send_keys, platform_info_macos, mock_clipboard):
         """82. Timeout clears transfer state"""
-        config = ClipboardConfig(transfer_timeout=0.1)
+        config = ClipboardConfig(transfer_timeout=0.02)
         manager = ClipboardManager(
             config=config,
             send_message=send_message,
@@ -1425,7 +1425,7 @@ class TestTimeoutScenarios:
             image_start=ImageStart(transfer_id="t", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
 
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
         assert manager._current_transfer is None
 
         manager.cleanup()
@@ -1433,7 +1433,7 @@ class TestTimeoutScenarios:
     @pytest.mark.asyncio
     async def test_83_timeout_resets_on_chunk(self, send_message, send_keys, platform_info_macos, mock_clipboard):
         """83. Timeout resets when chunk received"""
-        config = ClipboardConfig(transfer_timeout=0.2)
+        config = ClipboardConfig(transfer_timeout=0.05)
         manager = ClipboardManager(
             config=config,
             send_message=send_message,
@@ -1446,11 +1446,11 @@ class TestTimeoutScenarios:
             image_start=ImageStart(transfer_id="t", total_size=10, format=ImageFormat.PNG, total_chunks=2)
         ))
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.03)
         await manager.handle_message(ClipboardMessage(
             image_chunk=ImageChunk(transfer_id="t", index=0, data=b"12345")
         ))
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.03)
 
         # Should NOT have timed out
         error_msgs = [m[0][0] for m in send_message.call_args_list if get_message_type(m[0][0]) == "error"]
@@ -1461,7 +1461,7 @@ class TestTimeoutScenarios:
     @pytest.mark.asyncio
     async def test_84_can_start_after_timeout(self, send_message, send_keys, platform_info_macos, mock_clipboard):
         """84. Can start new transfer after timeout"""
-        config = ClipboardConfig(transfer_timeout=0.1)
+        config = ClipboardConfig(transfer_timeout=0.02)
         manager = ClipboardManager(
             config=config,
             send_message=send_message,
@@ -1474,7 +1474,7 @@ class TestTimeoutScenarios:
         await manager.handle_message(ClipboardMessage(
             image_start=ImageStart(transfer_id="t1", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
 
         # Second transfer succeeds
         await manager.handle_message(ClipboardMessage(
@@ -1491,7 +1491,7 @@ class TestTimeoutScenarios:
     @pytest.mark.asyncio
     async def test_85_timeout_message_includes_duration(self, send_message, send_keys, platform_info_macos, mock_clipboard):
         """85. Timeout message includes duration"""
-        config = ClipboardConfig(transfer_timeout=0.1)
+        config = ClipboardConfig(transfer_timeout=0.02)
         manager = ClipboardManager(
             config=config,
             send_message=send_message,
@@ -1503,7 +1503,7 @@ class TestTimeoutScenarios:
         await manager.handle_message(ClipboardMessage(
             image_start=ImageStart(transfer_id="t", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
 
         error_msgs = [m[0][0] for m in send_message.call_args_list if get_message_type(m[0][0]) == "error"]
         assert "0.1" in error_msgs[0].error.message or "second" in error_msgs[0].error.message.lower()
@@ -1513,7 +1513,7 @@ class TestTimeoutScenarios:
     @pytest.mark.asyncio
     async def test_86_timeout_includes_transfer_id(self, send_message, send_keys, platform_info_macos, mock_clipboard):
         """86. Timeout error includes transfer ID"""
-        config = ClipboardConfig(transfer_timeout=0.1)
+        config = ClipboardConfig(transfer_timeout=0.02)
         manager = ClipboardManager(
             config=config,
             send_message=send_message,
@@ -1525,7 +1525,7 @@ class TestTimeoutScenarios:
         await manager.handle_message(ClipboardMessage(
             image_start=ImageStart(transfer_id="my-timeout-id", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
 
         error_msgs = [m[0][0] for m in send_message.call_args_list if get_message_type(m[0][0]) == "error"]
         assert error_msgs[0].error.transfer_id == "my-timeout-id"

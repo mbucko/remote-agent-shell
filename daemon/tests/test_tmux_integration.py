@@ -10,6 +10,8 @@ import tempfile
 import uuid
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from ras.tmux import TmuxService
 
 

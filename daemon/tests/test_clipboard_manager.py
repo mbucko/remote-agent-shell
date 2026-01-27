@@ -996,7 +996,7 @@ class TestTimeout:
         from ras.clipboard_manager import ClipboardManager
 
         # Use short timeout for test
-        config = ClipboardConfig(transfer_timeout=0.1)
+        config = ClipboardConfig(transfer_timeout=0.02)
 
         manager = ClipboardManager(
             config=config,
@@ -1018,7 +1018,7 @@ class TestTimeout:
         await manager.handle_message(msg)
 
         # Wait for timeout
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.05)
 
         # Should have sent timeout error
         error_msgs = [
@@ -1040,7 +1040,7 @@ class TestTimeout:
         import betterproto
         from ras.clipboard_manager import ClipboardManager
 
-        config = ClipboardConfig(transfer_timeout=0.2)
+        config = ClipboardConfig(transfer_timeout=0.05)
 
         manager = ClipboardManager(
             config=config,
@@ -1062,7 +1062,7 @@ class TestTimeout:
         await manager.handle_message(start_msg)
 
         # Wait partial timeout
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.03)
 
         # Send chunk (resets timeout)
         chunk_msg = ClipboardMessage(
@@ -1075,7 +1075,7 @@ class TestTimeout:
         await manager.handle_message(chunk_msg)
 
         # Wait another partial timeout
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.03)
 
         # Should NOT have timed out (timeout was reset)
         error_msgs = [

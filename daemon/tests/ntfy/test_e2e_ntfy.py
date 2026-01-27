@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
 import pytest
+
+pytestmark = pytest.mark.integration
 from cryptography.exceptions import InvalidTag
 
 from ras.crypto import derive_key, derive_ntfy_topic, generate_secret
