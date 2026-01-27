@@ -108,7 +108,7 @@ class TestTmuxNameVectors:
         # Basic cases
         ("/home/user/myproject", "claude", "ras-claude-myproject"),
         ("/home/user/my-project", "aider", "ras-aider-my-project"),
-        ("/home/user/my_project", "cursor", "ras-cursor-my_project"),
+        ("/home/user/my_project", "cursor", "ras-cursor-my-project"),
 
         # Mixed case agent (should lowercase)
         ("/home/user/project", "Claude", "ras-claude-project"),
@@ -120,8 +120,9 @@ class TestTmuxNameVectors:
         ("/home/user/my@project", "claude", "ras-claude-my-project"),
         ("/home/user/my#project!", "claude", "ras-claude-my-project"),
 
-        # Long directory name (should truncate)
-        ("/home/user/" + "a" * 100, "claude", "ras-claude-" + "a" * 38),  # Total 50 chars
+        # Long directory name (should truncate to 50 total)
+        # "ras-claude-" = 11 chars, so dir can be 39 chars max
+        ("/home/user/" + "a" * 100, "claude", "ras-claude-" + "a" * 39),
 
         # Path with trailing slash
         ("/home/user/project/", "claude", "ras-claude-project"),

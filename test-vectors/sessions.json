@@ -42,7 +42,7 @@
         "id": "long_name",
         "directory": "/home/user/repos/this-is-a-very-long-project-name-that-exceeds-limits",
         "agent": "claude",
-        "expected": "ras-claude-this-is-a-very-long-project-name-that-"
+        "expected": "ras-claude-this-is-a-very-long-project-name-that-e"
       },
       {
         "id": "dots_only",
