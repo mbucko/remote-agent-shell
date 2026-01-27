@@ -1,0 +1,137 @@
+// Clipboard protocol messages for RemoteAgentShell
+// Shared between: Python daemon, Android app, iOS app
+
+syntax = "proto3";
+
+package ras.clipboard;
+
+option java_package = "com.ras.proto.clipboard";
+option java_multiple_files = true;
+option swift_prefix = "RAS";
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_SIZE_EXCEEDED = 1;
+  ERROR_CODE_INVALID_FORMAT = 2;
+  ERROR_CODE_TRANSFER_IN_PROGRESS = 3;
+  ERROR_CODE_INVALID_CHUNK = 4;
+  ERROR_CODE_CHUNK_MISSING = 5;
+  ERROR_CODE_TRANSFER_TIMEOUT = 6;
+  ERROR_CODE_CLIPBOARD_UNAVAILABLE = 7;
+  ERROR_CODE_CLIPBOARD_FAILED = 8;
+  ERROR_CODE_PASTE_FAILED = 9;
+  ERROR_CODE_NO_SESSION = 10;
+  ERROR_CODE_CANCELLED = 11;
+}
+
+enum ImageFormat {
+  IMAGE_FORMAT_UNSPECIFIED = 0;
+  IMAGE_FORMAT_JPEG = 1;
+  IMAGE_FORMAT_PNG = 2;
+  IMAGE_FORMAT_GIF = 3;
+  IMAGE_FORMAT_WEBP = 4;
+}
+
+enum ContentType {
+  CONTENT_TYPE_UNSPECIFIED = 0;
+  CONTENT_TYPE_IMAGE = 1;
+  CONTENT_TYPE_TEXT = 2;
+}
+
+// ============================================================================
+// Phone -> Daemon Messages
+// ============================================================================
+
+// Start an image transfer
+message ImageStart {
+  string transfer_id = 1;
+  int64 total_size = 2;
+  ImageFormat format = 3;
+  int32 total_chunks = 4;
+}
+
+// Image chunk data
+message ImageChunk {
+  string transfer_id = 1;
+  int32 index = 2;
+  bytes data = 3;  // Raw bytes, no base64 needed
+}
+
+// Cancel an image transfer
+message ImageCancel {
+  string transfer_id = 1;
+}
+
+// Text to paste (size <= threshold, no approval needed)
+message TextPaste {
+  string text = 1;
+}
+
+// Text to paste after user approval (size > threshold)
+message TextPasteApproved {
+  string text = 1;
+}
+
+// ============================================================================
+// Daemon -> Phone Messages
+// ============================================================================
+
+// Transfer progress update
+message Progress {
+  string transfer_id = 1;
+  int32 received_chunks = 2;
+  int32 total_chunks = 3;
+  int64 received_bytes = 4;
+  int64 total_bytes = 5;
+}
+
+// Transfer/paste completed successfully
+message Complete {
+  string transfer_id = 1;  // Empty for text
+  ContentType content_type = 2;
+}
+
+// Large text requires user approval
+message ApprovalRequired {
+  int64 size = 1;
+  string preview = 2;  // First ~100 chars
+}
+
+// Error occurred
+message Error {
+  string transfer_id = 1;  // May be empty
+  ErrorCode code = 2;
+  string message = 3;
+}
+
+// Transfer was cancelled
+message Cancelled {
+  string transfer_id = 1;
+}
+
+// ============================================================================
+// Wrapper Message
+// ============================================================================
+
+// All clipboard messages wrapped in oneof
+message ClipboardMessage {
+  oneof payload {
+    // Phone -> Daemon
+    ImageStart image_start = 1;
+    ImageChunk image_chunk = 2;
+    ImageCancel image_cancel = 3;
+    TextPaste text_paste = 4;
+    TextPasteApproved text_paste_approved = 5;
+
+    // Daemon -> Phone
+    Progress progress = 10;
+    Complete complete = 11;
+    ApprovalRequired approval_required = 12;
+    Error error = 13;
+    Cancelled cancelled = 14;
+  }
+}
