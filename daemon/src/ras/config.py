@@ -7,6 +7,12 @@ from typing import Any, Callable
 import yaml
 
 
+DEFAULT_STUN_SERVERS = [
+    "stun:stun.l.google.com:19302",
+    "stun:stun.cloudflare.com:3478",
+]
+
+
 @dataclass
 class Config:
     """Daemon configuration."""
@@ -17,6 +23,7 @@ class Config:
     default_agent: str | None = None
     log_level: str = "INFO"
     log_file: str | None = None
+    stun_servers: list[str] = field(default_factory=lambda: DEFAULT_STUN_SERVERS.copy())
 
 
 def get_config_path(custom_path: Path | None = None) -> Path:
@@ -74,4 +81,5 @@ def load_config(
         default_agent=data.get("default_agent", Config.default_agent),
         log_level=data.get("log_level", Config.log_level),
         log_file=data.get("log_file", Config.log_file),
+        stun_servers=data.get("stun_servers", DEFAULT_STUN_SERVERS.copy()),
     )

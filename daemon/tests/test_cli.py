@@ -80,3 +80,15 @@ class TestConfigOption:
         result = runner.invoke(main, ["--config", str(config_file), "version"])
 
         assert result.exit_code == 0
+
+
+class TestPairCommand:
+    """Test pair command."""
+
+    def test_pair_command_exists(self, runner):
+        """ras pair --help shows usage."""
+        result = runner.invoke(main, ["pair", "--help"])
+
+        assert result.exit_code == 0
+        assert "QR code" in result.output
+        assert "--timeout" in result.output
