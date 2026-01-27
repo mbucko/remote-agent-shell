@@ -280,6 +280,14 @@ def calculate_hmac(auth_key: bytes, nonce: bytes) -> bytes:
     ).digest()
 ```
 
+### Rate Limiting
+
+To prevent brute force attacks:
+- Track failed authentication attempts
+- Exponential backoff after failures (1s, 2s, 4s, 8s, 16s)
+- Lock out after 5 consecutive failures
+- Reset counter on successful authentication
+
 ---
 
 ## Replay Protection
@@ -297,10 +305,11 @@ All P2P messages include a timestamp and sequence number:
 }
 ```
 
-**Validation rules:**
-- Timestamp must be within 30 seconds of current time
-- Sequence number must be greater than last seen
+**Validation rules (IPsec/DTLS sliding window pattern):**
+- Timestamp must be within 60 seconds of current time
+- Sequence number must be within the replay window (reject if below floor)
 - Duplicate sequence numbers rejected
+- Track highest seen seq to establish window floor
 
 ### ntfy Messages
 
@@ -448,3 +457,25 @@ For future algorithm changes:
 ```
 
 Version field allows protocol upgrades while maintaining backward compatibility.
+
+### Version Downgrade Protection
+
+When parsing connection info or messages, reject versions lower than the minimum supported. Never allow downgrade to insecure protocol versions.
+
+---
+
+## Future Considerations
+
+### Perfect Forward Secrecy (PFS)
+
+Current design: If the master secret is compromised, all past messages can be decrypted.
+
+WebRTC's DTLS layer provides PFS at the transport level. However, our application-layer encryption (using static `encrypt_key`) does not have PFS.
+
+**Post-MVP enhancement:** Implement ephemeral key exchange (like Signal's Double Ratchet) for application-layer PFS.
+
+### Key Rotation
+
+Currently, no mechanism to rotate keys without re-pairing. For MVP, users can revoke a device and re-pair if compromise is suspected.
+
+**Post-MVP enhancement:** Add key rotation protocol that allows refreshing keys without re-scanning QR code.
