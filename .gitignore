@@ -57,6 +57,9 @@ AGENT.md
 .cursorrules
 .github/copilot-instructions.md
 
+# Task planning (local only)
+.tasks/
+
 # OS
 .DS_Store
 Thumbs.db
