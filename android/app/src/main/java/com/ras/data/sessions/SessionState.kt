@@ -222,3 +222,135 @@ object SessionIdValidator {
         return sessionId!!
     }
 }
+
+/**
+ * Display name validation utilities.
+ *
+ * Display names must be:
+ * - 1-64 characters
+ * - Alphanumeric, dashes, underscores, and spaces only
+ * - No leading/trailing whitespace
+ * - No control characters
+ */
+object DisplayNameValidator {
+    private const val MIN_LENGTH = 1
+    private const val MAX_LENGTH = 64
+    private val ALLOWED_CHARS = Regex("^[a-zA-Z0-9\\-_ ]+$")
+
+    /**
+     * Validation result with specific error information.
+     */
+    sealed class ValidationResult {
+        data object Valid : ValidationResult()
+        data class Invalid(val reason: String) : ValidationResult()
+    }
+
+    /**
+     * Validate a display name.
+     *
+     * @param name The display name to validate
+     * @return ValidationResult indicating if valid or why invalid
+     */
+    fun validate(name: String?): ValidationResult {
+        if (name == null) {
+            return ValidationResult.Invalid("Name cannot be null")
+        }
+
+        // Check for leading/trailing whitespace
+        if (name != name.trim()) {
+            return ValidationResult.Invalid("Name cannot have leading or trailing spaces")
+        }
+
+        // Check length
+        if (name.length < MIN_LENGTH) {
+            return ValidationResult.Invalid("Name must be at least $MIN_LENGTH character")
+        }
+        if (name.length > MAX_LENGTH) {
+            return ValidationResult.Invalid("Name must be at most $MAX_LENGTH characters")
+        }
+
+        // Check for control characters
+        if (name.any { it.code < 32 }) {
+            return ValidationResult.Invalid("Name cannot contain control characters")
+        }
+
+        // Check allowed characters
+        if (!ALLOWED_CHARS.matches(name)) {
+            return ValidationResult.Invalid("Name can only contain letters, numbers, dashes, underscores, and spaces")
+        }
+
+        return ValidationResult.Valid
+    }
+
+    /**
+     * Check if a display name is valid.
+     *
+     * @param name The display name to validate
+     * @return true if valid, false otherwise
+     */
+    fun isValid(name: String?): Boolean = validate(name) is ValidationResult.Valid
+
+    /**
+     * Validate and return the display name, or throw if invalid.
+     *
+     * @param name The display name to validate
+     * @return The validated display name
+     * @throws IllegalArgumentException if the display name is invalid
+     */
+    fun requireValid(name: String?): String {
+        val result = validate(name)
+        require(result is ValidationResult.Valid) {
+            (result as ValidationResult.Invalid).reason
+        }
+        return name!!
+    }
+}
+
+/**
+ * Directory path validation utilities.
+ *
+ * Paths must:
+ * - Be absolute (start with /)
+ * - Not contain path traversal sequences (..)
+ * - Not contain null bytes
+ * - Not be empty
+ */
+object DirectoryPathValidator {
+    /**
+     * Validate a directory path.
+     *
+     * @param path The path to validate
+     * @return true if valid, false otherwise
+     */
+    fun isValid(path: String?): Boolean {
+        if (path.isNullOrEmpty()) return false
+
+        // Must be absolute path
+        if (!path.startsWith("/")) return false
+
+        // Reject path traversal
+        if (path.contains("..")) return false
+
+        // Reject null bytes
+        if (path.contains("\u0000")) return false
+
+        // Reject dangerous patterns
+        if (path.contains("//")) return false
+
+        return true
+    }
+
+    /**
+     * Validate and return the path, or throw if invalid.
+     *
+     * @param path The path to validate
+     * @return The validated path
+     * @throws IllegalArgumentException if the path is invalid
+     */
+    fun requireValid(path: String?): String {
+        require(isValid(path)) {
+            "Invalid directory path: must be absolute, no path traversal"
+        }
+        return path!!
+    }
+}

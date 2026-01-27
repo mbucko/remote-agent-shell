@@ -1,5 +1,7 @@
 package com.ras.sessions
 
+import com.ras.data.sessions.DirectoryPathValidator
+import com.ras.data.sessions.DisplayNameValidator
 import com.ras.data.sessions.SessionErrorCodes
 import com.ras.data.sessions.SessionIdValidator
 import com.ras.data.sessions.SessionInfo
@@ -170,6 +172,190 @@ class SessionStateTest {
     @Test(expected = IllegalArgumentException::class)
     fun `SessionIdValidator requireValid throws for null`() {
         SessionIdValidator.requireValid(null)
+    }
+
+    // ==================== DisplayNameValidator Tests ====================
+
+    @Test
+    fun `DisplayNameValidator accepts valid names`() {
+        assertTrue(DisplayNameValidator.isValid("My Session"))
+        assertTrue(DisplayNameValidator.isValid("project-name"))
+        assertTrue(DisplayNameValidator.isValid("project_name"))
+        assertTrue(DisplayNameValidator.isValid("Project 123"))
+        assertTrue(DisplayNameValidator.isValid("a"))
+        assertTrue(DisplayNameValidator.isValid("A".repeat(64)))
+    }
+
+    @Test
+    fun `DisplayNameValidator rejects null`() {
+        assertFalse(DisplayNameValidator.isValid(null))
+    }
+
+    @Test
+    fun `DisplayNameValidator rejects empty string`() {
+        assertFalse(DisplayNameValidator.isValid(""))
+    }
+
+    @Test
+    fun `DisplayNameValidator rejects names exceeding max length`() {
+        assertFalse(DisplayNameValidator.isValid("A".repeat(65)))
+        assertFalse(DisplayNameValidator.isValid("A".repeat(100)))
+    }
+
+    @Test
+    fun `DisplayNameValidator rejects leading whitespace`() {
+        assertFalse(DisplayNameValidator.isValid(" Name"))
+        assertFalse(DisplayNameValidator.isValid("  Name"))
+    }
+
+    @Test
+    fun `DisplayNameValidator rejects trailing whitespace`() {
+        assertFalse(DisplayNameValidator.isValid("Name "))
+        assertFalse(DisplayNameValidator.isValid("Name  "))
+    }
+
+    @Test
+    fun `DisplayNameValidator rejects control characters`() {
+        assertFalse(DisplayNameValidator.isValid("Name\u0000"))
+        assertFalse(DisplayNameValidator.isValid("Name\t"))
+        assertFalse(DisplayNameValidator.isValid("Name\n"))
+        assertFalse(DisplayNameValidator.isValid("\u0001Name"))
+    }
+
+    @Test
+    fun `DisplayNameValidator rejects special characters`() {
+        assertFalse(DisplayNameValidator.isValid("Name@123"))
+        assertFalse(DisplayNameValidator.isValid("Name#123"))
+        assertFalse(DisplayNameValidator.isValid("Name!"))
+        assertFalse(DisplayNameValidator.isValid("Name/path"))
+        assertFalse(DisplayNameValidator.isValid("Name\\path"))
+        assertFalse(DisplayNameValidator.isValid("Name.ext"))
+    }
+
+    @Test
+    fun `DisplayNameValidator validate returns specific error for null`() {
+        val result = DisplayNameValidator.validate(null)
+        assertTrue(result is DisplayNameValidator.ValidationResult.Invalid)
+        assertEquals("Name cannot be null", (result as DisplayNameValidator.ValidationResult.Invalid).reason)
+    }
+
+    @Test
+    fun `DisplayNameValidator validate returns specific error for leading whitespace`() {
+        val result = DisplayNameValidator.validate(" Name")
+        assertTrue(result is DisplayNameValidator.ValidationResult.Invalid)
+        assertEquals("Name cannot have leading or trailing spaces", (result as DisplayNameValidator.ValidationResult.Invalid).reason)
+    }
+
+    @Test
+    fun `DisplayNameValidator validate returns specific error for too short`() {
+        val result = DisplayNameValidator.validate("")
+        assertTrue(result is DisplayNameValidator.ValidationResult.Invalid)
+        assertEquals("Name must be at least 1 character", (result as DisplayNameValidator.ValidationResult.Invalid).reason)
+    }
+
+    @Test
+    fun `DisplayNameValidator validate returns specific error for too long`() {
+        val result = DisplayNameValidator.validate("A".repeat(65))
+        assertTrue(result is DisplayNameValidator.ValidationResult.Invalid)
+        assertEquals("Name must be at most 64 characters", (result as DisplayNameValidator.ValidationResult.Invalid).reason)
+    }
+
+    @Test
+    fun `DisplayNameValidator validate returns specific error for control chars`() {
+        val result = DisplayNameValidator.validate("Name\t")
+        assertTrue(result is DisplayNameValidator.ValidationResult.Invalid)
+        assertEquals("Name cannot contain control characters", (result as DisplayNameValidator.ValidationResult.Invalid).reason)
+    }
+
+    @Test
+    fun `DisplayNameValidator validate returns specific error for invalid chars`() {
+        val result = DisplayNameValidator.validate("Name@123")
+        assertTrue(result is DisplayNameValidator.ValidationResult.Invalid)
+        assertEquals("Name can only contain letters, numbers, dashes, underscores, and spaces", (result as DisplayNameValidator.ValidationResult.Invalid).reason)
+    }
+
+    @Test
+    fun `DisplayNameValidator requireValid returns valid name`() {
+        assertEquals("My Session", DisplayNameValidator.requireValid("My Session"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `DisplayNameValidator requireValid throws for invalid name`() {
+        DisplayNameValidator.requireValid("Invalid@Name")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `DisplayNameValidator requireValid throws for null`() {
+        DisplayNameValidator.requireValid(null)
+    }
+
+    // ==================== DirectoryPathValidator Tests ====================
+
+    @Test
+    fun `DirectoryPathValidator accepts valid absolute paths`() {
+        assertTrue(DirectoryPathValidator.isValid("/"))
+        assertTrue(DirectoryPathValidator.isValid("/home"))
+        assertTrue(DirectoryPathValidator.isValid("/home/user"))
+        assertTrue(DirectoryPathValidator.isValid("/home/user/repos/project"))
+        assertTrue(DirectoryPathValidator.isValid("/Users/name/Documents"))
+    }
+
+    @Test
+    fun `DirectoryPathValidator rejects null`() {
+        assertFalse(DirectoryPathValidator.isValid(null))
+    }
+
+    @Test
+    fun `DirectoryPathValidator rejects empty string`() {
+        assertFalse(DirectoryPathValidator.isValid(""))
+    }
+
+    @Test
+    fun `DirectoryPathValidator rejects relative paths`() {
+        assertFalse(DirectoryPathValidator.isValid("home/user"))
+        assertFalse(DirectoryPathValidator.isValid("./project"))
+        assertFalse(DirectoryPathValidator.isValid("project"))
+    }
+
+    @Test
+    fun `DirectoryPathValidator rejects path traversal`() {
+        assertFalse(DirectoryPathValidator.isValid("/home/user/.."))
+        assertFalse(DirectoryPathValidator.isValid("/home/../etc/passwd"))
+        assertFalse(DirectoryPathValidator.isValid("/../root"))
+        assertFalse(DirectoryPathValidator.isValid("/home/user/../.."))
+    }
+
+    @Test
+    fun `DirectoryPathValidator rejects null bytes`() {
+        assertFalse(DirectoryPathValidator.isValid("/home/user\u0000"))
+        assertFalse(DirectoryPathValidator.isValid("/home\u0000/user"))
+    }
+
+    @Test
+    fun `DirectoryPathValidator rejects double slashes`() {
+        assertFalse(DirectoryPathValidator.isValid("/home//user"))
+        assertFalse(DirectoryPathValidator.isValid("//home/user"))
+        assertFalse(DirectoryPathValidator.isValid("/home/user//"))
+    }
+
+    @Test
+    fun `DirectoryPathValidator requireValid returns valid path`() {
+        assertEquals("/home/user", DirectoryPathValidator.requireValid("/home/user"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `DirectoryPathValidator requireValid throws for relative path`() {
+        DirectoryPathValidator.requireValid("home/user")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `DirectoryPathValidator requireValid throws for path traversal`() {
+        DirectoryPathValidator.requireValid("/home/../etc")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `DirectoryPathValidator requireValid throws for null`() {
+        DirectoryPathValidator.requireValid(null)
     }
 
     private fun createSession(

@@ -196,8 +196,12 @@ class SessionRepository @Inject constructor(
 
     /**
      * Kill a session.
+     *
+     * @param sessionId The session ID (must be valid 12-char alphanumeric)
+     * @throws IllegalArgumentException if sessionId is invalid
      */
     suspend fun killSession(sessionId: String) {
+        SessionIdValidator.requireValid(sessionId)
         sendCommand(
             SessionCommand.newBuilder()
                 .setKill(
@@ -211,8 +215,14 @@ class SessionRepository @Inject constructor(
 
     /**
      * Rename a session.
+     *
+     * @param sessionId The session ID (must be valid 12-char alphanumeric)
+     * @param newName The new display name (1-64 chars, alphanumeric/dash/underscore/space)
+     * @throws IllegalArgumentException if sessionId or newName is invalid
      */
     suspend fun renameSession(sessionId: String, newName: String) {
+        SessionIdValidator.requireValid(sessionId)
+        DisplayNameValidator.requireValid(newName)
         sendCommand(
             SessionCommand.newBuilder()
                 .setRename(
