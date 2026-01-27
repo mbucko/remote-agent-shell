@@ -178,3 +178,47 @@ enum class SessionAction {
     KILL,
     RENAME
 }
+
+/**
+ * Session ID validation utilities.
+ *
+ * Session IDs are:
+ * - Exactly 12 alphanumeric characters (a-zA-Z0-9)
+ * - Must not contain path traversal sequences (..), slashes, or null bytes
+ */
+object SessionIdValidator {
+    private val SESSION_ID_PATTERN = Regex("^[a-zA-Z0-9]{12}$")
+
+    /**
+     * Validate a session ID format.
+     *
+     * @param sessionId The session ID to validate
+     * @return true if valid, false otherwise
+     */
+    fun isValid(sessionId: String?): Boolean {
+        if (sessionId == null) return false
+        if (sessionId.length != 12) return false
+
+        // Reject dangerous sequences
+        if (sessionId.contains("..")) return false
+        if (sessionId.contains("/")) return false
+        if (sessionId.contains("\\")) return false
+        if (sessionId.contains("\u0000")) return false
+
+        return SESSION_ID_PATTERN.matches(sessionId)
+    }
+
+    /**
+     * Validate and return the session ID, or throw if invalid.
+     *
+     * @param sessionId The session ID to validate
+     * @return The validated session ID
+     * @throws IllegalArgumentException if the session ID is invalid
+     */
+    fun requireValid(sessionId: String?): String {
+        require(isValid(sessionId)) {
+            "Invalid session ID: must be exactly 12 alphanumeric characters"
+        }
+        return sessionId!!
+    }
+}

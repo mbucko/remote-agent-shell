@@ -1,6 +1,7 @@
 package com.ras.sessions
 
 import com.ras.data.sessions.SessionErrorCodes
+import com.ras.data.sessions.SessionIdValidator
 import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionStatus
 import org.junit.Assert.assertEquals
@@ -102,6 +103,73 @@ class SessionStateTest {
             "Unknown error occurred",
             SessionErrorCodes.getDisplayMessage("UNKNOWN_CODE", "Unknown error occurred")
         )
+    }
+
+    // ==================== SessionIdValidator Tests ====================
+
+    @Test
+    fun `SessionIdValidator accepts valid 12 char alphanumeric IDs`() {
+        assertTrue(SessionIdValidator.isValid("abc123def456"))
+        assertTrue(SessionIdValidator.isValid("AbCdEf123456"))
+        assertTrue(SessionIdValidator.isValid("ABCDEFGHIJKL"))
+        assertTrue(SessionIdValidator.isValid("123456789012"))
+        assertTrue(SessionIdValidator.isValid("aaaaaaaaaaaa"))
+    }
+
+    @Test
+    fun `SessionIdValidator rejects null`() {
+        assertFalse(SessionIdValidator.isValid(null))
+    }
+
+    @Test
+    fun `SessionIdValidator rejects wrong length`() {
+        assertFalse(SessionIdValidator.isValid(""))
+        assertFalse(SessionIdValidator.isValid("abc123"))
+        assertFalse(SessionIdValidator.isValid("abc123def4567"))
+        assertFalse(SessionIdValidator.isValid("a"))
+        assertFalse(SessionIdValidator.isValid("abc123def456789"))
+    }
+
+    @Test
+    fun `SessionIdValidator rejects special characters`() {
+        assertFalse(SessionIdValidator.isValid("abc-123-def4"))
+        assertFalse(SessionIdValidator.isValid("abc_123_def4"))
+        assertFalse(SessionIdValidator.isValid("abc.123.def4"))
+        assertFalse(SessionIdValidator.isValid("abc 123 def4"))
+        assertFalse(SessionIdValidator.isValid("abc!@#def456"))
+    }
+
+    @Test
+    fun `SessionIdValidator rejects path traversal`() {
+        assertFalse(SessionIdValidator.isValid("..abc123def4"))
+        assertFalse(SessionIdValidator.isValid("abc..def4567"))
+        assertFalse(SessionIdValidator.isValid("abcdef4567.."))
+    }
+
+    @Test
+    fun `SessionIdValidator rejects slashes`() {
+        assertFalse(SessionIdValidator.isValid("abc/def/ghij"))
+        assertFalse(SessionIdValidator.isValid("abc\\def\\ghij"))
+    }
+
+    @Test
+    fun `SessionIdValidator rejects null bytes`() {
+        assertFalse(SessionIdValidator.isValid("abc\u0000def45678"))
+    }
+
+    @Test
+    fun `SessionIdValidator requireValid returns valid ID`() {
+        assertEquals("abc123def456", SessionIdValidator.requireValid("abc123def456"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `SessionIdValidator requireValid throws for invalid ID`() {
+        SessionIdValidator.requireValid("invalid")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `SessionIdValidator requireValid throws for null`() {
+        SessionIdValidator.requireValid(null)
     }
 
     private fun createSession(
