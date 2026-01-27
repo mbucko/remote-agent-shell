@@ -58,6 +58,7 @@ class TmuxService:
         self,
         executor: Optional[CommandExecutorProtocol] = None,
         tmux_path: str = "tmux",
+        socket_path: Optional[str] = None,
     ):
         """Initialize TmuxService.
 
@@ -65,9 +66,12 @@ class TmuxService:
             executor: Command executor for running tmux. Defaults to
                 AsyncCommandExecutor.
             tmux_path: Path to tmux binary. Defaults to "tmux".
+            socket_path: Path to tmux socket for isolated server.
+                If None, uses default tmux socket.
         """
         self._executor = executor or AsyncCommandExecutor()
         self._tmux_path = tmux_path
+        self._socket_path = socket_path
         self._verified = False
 
     async def _run(
@@ -82,7 +86,11 @@ class TmuxService:
         Returns:
             Tuple of (stdout, stderr, returncode).
         """
-        return await self._executor.run(self._tmux_path, *args, check=check)
+        if self._socket_path:
+            full_args = (self._tmux_path, "-S", self._socket_path, *args)
+        else:
+            full_args = (self._tmux_path, *args)
+        return await self._executor.run(*full_args, check=check)
 
     async def verify(self) -> None:
         """Verify tmux is available and version is sufficient.
@@ -285,3 +293,57 @@ class TmuxService:
         )
 
         return stdout.decode()
+
+    async def create_session(
+        self, name: str, detached: bool = True
+    ) -> str:
+        """Create a new tmux session.
+
+        Args:
+            name: Session name.
+            detached: If True, create detached (default).
+
+        Returns:
+            Session ID (e.g., "$0").
+        """
+        await self.verify()
+
+        args = ["new-session", "-s", name, "-P", "-F", "#{session_id}"]
+        if detached:
+            args.insert(1, "-d")
+
+        stdout, _, _ = await self._run(*args)
+        return stdout.decode().strip()
+
+    async def kill_session(self, session_id: str) -> None:
+        """Kill a tmux session.
+
+        Args:
+            session_id: Session ID or name to kill.
+        """
+        await self._run("kill-session", "-t", session_id, check=False)
+
+    async def kill_server(self) -> None:
+        """Kill the tmux server (useful for cleanup)."""
+        await self._run("kill-server", check=False)
+
+    async def new_window(
+        self, session_id: str, name: Optional[str] = None
+    ) -> str:
+        """Create a new window in a session.
+
+        Args:
+            session_id: Session ID (e.g., "$0").
+            name: Optional window name.
+
+        Returns:
+            Window ID (e.g., "@1").
+        """
+        await self.verify()
+
+        args = ["new-window", "-t", session_id, "-P", "-F", "#{window_id}"]
+        if name:
+            args.extend(["-n", name])
+
+        stdout, _, _ = await self._run(*args)
+        return stdout.decode().strip()
