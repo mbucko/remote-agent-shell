@@ -295,13 +295,19 @@ class TmuxService:
         return stdout.decode()
 
     async def create_session(
-        self, name: str, detached: bool = True
+        self,
+        name: str,
+        detached: bool = True,
+        directory: str = "",
+        command: str = "",
     ) -> str:
         """Create a new tmux session.
 
         Args:
             name: Session name.
             detached: If True, create detached (default).
+            directory: Working directory for the session.
+            command: Command to run in the session.
 
         Returns:
             Session ID (e.g., "$0").
@@ -311,6 +317,10 @@ class TmuxService:
         args = ["new-session", "-s", name, "-P", "-F", "#{session_id}"]
         if detached:
             args.insert(1, "-d")
+        if directory:
+            args.extend(["-c", directory])
+        if command:
+            args.append(command)
 
         stdout, _, _ = await self._run(*args)
         return stdout.decode().strip()

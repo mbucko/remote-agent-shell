@@ -1,1 +1,1 @@
-# Session management tests
+"""Tests for session management module."""
