@@ -18,6 +18,7 @@ from ras.ip_provider import IpProvider, LocalNetworkIpProvider
 from ras.message_dispatcher import MessageDispatcher
 from ras.server import UnifiedServer
 from ras.proto.ras import (
+    ConnectionReady,
     InitialState,
     Ping,
     Pong,
@@ -99,6 +100,10 @@ class Daemon:
         self._server_runner = None
         self._keepalive_task: Optional[asyncio.Task] = None
 
+        # Connections pending ConnectionReady handshake
+        # Device IDs in this set have connected but not yet sent ConnectionReady
+        self._pending_ready: set[str] = set()
+
     async def start(self) -> None:
         """Start the daemon.
 
@@ -169,6 +174,7 @@ class Daemon:
         self._dispatcher.register("terminal", self._handle_terminal_command)
         self._dispatcher.register("clipboard", self._handle_clipboard_message)
         self._dispatcher.register("ping", self._handle_ping)
+        self._dispatcher.register("connection_ready", self._handle_connection_ready)
         logger.debug("Message handlers registered")
 
     async def _initialize_managers(self) -> None:
@@ -326,6 +332,22 @@ class Daemon:
         if conn:
             await conn.send(bytes(event))
 
+    async def _handle_connection_ready(
+        self, device_id: str, ready: ConnectionReady
+    ) -> None:
+        """Handle ConnectionReady signal from phone.
+
+        The phone sends this after its ConnectionManager is fully set up
+        and ready to receive encrypted messages. Only then do we send
+        InitialState to avoid the message being lost.
+        """
+        if device_id in self._pending_ready:
+            self._pending_ready.discard(device_id)
+            logger.debug(f"Received ConnectionReady from {device_id}")
+            await self._send_initial_state(device_id)
+        else:
+            logger.warning(f"Unexpected ConnectionReady from {device_id}")
+
     # ==================== Event Broadcasting ====================
 
     async def _broadcast_session_event(self, event: SessionEvent) -> None:
@@ -378,6 +400,9 @@ class Daemon:
         """Handle connection lost event."""
         logger.info(f"Connection lost: {device_id}")
 
+        # Clean up pending ready state
+        self._pending_ready.discard(device_id)
+
         # Clean up terminal attachments
         if self._terminal_manager:
             await self._terminal_manager.on_connection_closed(device_id)
@@ -419,8 +444,9 @@ class Daemon:
             ),
         )
 
-        # Send initial state
-        await self._send_initial_state(device_id)
+        # Mark as pending - wait for ConnectionReady before sending InitialState
+        # This ensures the phone's event listener is set up before we send
+        self._pending_ready.add(device_id)
 
         logger.info(f"New connection: {device_id} ({device_name})")
 

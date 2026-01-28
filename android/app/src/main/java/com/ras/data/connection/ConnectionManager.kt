@@ -5,8 +5,14 @@ import com.ras.crypto.BytesCodec
 import com.ras.crypto.CryptoException
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.di.IoDispatcher
+import com.ras.proto.ConnectionReady
+import com.ras.proto.InitialState
+import com.ras.proto.Ping
+import com.ras.proto.RasCommand
+import com.ras.proto.RasEvent
 import com.ras.proto.SessionCommand
 import com.ras.proto.SessionEvent as ProtoSessionEvent
+import com.ras.proto.SessionListEvent
 import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import kotlinx.coroutines.CoroutineDispatcher
@@ -86,6 +92,17 @@ class ConnectionManager @Inject constructor(
     )
     val terminalEvents: SharedFlow<ProtoTerminalEvent> = _terminalEvents.asSharedFlow()
 
+    // Initial state (emitted once when connection is ready and daemon sends InitialState)
+    private val _initialState = MutableSharedFlow<InitialState>(
+        replay = 1, // Keep latest for late subscribers
+        extraBufferCapacity = 1
+    )
+    val initialState: SharedFlow<InitialState> = _initialState.asSharedFlow()
+
+    // Last ping time for calculating latency
+    @Volatile
+    private var lastPingTimestamp: Long = 0
+
     // Connection errors
     private val _connectionErrors = MutableSharedFlow<ConnectionError>(
         replay = 0,
@@ -115,6 +132,17 @@ class ConnectionManager @Inject constructor(
             startEventListener()
             startHeartbeatMonitor()
             Log.i(TAG, "Connected to daemon with encryption")
+
+            // Send ConnectionReady to signal daemon we're ready to receive InitialState
+            // This must happen AFTER event listener is started
+            scope.launch {
+                try {
+                    sendConnectionReady()
+                    Log.i(TAG, "Sent ConnectionReady to daemon")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to send ConnectionReady", e)
+                }
+            }
         }
     }
 
@@ -142,26 +170,58 @@ class ConnectionManager @Inject constructor(
     }
 
     /**
-     * Send a session command to the daemon (encrypted).
+     * Send ConnectionReady to signal daemon we're ready to receive messages.
+     */
+    private suspend fun sendConnectionReady() {
+        val command = RasCommand.newBuilder()
+            .setConnectionReady(ConnectionReady.getDefaultInstance())
+            .build()
+        val plaintext = command.toByteArray()
+        sendEncrypted(plaintext)
+    }
+
+    /**
+     * Send a session command to the daemon (encrypted, wrapped in RasCommand).
      *
      * @throws IllegalStateException if not connected
      * @throws IllegalArgumentException if message too large
      */
     suspend fun sendSessionCommand(command: SessionCommand) {
-        val plaintext = command.toByteArray()
+        val wrapped = RasCommand.newBuilder()
+            .setSession(command)
+            .build()
+        val plaintext = wrapped.toByteArray()
         validateMessageSize(plaintext, "SessionCommand")
         sendEncrypted(plaintext)
     }
 
     /**
-     * Send a terminal command to the daemon (encrypted).
+     * Send a terminal command to the daemon (encrypted, wrapped in RasCommand).
      *
      * @throws IllegalStateException if not connected
      * @throws IllegalArgumentException if message too large
      */
     suspend fun sendTerminalCommand(command: TerminalCommand) {
-        val plaintext = command.toByteArray()
+        val wrapped = RasCommand.newBuilder()
+            .setTerminal(command)
+            .build()
+        val plaintext = wrapped.toByteArray()
         validateMessageSize(plaintext, "TerminalCommand")
+        sendEncrypted(plaintext)
+    }
+
+    /**
+     * Send a ping to measure latency.
+     */
+    suspend fun sendPing() {
+        lastPingTimestamp = System.currentTimeMillis()
+        val ping = Ping.newBuilder()
+            .setTimestamp(lastPingTimestamp)
+            .build()
+        val command = RasCommand.newBuilder()
+            .setPing(ping)
+            .build()
+        val plaintext = command.toByteArray()
         sendEncrypted(plaintext)
     }
 
@@ -256,9 +316,8 @@ class ConnectionManager @Inject constructor(
     /**
      * Route incoming message to appropriate handler.
      *
-     * Messages are decrypted first, then parsed as protobuf.
-     * Protocol uses distinct message types, so we try parsing in order.
-     * If one succeeds, we emit to the appropriate flow.
+     * Messages are decrypted first, then parsed as RasEvent wrapper.
+     * The wrapper contains the actual event type (session, terminal, initial_state, etc).
      */
     private suspend fun routeMessage(encryptedData: ByteArray) {
         // Validate message size
@@ -286,31 +345,55 @@ class ConnectionManager @Inject constructor(
             return
         }
 
-        // Try parsing as SessionEvent first (more common)
-        try {
-            val sessionEvent = ProtoSessionEvent.parseFrom(data)
-            // Check if it has any known field set (not an empty/default message)
-            if (hasSessionEventContent(sessionEvent)) {
-                _sessionEvents.emit(sessionEvent)
-                return
-            }
+        // Parse as RasEvent wrapper
+        val event = try {
+            RasEvent.parseFrom(data)
         } catch (e: Exception) {
-            // Not a valid SessionEvent, try TerminalEvent
+            Log.e(TAG, "Failed to parse RasEvent: ${e.message}")
+            return
         }
 
-        // Try parsing as TerminalEvent
-        try {
-            val terminalEvent = ProtoTerminalEvent.parseFrom(data)
-            if (hasTerminalEventContent(terminalEvent)) {
-                _terminalEvents.emit(terminalEvent)
-                return
+        // Route based on event type
+        when (event.eventCase) {
+            RasEvent.EventCase.SESSION -> {
+                if (hasSessionEventContent(event.session)) {
+                    _sessionEvents.emit(event.session)
+                }
             }
-        } catch (e: Exception) {
-            // Not a valid TerminalEvent either
+            RasEvent.EventCase.TERMINAL -> {
+                if (hasTerminalEventContent(event.terminal)) {
+                    _terminalEvents.emit(event.terminal)
+                }
+            }
+            RasEvent.EventCase.INITIAL_STATE -> {
+                Log.i(TAG, "Received InitialState: ${event.initialState.sessionsCount} sessions, ${event.initialState.agentsCount} agents")
+                _initialState.emit(event.initialState)
+                // Also emit as SessionListEvent for backward compatibility
+                if (event.initialState.sessionsCount > 0) {
+                    val listEvent = ProtoSessionEvent.newBuilder()
+                        .setList(
+                            SessionListEvent.newBuilder()
+                                .addAllSessions(event.initialState.sessionsList)
+                        )
+                        .build()
+                    _sessionEvents.emit(listEvent)
+                }
+            }
+            RasEvent.EventCase.PONG -> {
+                val latency = System.currentTimeMillis() - event.pong.timestamp
+                Log.d(TAG, "Pong received, latency: ${latency}ms")
+            }
+            RasEvent.EventCase.ERROR -> {
+                Log.e(TAG, "Error from daemon: ${event.error.errorCode} - ${event.error.message}")
+            }
+            RasEvent.EventCase.CLIPBOARD -> {
+                Log.d(TAG, "Clipboard message received")
+                // TODO: Handle clipboard events
+            }
+            RasEvent.EventCase.EVENT_NOT_SET, null -> {
+                Log.w(TAG, "Received RasEvent with no event set")
+            }
         }
-
-        // Unknown message type - log and ignore
-        Log.w(TAG, "Received unknown message type (${data.size} bytes)")
     }
 
     /**

@@ -16,6 +16,7 @@ from ras.daemon import Daemon
 from ras.device_store import PairedDevice
 from ras.message_dispatcher import MessageDispatcher
 from ras.proto.ras import (
+    ConnectionReady,
     InitialState,
     ListSessionsCommand,
     Ping,
@@ -96,7 +97,7 @@ class TestConnectionLifecycle:
 
     @pytest.mark.asyncio
     async def test_e2e_cl01_new_device_connection(self, config):
-        """E2E-CL01: New device connects and receives initial state."""
+        """E2E-CL01: New device connects, sends ConnectionReady, receives initial state."""
         session_manager = AsyncMock()
         session_manager.list_sessions = AsyncMock(
             return_value=SessionEvent(list=SessionListEvent(sessions=[]))
@@ -107,6 +108,7 @@ class TestConnectionLifecycle:
 
         daemon = Daemon(config=config, session_manager=session_manager)
         await daemon._initialize_stores()
+        daemon._register_handlers()
 
         # Add device via pairing (normal flow)
         await daemon._device_store.add_device(
@@ -126,10 +128,23 @@ class TestConnectionLifecycle:
             codec=codec,
         )
 
-        # Should have sent initial state
+        # No initial state sent yet - waiting for ConnectionReady
+        assert len(peer.sent_data) == 0
+
+        # Device should be in pending_ready set
+        assert "new_device_123" in daemon._pending_ready
+
+        # Simulate phone sending ConnectionReady
+        connection_ready_cmd = RasCommand(connection_ready=ConnectionReady())
+        await daemon._on_message("new_device_123", bytes(connection_ready_cmd))
+
+        # Now should have sent initial state
         assert len(peer.sent_data) == 1
         event = RasEvent().parse(peer.sent_data[0])
         assert event.initial_state is not None
+
+        # Device should no longer be in pending_ready
+        assert "new_device_123" not in daemon._pending_ready
 
         # Device should be stored
         assert daemon._device_store.is_paired("new_device_123")
