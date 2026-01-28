@@ -453,6 +453,14 @@ class UnifiedServer:
                         session.peer,
                         session.auth_key,
                     )
+
+                # Hand off complete - null out peer so cleanup doesn't close it
+                session.peer = None
+
+                # Stop ntfy subscriber (no longer needed)
+                if session._ntfy_subscriber:
+                    await session._ntfy_subscriber.close()
+                    session._ntfy_subscriber = None
             else:
                 session.state = "failed"
                 logger.warning(f"Pairing auth failed for session {session_id[:8]}...")

@@ -5,6 +5,7 @@ import com.google.protobuf.ByteString
 import com.ras.crypto.HmacUtils
 import com.ras.crypto.KeyDerivation
 import com.ras.crypto.hexToBytes
+import com.ras.data.connection.ConnectionManager
 import com.ras.data.keystore.KeyManager
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.proto.AuthChallenge
@@ -40,6 +41,7 @@ class PairingManagerTest {
     private lateinit var webRTCClient: WebRTCClient
     private lateinit var signalingClient: SignalingClient
     private lateinit var ntfyClient: NtfyClientInterface
+    private lateinit var connectionManager: ConnectionManager
 
     private val masterSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
     private val authKey = KeyDerivation.deriveKey(masterSecret, "auth")
@@ -52,6 +54,7 @@ class PairingManagerTest {
         webRTCClient = mockk(relaxed = true)
         signalingClient = mockk()
         ntfyClient = MockNtfyClient()
+        connectionManager = mockk(relaxed = true)
 
         every { keyManager.getOrCreateDeviceId() } returns "test-device-id"
         every { webRTCClientFactory.create() } returns webRTCClient
@@ -74,7 +77,8 @@ class PairingManagerTest {
             signalingClient = signalingClient,
             keyManager = keyManager,
             webRTCClientFactory = webRTCClientFactory,
-            ntfyClient = ntfyClient
+            ntfyClient = ntfyClient,
+            connectionManager = connectionManager
         ).also {
             it.scope = testScope
         }
@@ -477,6 +481,84 @@ class PairingManagerTest {
         val finalState = pairingManager.state.value
         assertTrue("Expected Failed state, got: $finalState", finalState is PairingState.Failed)
         assertEquals(PairingState.FailureReason.AUTH_FAILED, (finalState as PairingState.Failed).reason)
+    }
+
+    // ============================================================================
+    // Connection Handoff Tests
+    // ============================================================================
+
+    @Test
+    fun `connection is handed off to ConnectionManager after successful auth`() = runTest {
+        // Setup WebRTC mock
+        coEvery { webRTCClient.createOffer() } returns "test-sdp-offer"
+        coEvery { webRTCClient.setRemoteDescription(any()) } just Runs
+        coEvery { webRTCClient.waitForDataChannel(any()) } returns true
+
+        // Setup data channel for auth
+        val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
+        val serverChannel = Channel<ByteArray>(Channel.UNLIMITED)
+
+        coEvery { webRTCClient.send(any()) } coAnswers {
+            serverChannel.send(firstArg())
+        }
+        coEvery { webRTCClient.receive() } coAnswers {
+            clientChannel.receive()
+        }
+
+        // Setup signaling mock
+        coEvery { signalingClient.sendSignal(any(), any(), any(), any(), any(), any(), any()) } returns
+            SignalingResult.Success("test-sdp-answer")
+
+        val pairingManager = createPairingManager(this)
+
+        val payload = createValidPayload()
+
+        // Start pairing and simulate auth handshake in parallel
+        val authJob = launch {
+            // Wait for auth client to start receiving
+            val responseBytes = serverChannel.receive()
+            val responseEnvelope = AuthEnvelope.parseFrom(responseBytes)
+            val clientNonce = responseEnvelope.response.nonce.toByteArray()
+
+            // Send verify
+            val serverHmac = HmacUtils.computeHmac(authKey, clientNonce)
+            val verify = AuthEnvelope.newBuilder()
+                .setVerify(
+                    AuthVerify.newBuilder()
+                        .setHmac(ByteString.copyFrom(serverHmac))
+                )
+                .build()
+            clientChannel.send(verify.toByteArray())
+
+            // Send success
+            val success = AuthEnvelope.newBuilder()
+                .setSuccess(
+                    AuthSuccess.newBuilder()
+                        .setDeviceId("server-assigned-device-id")
+                )
+                .build()
+            clientChannel.send(success.toByteArray())
+        }
+
+        // Server sends challenge
+        val serverNonce = ByteArray(32) { 0xAA.toByte() }
+        val challenge = AuthEnvelope.newBuilder()
+            .setChallenge(
+                AuthChallenge.newBuilder()
+                    .setNonce(ByteString.copyFrom(serverNonce))
+            )
+            .build()
+        clientChannel.send(challenge.toByteArray())
+
+        // Start pairing
+        pairingManager.startPairing(payload)
+
+        // Process all pending coroutines
+        advanceUntilIdle()
+        authJob.join()
+
+        // Verify connection was handed off to ConnectionManager
+        verify { connectionManager.connect(webRTCClient) }
     }
 
     // ============================================================================

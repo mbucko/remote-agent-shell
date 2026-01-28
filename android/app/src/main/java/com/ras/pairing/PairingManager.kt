@@ -2,6 +2,7 @@ package com.ras.pairing
 
 import android.content.Context
 import com.ras.crypto.KeyDerivation
+import com.ras.data.connection.ConnectionManager
 import com.ras.data.keystore.KeyManager
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.signaling.NtfyClientInterface
@@ -25,7 +26,8 @@ class PairingManager @Inject constructor(
     private val signalingClient: SignalingClient,
     private val keyManager: KeyManager,
     private val webRTCClientFactory: WebRTCClient.Factory,
-    private val ntfyClient: NtfyClientInterface
+    private val ntfyClient: NtfyClientInterface,
+    private val connectionManager: ConnectionManager
 ) {
     // Internal scope that can be overridden for testing
     // Using lazy initialization to allow tests to override before first use
@@ -156,6 +158,13 @@ class PairingManager @Inject constructor(
                 currentPayload?.let { payload ->
                     keyManager.storeMasterSecret(payload.masterSecret)
                     keyManager.storeDaemonInfo(payload.ip, payload.port, payload.ntfyTopic)
+                }
+
+                // Hand off WebRTC connection to ConnectionManager
+                // This transfers ownership - ConnectionManager now manages the connection
+                webRTCClient?.let { client ->
+                    connectionManager.connect(client)
+                    webRTCClient = null  // Clear reference so cleanup() doesn't close it
                 }
 
                 _state.value = PairingState.Authenticated(result.deviceId)
