@@ -1,13 +1,16 @@
 package com.ras.signaling
 
+import android.util.Log
 import com.ras.crypto.KeyDerivation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -80,11 +83,16 @@ interface NtfyClientInterface {
 class NtfySignalingClient(
     private val server: String = DEFAULT_SERVER,
     private val httpClient: OkHttpClient = defaultHttpClient(),
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val maxReconnectAttempts: Int = DEFAULT_MAX_RECONNECT_ATTEMPTS
 ) : NtfyClientInterface {
 
     companion object {
+        private const val TAG = "NtfySignalingClient"
         const val DEFAULT_SERVER = "https://ntfy.sh"
+        const val DEFAULT_MAX_RECONNECT_ATTEMPTS = 3
+        private const val INITIAL_BACKOFF_MS = 1000L
+        private const val MAX_BACKOFF_MS = 10000L
 
         private fun defaultHttpClient() = OkHttpClient.Builder()
             .readTimeout(0, TimeUnit.MILLISECONDS)  // No read timeout for WebSocket
@@ -147,9 +155,33 @@ class NtfySignalingClient(
      *
      * The Flow emits NtfyMessage objects for each received message.
      * Only "message" events contain actual data; "keepalive" and "open" are control events.
+     *
+     * Features:
+     * - Automatic reconnection on failure (up to maxReconnectAttempts)
+     * - Exponential backoff between retries
+     * - Connection state logging
      */
-    override suspend fun subscribe(topic: String): Flow<NtfyMessage> = callbackFlow {
+    override suspend fun subscribe(topic: String): Flow<NtfyMessage> = createWebSocketFlow(topic)
+        .retryWhen { cause, attempt ->
+            if (attempt < maxReconnectAttempts && cause is IOException) {
+                val backoffMs = minOf(INITIAL_BACKOFF_MS * (1 shl attempt.toInt()), MAX_BACKOFF_MS)
+                Log.w(TAG, "WebSocket connection failed, retrying in ${backoffMs}ms (attempt ${attempt + 1}/$maxReconnectAttempts)")
+                delay(backoffMs)
+                true
+            } else {
+                Log.e(TAG, "WebSocket connection failed after $attempt attempts, giving up", cause)
+                false
+            }
+        }
+
+    /**
+     * Create the underlying WebSocket flow.
+     */
+    private fun createWebSocketFlow(topic: String): Flow<NtfyMessage> = callbackFlow {
         val wsUrl = buildWsUrl(topic, server)
+        val connectionStartTime = System.currentTimeMillis()
+
+        Log.d(TAG, "Connecting to WebSocket: $wsUrl")
 
         val request = Request.Builder()
             .url(wsUrl)
@@ -157,24 +189,32 @@ class NtfySignalingClient(
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                // Connection opened
+                Log.i(TAG, "WebSocket connected to topic: $topic")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val message = parseNtfyMessage(text)
                 if (message != null) {
+                    if (message.event == "message") {
+                        Log.d(TAG, "Received message on topic: $topic")
+                    }
                     trySend(message)
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                val duration = System.currentTimeMillis() - connectionStartTime
+                Log.e(TAG, "WebSocket failed after ${duration}ms: ${t.message}", t)
                 close(IOException("WebSocket failed: ${t.message}", t))
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                val duration = System.currentTimeMillis() - connectionStartTime
                 if (code != 1000) {
+                    Log.w(TAG, "WebSocket closed unexpectedly after ${duration}ms: code=$code, reason=$reason")
                     close(IOException("WebSocket closed: $reason"))
                 } else {
+                    Log.i(TAG, "WebSocket closed normally after ${duration}ms")
                     close()
                 }
             }
@@ -183,6 +223,7 @@ class NtfySignalingClient(
         currentWebSocket = httpClient.newWebSocket(request, listener)
 
         awaitClose {
+            Log.d(TAG, "Closing WebSocket connection")
             currentWebSocket?.close(1000, "Client disconnect")
             currentWebSocket = null
         }

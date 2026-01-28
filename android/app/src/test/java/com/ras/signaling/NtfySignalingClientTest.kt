@@ -277,6 +277,101 @@ class NtfySignalingClientMainSafetyTest {
     }
 }
 
+/**
+ * Tests for WebSocket reliability features (ping/pong, reconnection).
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+class NtfySignalingClientReliabilityTest {
+
+    @Test
+    fun `ping interval is configured for cellular keep-alive`() {
+        // Verify OkHttpClient is configured with 15-second ping interval
+        // to keep WebSocket alive through cellular NAT timeouts
+        val client = NtfySignalingClient()
+
+        // Use reflection to access the private httpClient field
+        val field = NtfySignalingClient::class.java.getDeclaredField("httpClient")
+        field.isAccessible = true
+        val httpClient = field.get(client) as OkHttpClient
+
+        assertEquals(
+            "Ping interval should be 15 seconds for cellular keep-alive",
+            15_000,
+            httpClient.pingIntervalMillis
+        )
+    }
+
+    @Test
+    fun `max reconnect attempts defaults to 3`() {
+        assertEquals(3, NtfySignalingClient.DEFAULT_MAX_RECONNECT_ATTEMPTS)
+    }
+
+    @Test
+    fun `max reconnect attempts can be configured`() {
+        val client = NtfySignalingClient(maxReconnectAttempts = 5)
+
+        val field = NtfySignalingClient::class.java.getDeclaredField("maxReconnectAttempts")
+        field.isAccessible = true
+        val attempts = field.get(client) as Int
+
+        assertEquals(5, attempts)
+    }
+
+    @Test
+    fun `mock client handles disconnect gracefully`() = runTest {
+        val mock = MockNtfyClient()
+        var messagesReceived = 0
+
+        val job = launch {
+            mock.subscribe("topic").collect {
+                messagesReceived++
+            }
+        }
+
+        advanceUntilIdle()
+        assertTrue("Should be subscribed", mock.isSubscribed)
+
+        // Deliver a message
+        mock.deliverMessage("test")
+        advanceUntilIdle()
+        assertEquals(1, messagesReceived)
+
+        // Simulate disconnect - no more messages should be delivered
+        mock.simulateDisconnect()
+        advanceUntilIdle()
+
+        // After disconnect, subscription state is cleared
+        assertFalse("Should no longer be subscribed after disconnect", mock.isSubscribed)
+
+        job.cancel()
+    }
+
+    @Test
+    fun `mock client can be reset for reuse`() = runTest {
+        val mock = MockNtfyClient()
+
+        // Subscribe and publish
+        val job = launch {
+            mock.subscribe("topic").collect { }
+        }
+        advanceUntilIdle()
+        mock.publish("topic", "message")
+
+        // Disconnect
+        mock.simulateDisconnect()
+        advanceUntilIdle()
+
+        // Reset
+        mock.reset()
+
+        assertFalse(mock.isSubscribed)
+        assertEquals(0, mock.getPublishedMessages().size)
+
+        job.cancel()
+    }
+}
+
 // Helper extension for tests
 private fun String.hexToBytes(): ByteArray {
     require(length % 2 == 0) { "Hex string must have even length" }
