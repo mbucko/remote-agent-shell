@@ -185,81 +185,106 @@ def pair(ctx: click.Context, timeout: int, browser: bool, output: str | None) ->
     import asyncio
 
     async def _pair():
+        import tempfile
+        import webbrowser
+        import aiohttp
+
+        from ras.pairing.qr_generator import QrGenerator
+
         config = ctx.obj["config"]
+        base_url = f"http://127.0.0.1:{config.port}"
+        session_id = None
 
-        from ras.pairing import PairingManager, PairingState
-        from ras.stun import StunClient, StunError
-
-        # Determine display mode
-        if browser:
-            display_mode = "browser"
-        elif output:
-            display_mode = "file"
-        else:
-            display_mode = "terminal"
-
-        # Create STUN client adapter
-        class StunClientAdapter:
-            def __init__(self):
-                self._client = StunClient(servers=config.stun_servers)
-
-            async def get_public_ip(self) -> str:
-                ip, _ = await self._client.get_public_ip()
-                return ip
-
-        # Create device store (placeholder)
-        class MemoryDeviceStore:
-            async def add_device(
-                self, device_id: str, device_name: str, master_secret: bytes
-            ) -> None:
-                pass  # TODO: Implement persistent storage
-
-        click.echo("Discovering public IP...")
-        stun_adapter = StunClientAdapter()
         try:
-            ip = await stun_adapter.get_public_ip()
-            click.echo(f"Public address: {ip}:{config.port}")
-        except StunError as e:
-            click.echo(f"Error: Could not get public IP: {e}", err=True)
-            return
+            async with aiohttp.ClientSession() as http:
+                # 1. Start pairing session via daemon API
+                click.echo("Connecting to daemon...")
+                try:
+                    async with http.post(f"{base_url}/api/pair") as resp:
+                        if resp.status == 429:
+                            click.echo("Error: Too many pairing sessions active", err=True)
+                            return
+                        if resp.status != 200:
+                            click.echo(f"Error: Failed to start pairing (HTTP {resp.status})", err=True)
+                            return
 
-        # Create pairing manager
-        manager = PairingManager(
-            stun_client=stun_adapter,
-            device_store=MemoryDeviceStore(),
-            host=config.bind_address,
-            port=config.port,
-        )
+                        data = await resp.json()
+                        session_id = data["session_id"]
+                        qr_data = data["qr_data"]
+                except aiohttp.ClientConnectorError:
+                    click.echo("Error: Cannot connect to daemon. Is it running?", err=True)
+                    click.echo("Start the daemon with: ras daemon start", err=True)
+                    return
 
-        # Track pairing completion
-        pairing_complete = asyncio.Event()
-        paired_device = {"id": None, "name": None}
+                # 2. Create QR generator with proper protobuf encoding
+                master_secret = bytes.fromhex(qr_data["master_secret"])
+                qr_gen = QrGenerator(
+                    ip=qr_data["ip"],
+                    port=qr_data["port"],
+                    master_secret=master_secret,
+                    session_id=qr_data["session_id"],
+                    ntfy_topic=qr_data["ntfy_topic"],
+                )
 
-        async def on_complete(device_id: str, device_name: str) -> None:
-            paired_device["id"] = device_id
-            paired_device["name"] = device_name
-            pairing_complete.set()
+                click.echo(f"\nPairing session started")
+                click.echo(f"Public address: {qr_data['ip']}:{qr_data['port']}")
 
-        manager.on_pairing_complete(on_complete)
+                # 3. Display QR code
+                if browser:
+                    html = qr_gen.to_html()
+                    with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w") as f:
+                        f.write(html)
+                        webbrowser.open(f"file://{f.name}")
+                    click.echo("QR code opened in browser")
+                elif output:
+                    qr_gen.to_png(output)
+                    click.echo(f"QR code saved to: {output}")
+                else:
+                    click.echo(qr_gen.to_terminal())
+                    click.echo("Scan this QR code with the RemoteAgentShell app")
 
-        # Start pairing
-        session = await manager.start_pairing(
-            display_mode=display_mode,
-            output_path=output,
-        )
+                # 4. Poll for completion
+                click.echo("\nWaiting for device to connect...")
+                poll_interval = 1.0
+                elapsed = 0.0
 
-        if display_mode == "terminal":
-            click.echo("\nScan this QR code with the RemoteAgentShell app")
+                while elapsed < timeout:
+                    await asyncio.sleep(poll_interval)
+                    elapsed += poll_interval
 
-        # Wait for pairing or timeout
-        try:
-            await asyncio.wait_for(pairing_complete.wait(), timeout=timeout)
-            click.echo(
-                f"\nPairing successful! Device: {paired_device['name']}"
-            )
-        except asyncio.TimeoutError:
-            click.echo("\nTimeout waiting for connection", err=True)
+                    async with http.get(f"{base_url}/api/pair/{session_id}") as resp:
+                        if resp.status == 404:
+                            click.echo("\nPairing session cancelled", err=True)
+                            return
+                        if resp.status != 200:
+                            continue
+
+                        status = await resp.json()
+                        state = status.get("state")
+
+                        if state == "completed":
+                            device_name = status.get("device_name", "Unknown")
+                            click.echo(f"\nPairing successful! Device: {device_name}")
+                            return
+                        elif state == "failed":
+                            click.echo("\nPairing failed", err=True)
+                            return
+                        elif state == "expired":
+                            click.echo("\nPairing session expired", err=True)
+                            return
+                        # pending, signaling, authenticating - keep waiting
+
+                click.echo("\nTimeout waiting for device to connect", err=True)
+
+        except KeyboardInterrupt:
+            click.echo("\nCancelled")
         finally:
-            await manager.stop()
+            # Cleanup: cancel session if still pending
+            if session_id:
+                try:
+                    async with aiohttp.ClientSession() as http:
+                        await http.delete(f"{base_url}/api/pair/{session_id}")
+                except Exception:
+                    pass
 
     asyncio.run(_pair())

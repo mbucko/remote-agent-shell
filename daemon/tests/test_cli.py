@@ -1,5 +1,7 @@
 """Tests for CLI module."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from click.testing import CliRunner
 
@@ -38,10 +40,18 @@ class TestDaemonCommands:
 
     def test_daemon_start_command_exists(self, runner):
         """ras daemon start is a valid command."""
-        result = runner.invoke(main, ["daemon", "start"])
+        # Mock the Daemon to avoid actually starting a server
+        with patch("ras.daemon.Daemon") as mock_daemon_class:
+            mock_daemon = AsyncMock()
+            mock_daemon.start = AsyncMock()
+            mock_daemon.run_forever = AsyncMock(side_effect=KeyboardInterrupt)
+            mock_daemon.stop = AsyncMock()
+            mock_daemon_class.return_value = mock_daemon
 
-        assert result.exit_code == 0
-        assert "Starting daemon" in result.output
+            result = runner.invoke(main, ["daemon", "start"])
+
+        # Command should parse successfully (exit via KeyboardInterrupt simulation)
+        assert "Daemon started" in result.output or "Shutting down" in result.output
 
     def test_daemon_stop_command_exists(self, runner):
         """ras daemon stop is a valid command."""

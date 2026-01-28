@@ -14,6 +14,7 @@ from ras.config import Config
 from ras.connection_manager import ConnectionManager
 from ras.device_store import JsonDeviceStore, PairedDevice
 from ras.message_dispatcher import MessageDispatcher
+from ras.server import UnifiedServer
 from ras.proto.ras import (
     InitialState,
     Ping,
@@ -86,14 +87,14 @@ class Daemon:
         self._device_store: Optional[JsonDeviceStore] = None
 
         # Managers (injected or created during startup)
-        self._signaling_server = signaling_server
+        self._unified_server: Optional[UnifiedServer] = signaling_server
         self._pairing_manager = pairing_manager
         self._session_manager = session_manager
         self._terminal_manager = terminal_manager
         self._clipboard_manager = clipboard_manager
 
         # Server state
-        self._signaling_runner = None
+        self._server_runner = None
         self._keepalive_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
@@ -176,15 +177,22 @@ class Daemon:
         pass
 
     async def _start_signaling_server(self) -> None:
-        """Start HTTP signaling server."""
-        # This would start the actual signaling server
-        # For now, we assume it's injected for testing
-        if self._signaling_server is not None:
-            self._signaling_runner = await self._signaling_server.start(
-                host=self._config.bind_address,
-                port=self._config.port,
+        """Start unified HTTP server for pairing and reconnection."""
+        # Create unified server if not injected (injection is for testing)
+        if self._unified_server is None:
+            self._unified_server = UnifiedServer(
+                device_store=self._device_store,
+                stun_servers=self._config.stun_servers,
+                pairing_timeout=self._config.daemon.pairing_timeout,
+                max_pairing_sessions=self._config.daemon.max_pairing_sessions,
+                on_device_connected=self._on_device_reconnected,
             )
-        logger.debug(f"Signaling server started on port {self._config.port}")
+
+        self._server_runner = await self._unified_server.start(
+            host=self._config.bind_address,
+            port=self._config.port,
+        )
+        logger.info(f"Unified server started on {self._config.bind_address}:{self._unified_server.get_port()}")
 
     def _setup_signals(self) -> None:
         """Set up signal handlers for graceful shutdown."""
@@ -215,11 +223,36 @@ class Daemon:
         if self._terminal_manager:
             await self._terminal_manager.shutdown()
 
-        # Stop signaling server
-        if self._signaling_runner:
-            await self._signaling_runner.cleanup()
+        # Stop unified server
+        if self._unified_server:
+            await self._unified_server.close()
+
+        if self._server_runner:
+            await self._server_runner.cleanup()
 
         logger.info("Daemon shutdown complete")
+
+    # ==================== Server Helpers ====================
+
+    def _get_server_port(self) -> int:
+        """Get the port the server is listening on."""
+        if self._unified_server:
+            return self._unified_server.get_port()
+        return self._config.port
+
+    async def _complete_pairing(
+        self, session_id: str, device_id: str, device_name: str
+    ) -> None:
+        """Complete a pairing session (for testing)."""
+        if self._unified_server:
+            await self._unified_server.complete_pairing(
+                session_id, device_id, device_name
+            )
+
+    def _expire_pairing_session(self, session_id: str) -> None:
+        """Expire a pairing session (for testing)."""
+        if self._unified_server:
+            self._unified_server.expire_pairing_session(session_id)
 
     async def _keepalive_loop(self) -> None:
         """Periodically check for stale connections."""
@@ -308,6 +341,32 @@ class Daemon:
 
     # ==================== Connection Handling ====================
 
+    async def _on_device_reconnected(
+        self,
+        device_id: str,
+        device_name: str,
+        peer: Any,
+        auth_key: bytes,
+    ) -> None:
+        """Handle successful device reconnection.
+
+        Called by ReconnectionServer after successful authentication.
+
+        Args:
+            device_id: Device identifier.
+            device_name: Human-readable device name.
+            peer: WebRTC peer connection.
+            auth_key: Auth key for message encryption.
+        """
+        # Create codec for encrypted communication
+        # For now, pass auth_key as codec (will be used for encryption)
+        await self.on_new_connection(
+            device_id=device_id,
+            device_name=device_name,
+            peer=peer,
+            codec=auth_key,  # TODO: Create proper MessageCodec
+        )
+
     async def _on_connection_lost(self, device_id: str) -> None:
         """Handle connection lost event."""
         logger.info(f"Connection lost: {device_id}")
@@ -333,22 +392,15 @@ class Daemon:
             peer: WebRTC peer connection.
             codec: Message codec for encryption/decryption.
         """
-        # Update device store
+        # Update device store - just update last_seen for known devices
+        # New devices should be added via pairing flow, not here
         if self._device_store is not None:
             device = self._device_store.get(device_id)
             if device:
                 device.update_last_seen()
                 await self._device_store.save()
             else:
-                # New device
-                device = PairedDevice(
-                    device_id=device_id,
-                    name=device_name,
-                    public_key="",  # Not using public key auth yet
-                    paired_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                )
-                device.update_last_seen()
-                await self._device_store.add(device)
+                logger.warning(f"Unknown device connected: {device_id} - should use pairing flow")
 
         # Add to connection manager
         await self._connection_manager.add_connection(

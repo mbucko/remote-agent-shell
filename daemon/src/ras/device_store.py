@@ -1,5 +1,6 @@
 """Persist paired devices to JSON file."""
 
+import base64
 import json
 import logging
 from dataclasses import dataclass
@@ -16,7 +17,7 @@ class PairedDevice:
 
     device_id: str
     name: str
-    public_key: str  # Base64 encoded
+    master_secret: bytes  # 32-byte shared secret for auth
     paired_at: str  # ISO format
     last_seen: Optional[str] = None
 
@@ -29,7 +30,7 @@ class PairedDevice:
         return {
             "device_id": self.device_id,
             "name": self.name,
-            "public_key": self.public_key,
+            "master_secret": base64.b64encode(self.master_secret).decode("ascii"),
             "paired_at": self.paired_at,
             "last_seen": self.last_seen,
         }
@@ -40,7 +41,7 @@ class PairedDevice:
         return cls(
             device_id=d["device_id"],
             name=d["name"],
-            public_key=d["public_key"],
+            master_secret=base64.b64decode(d["master_secret"]),
             paired_at=d["paired_at"],
             last_seen=d.get("last_seen"),
         )
@@ -102,6 +103,30 @@ class JsonDeviceStore:
         """Add or update a device."""
         self._devices[device.device_id] = device
         await self.save()
+
+    async def add_device(
+        self,
+        device_id: str,
+        device_name: str,
+        master_secret: bytes,
+    ) -> None:
+        """Add a newly paired device.
+
+        This method matches the DeviceStore protocol expected by PairingManager.
+
+        Args:
+            device_id: Unique device identifier.
+            device_name: Human-readable device name.
+            master_secret: 32-byte shared secret for authentication.
+        """
+        device = PairedDevice(
+            device_id=device_id,
+            name=device_name,
+            master_secret=master_secret,
+            paired_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        )
+        device.update_last_seen()
+        await self.add(device)
 
     async def remove(self, device_id: str) -> bool:
         """Remove a device.

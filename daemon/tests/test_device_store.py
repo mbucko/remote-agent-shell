@@ -1,11 +1,17 @@
 """Tests for device store module."""
 
+import base64
 import json
 from pathlib import Path
 
 import pytest
 
 from ras.device_store import JsonDeviceStore, PairedDevice
+
+
+# Test master_secret for consistent testing
+TEST_SECRET = b"\x00" * 32
+TEST_SECRET_B64 = base64.b64encode(TEST_SECRET).decode("ascii")
 
 
 class TestPairedDevice:
@@ -16,7 +22,7 @@ class TestPairedDevice:
         device = PairedDevice(
             device_id="device123",
             name="Test Phone",
-            public_key="base64key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
         assert device.last_seen is None
@@ -31,7 +37,7 @@ class TestPairedDevice:
         device = PairedDevice(
             device_id="device123",
             name="Test Phone",
-            public_key="base64key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
             last_seen="2024-01-02T00:00:00Z",
         )
@@ -40,7 +46,7 @@ class TestPairedDevice:
 
         assert d["device_id"] == "device123"
         assert d["name"] == "Test Phone"
-        assert d["public_key"] == "base64key=="
+        assert d["master_secret"] == TEST_SECRET_B64
         assert d["paired_at"] == "2024-01-01T00:00:00Z"
         assert d["last_seen"] == "2024-01-02T00:00:00Z"
 
@@ -49,7 +55,7 @@ class TestPairedDevice:
         d = {
             "device_id": "device123",
             "name": "Test Phone",
-            "public_key": "base64key==",
+            "master_secret": TEST_SECRET_B64,
             "paired_at": "2024-01-01T00:00:00Z",
             "last_seen": "2024-01-02T00:00:00Z",
         }
@@ -58,6 +64,7 @@ class TestPairedDevice:
 
         assert device.device_id == "device123"
         assert device.name == "Test Phone"
+        assert device.master_secret == TEST_SECRET
         assert device.last_seen == "2024-01-02T00:00:00Z"
 
     def test_from_dict_without_last_seen(self):
@@ -65,7 +72,7 @@ class TestPairedDevice:
         d = {
             "device_id": "device123",
             "name": "Test Phone",
-            "public_key": "base64key==",
+            "master_secret": TEST_SECRET_B64,
             "paired_at": "2024-01-01T00:00:00Z",
         }
 
@@ -104,13 +111,13 @@ class TestJsonDeviceStore:
                 {
                     "device_id": "device1",
                     "name": "Phone 1",
-                    "public_key": "key1==",
+                    "master_secret": TEST_SECRET_B64,
                     "paired_at": "2024-01-01T00:00:00Z",
                 },
                 {
                     "device_id": "device2",
                     "name": "Phone 2",
-                    "public_key": "key2==",
+                    "master_secret": TEST_SECRET_B64,
                     "paired_at": "2024-01-02T00:00:00Z",
                 },
             ]
@@ -144,14 +151,14 @@ class TestJsonDeviceStore:
                 {
                     "device_id": "valid",
                     "name": "Valid Phone",
-                    "public_key": "key==",
+                    "master_secret": TEST_SECRET_B64,
                     "paired_at": "2024-01-01T00:00:00Z",
                 },
                 {"invalid": "missing required fields"},
                 {
                     "device_id": "also_valid",
                     "name": "Also Valid",
-                    "public_key": "key2==",
+                    "master_secret": TEST_SECRET_B64,
                     "paired_at": "2024-01-02T00:00:00Z",
                 },
             ]
@@ -171,7 +178,7 @@ class TestJsonDeviceStore:
         device = PairedDevice(
             device_id="new_device",
             name="New Phone",
-            public_key="newkey==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
 
@@ -190,7 +197,7 @@ class TestJsonDeviceStore:
         device = PairedDevice(
             device_id="device1",
             name="Phone",
-            public_key="key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
         await store.add(device)
@@ -210,7 +217,7 @@ class TestJsonDeviceStore:
         device = PairedDevice(
             device_id="to_remove",
             name="Phone",
-            public_key="key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
         await store.add(device)
@@ -238,7 +245,7 @@ class TestJsonDeviceStore:
         device = PairedDevice(
             device_id="paired",
             name="Phone",
-            public_key="key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
         await store.add(device)
@@ -260,7 +267,7 @@ class TestJsonDeviceStore:
         device = PairedDevice(
             device_id="device1",
             name="Phone",
-            public_key="key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
 
@@ -275,13 +282,13 @@ class TestJsonDeviceStore:
         device1 = PairedDevice(
             device_id="device1",
             name="Phone 1",
-            public_key="key1==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
         device2 = PairedDevice(
             device_id="device2",
             name="Phone 2",
-            public_key="key2==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-02T00:00:00Z",
         )
         await store.add(device1)
@@ -300,7 +307,7 @@ class TestJsonDeviceStore:
         device = PairedDevice(
             device_id="device1",
             name="Phone",
-            public_key="key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
         await store.add(device)
@@ -321,7 +328,7 @@ class TestJsonDeviceStore:
         device1 = PairedDevice(
             device_id="device1",
             name="Old Name",
-            public_key="key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-01T00:00:00Z",
         )
         await store.add(device1)
@@ -329,10 +336,34 @@ class TestJsonDeviceStore:
         device2 = PairedDevice(
             device_id="device1",
             name="New Name",
-            public_key="key==",
+            master_secret=TEST_SECRET,
             paired_at="2024-01-02T00:00:00Z",
         )
         await store.add(device2)
 
         assert len(store) == 1
         assert store.get("device1").name == "New Name"
+
+    # Test add_device method (matches PairingManager protocol)
+    @pytest.mark.asyncio
+    async def test_add_device_method(self, store: JsonDeviceStore, store_path: Path):
+        """Add device using add_device method (PairingManager protocol)."""
+        await store.add_device(
+            device_id="new_device",
+            device_name="New Phone",
+            master_secret=TEST_SECRET,
+        )
+
+        # Verify device was added
+        assert len(store) == 1
+        device = store.get("new_device")
+        assert device is not None
+        assert device.name == "New Phone"
+        assert device.master_secret == TEST_SECRET
+        assert device.paired_at is not None
+        assert device.last_seen is not None
+
+        # Verify file was written
+        assert store_path.exists()
+        data = json.loads(store_path.read_text())
+        assert len(data["devices"]) == 1

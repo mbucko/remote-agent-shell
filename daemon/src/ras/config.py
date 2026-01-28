@@ -66,6 +66,10 @@ class DaemonConfig:
     # Sessions
     max_sessions: int = 20
 
+    # Pairing
+    pairing_timeout: float = 300.0  # 5 minutes for pairing session
+    max_pairing_sessions: int = 10  # Max concurrent pairing sessions
+
 
 @dataclass
 class Config:
@@ -182,6 +186,10 @@ def load_config(
         devices_file=daemon_data.get("devices_file", DaemonConfig.devices_file),
         sessions_file=daemon_data.get("sessions_file", DaemonConfig.sessions_file),
         max_sessions=daemon_data.get("max_sessions", DaemonConfig.max_sessions),
+        pairing_timeout=daemon_data.get("pairing_timeout", DaemonConfig.pairing_timeout),
+        max_pairing_sessions=daemon_data.get(
+            "max_pairing_sessions", DaemonConfig.max_pairing_sessions
+        ),
     )
 
     return Config(

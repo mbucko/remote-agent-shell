@@ -108,10 +108,17 @@ class TestConnectionLifecycle:
         daemon = Daemon(config=config, session_manager=session_manager)
         await daemon._initialize_stores()
 
+        # Add device via pairing (normal flow)
+        await daemon._device_store.add_device(
+            device_id="new_device_123",
+            device_name="Test Phone",
+            master_secret=b"\x00" * 32,
+        )
+
         peer = MockPeer()
         codec = MockCodec()
 
-        # Simulate new connection
+        # Simulate device connecting (already paired)
         await daemon.on_new_connection(
             device_id="new_device_123",
             device_name="Test Phone",
@@ -137,7 +144,7 @@ class TestConnectionLifecycle:
         device = PairedDevice(
             device_id="returning_device",
             name="Old Phone",
-            public_key="",
+            master_secret=b"\x00" * 32,
             paired_at="2024-01-01T00:00:00Z",
         )
         await daemon._device_store.add(device)
