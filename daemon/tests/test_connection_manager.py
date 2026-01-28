@@ -33,10 +33,13 @@ class MockPeer:
         if self._close_handler:
             self._close_handler()
 
-    def receive(self, data: bytes):
+    async def receive(self, data: bytes):
         """Simulate receiving data."""
         if self._message_handler:
-            self._message_handler(data)
+            # Handler may be async (coroutine function)
+            result = self._message_handler(data)
+            if hasattr(result, '__await__'):
+                await result
 
 
 class MockCodec:
@@ -319,7 +322,7 @@ class TestConnectionManager:
         )
 
         # Simulate receiving data
-        peer.receive(b"garbled")
+        await peer.receive(b"garbled")
 
         assert len(messages) == 0  # Message not delivered
 
@@ -349,7 +352,7 @@ class TestConnectionManager:
         )
 
         # Simulate receiving encrypted data
-        peer.receive(b"encrypted:hello")
+        await peer.receive(b"encrypted:hello")
 
         assert len(messages) == 1
         assert messages[0] == b"hello"
@@ -366,6 +369,6 @@ class TestConnectionManager:
         original = conn.last_activity
 
         await asyncio.sleep(0.01)
-        peer.receive(b"encrypted:hello")
+        await peer.receive(b"encrypted:hello")
 
         assert conn.last_activity >= original
