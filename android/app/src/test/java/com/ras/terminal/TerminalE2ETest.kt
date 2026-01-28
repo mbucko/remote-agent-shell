@@ -1073,6 +1073,237 @@ class TerminalE2ETest {
     }
 
     // ==========================================================================
+    // Scenario 41: KEY_UNKNOWN Handling
+    // ==========================================================================
+
+    @Test
+    fun `E2E - KEY_UNKNOWN sends correctly`() = runTest {
+        simulateAttached()
+
+        // Send KEY_UNKNOWN (enum value 0) - should still work
+        sentCommands.clear()
+        repository.sendSpecialKey(KeyType.KEY_UNKNOWN)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Command should be sent (daemon decides what to do with it)
+        assertTrue(sentCommands.isNotEmpty())
+        assertEquals(KeyType.KEY_UNKNOWN, sentCommands.last().input.special.key)
+    }
+
+    // ==========================================================================
+    // Scenario 42: All Modifier Combinations
+    // ==========================================================================
+
+    @Test
+    fun `E2E - all modifier combinations`() = runTest {
+        simulateAttached()
+
+        // Test all 8 modifier combinations (0-7)
+        // 0 = none, 1 = Ctrl, 2 = Alt, 3 = Ctrl+Alt, 4 = Shift, 5 = Ctrl+Shift, 6 = Alt+Shift, 7 = all
+        for (mod in 0..7) {
+            sentCommands.clear()
+            repository.sendSpecialKey(KeyType.KEY_ENTER, modifiers = mod)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(mod, sentCommands.last().input.special.modifiers)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 43: Empty ProtoTerminalEvent (No Fields Set)
+    // ==========================================================================
+
+    @Test
+    fun `E2E - empty event is handled gracefully`() = runTest {
+        simulateAttached()
+        val initialState = repository.state.value
+
+        // Send empty event (no oneof field set)
+        val emptyEvent = ProtoTerminalEvent.newBuilder().build()
+        terminalEventsFlow.emit(emptyEvent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // State should be unchanged
+        assertEquals(initialState.isAttached, repository.state.value.isAttached)
+    }
+
+    // ==========================================================================
+    // Scenario 44: Very Large Output
+    // ==========================================================================
+
+    @Test
+    fun `E2E - very large output handled`() = runTest {
+        simulateAttached()
+
+        repository.output.test {
+            // Send 1MB of output
+            val largeData = ByteArray(1024 * 1024) { (it % 256).toByte() }
+            val largeOutput = ProtoTerminalEvent.newBuilder()
+                .setOutput(TerminalOutput.newBuilder()
+                    .setSessionId("abc123def456")
+                    .setData(ByteString.copyFrom(largeData))
+                    .setSequence(1)
+                    .build())
+                .build()
+            terminalEventsFlow.emit(largeOutput)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val received = awaitItem()
+            assertEquals(1024 * 1024, received.size)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 45: High-Frequency Output Streaming
+    // ==========================================================================
+
+    @Test
+    fun `E2E - high frequency output streaming`() = runTest {
+        simulateAttached()
+
+        repository.output.test {
+            // Rapidly send 100 output events
+            for (i in 1..100) {
+                terminalEventsFlow.emit(createOutputEvent("abc123def456", "chunk$i", sequence = i.toLong()))
+            }
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // All 100 should arrive
+            repeat(100) {
+                awaitItem()
+            }
+
+            assertEquals(100L, repository.state.value.lastSequence)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 46: Emoji and Special Unicode
+    // ==========================================================================
+
+    @Test
+    fun `E2E - emoji and special unicode`() = runTest {
+        simulateAttached()
+
+        // Send emoji
+        val emoji = "Hello 👋🌍 World 🚀"
+        repository.sendInput(emoji)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val sentData = sentCommands.last().input.data.toStringUtf8()
+        assertEquals(emoji, sentData)
+
+        // Receive emoji
+        repository.output.test {
+            terminalEventsFlow.emit(createOutputEvent("abc123def456", emoji, sequence = 1))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(emoji, String(awaitItem()))
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 47: Control Characters in Output
+    // ==========================================================================
+
+    @Test
+    fun `E2E - control characters in output`() = runTest {
+        simulateAttached()
+
+        repository.output.test {
+            // Output with ANSI escape sequences and control chars
+            val ansiOutput = "\u001b[31mRed Text\u001b[0m\r\n\u0007Bell"
+            terminalEventsFlow.emit(createOutputEvent("abc123def456", ansiOutput, sequence = 1))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(ansiOutput, String(awaitItem()))
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 48: Maximum Valid Sequence Number
+    // ==========================================================================
+
+    @Test
+    fun `E2E - maximum sequence number`() = runTest {
+        simulateAttached()
+
+        val maxSeq = Long.MAX_VALUE
+        terminalEventsFlow.emit(createOutputEvent("abc123def456", "max", sequence = maxSeq))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(maxSeq, repository.state.value.lastSequence)
+    }
+
+    // ==========================================================================
+    // Scenario 49: Output With All Fields Set
+    // ==========================================================================
+
+    @Test
+    fun `E2E - output with all fields set`() = runTest {
+        simulateAttached()
+
+        repository.events.test {
+            val fullOutput = ProtoTerminalEvent.newBuilder()
+                .setOutput(TerminalOutput.newBuilder()
+                    .setSessionId("abc123def456")
+                    .setData(ByteString.copyFromUtf8("test data"))
+                    .setSequence(42)
+                    .setPartial(true)
+                    .build())
+                .build()
+            terminalEventsFlow.emit(fullOutput)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem() as TerminalEvent.Output
+            assertEquals("abc123def456", event.sessionId)
+            assertEquals("test data", String(event.data))
+            assertEquals(42L, event.sequence)
+            assertTrue(event.partial)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 50: Attached Event With All Fields
+    // ==========================================================================
+
+    @Test
+    fun `E2E - attached event with all fields verified`() = runTest {
+        repository.events.test {
+            repository.attach("abc123def456")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val attached = createAttachedEvent(
+                sessionId = "abc123def456",
+                cols = 132,
+                rows = 43,
+                bufferStartSeq = 100,
+                currentSeq = 500
+            )
+            terminalEventsFlow.emit(attached)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // Verify all state fields
+            val state = repository.state.value
+            assertEquals("abc123def456", state.sessionId)
+            assertEquals(132, state.cols)
+            assertEquals(43, state.rows)
+            assertEquals(100L, state.bufferStartSeq)
+            assertEquals(500L, state.lastSequence)
+            assertTrue(state.isAttached)
+            assertFalse(state.isAttaching)
+
+            // Verify event
+            val event = awaitItem() as TerminalEvent.Attached
+            assertEquals("abc123def456", event.sessionId)
+            assertEquals(132, event.cols)
+            assertEquals(43, event.rows)
+            assertEquals(100L, event.bufferStartSeq)
+            assertEquals(500L, event.currentSeq)
+        }
+    }
+
+    // ==========================================================================
     // Helper Methods
     // ==========================================================================
 

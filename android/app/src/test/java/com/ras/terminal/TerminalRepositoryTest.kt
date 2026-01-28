@@ -685,6 +685,252 @@ class TerminalRepositoryTest {
     }
 
     // ==========================================================================
+    // OutputSkippedInfo.displayText Tests
+    // ==========================================================================
+
+    @Test
+    fun `OutputSkippedInfo displayText shows bytes for small values`() {
+        val info = com.ras.data.terminal.OutputSkippedInfo(
+            fromSequence = 0,
+            toSequence = 10,
+            bytesSkipped = 500
+        )
+        assertEquals("~500 bytes output skipped", info.displayText)
+    }
+
+    @Test
+    fun `OutputSkippedInfo displayText shows KB for medium values`() {
+        val info = com.ras.data.terminal.OutputSkippedInfo(
+            fromSequence = 0,
+            toSequence = 10,
+            bytesSkipped = 5120 // 5KB
+        )
+        assertEquals("~5KB output skipped", info.displayText)
+    }
+
+    @Test
+    fun `OutputSkippedInfo displayText shows MB for large values`() {
+        val info = com.ras.data.terminal.OutputSkippedInfo(
+            fromSequence = 0,
+            toSequence = 10,
+            bytesSkipped = 2 * 1024 * 1024 // 2MB
+        )
+        assertEquals("~2MB output skipped", info.displayText)
+    }
+
+    @Test
+    fun `OutputSkippedInfo displayText boundary at 1024 bytes`() {
+        // At exactly 1024, should show KB
+        val info = com.ras.data.terminal.OutputSkippedInfo(
+            fromSequence = 0,
+            toSequence = 10,
+            bytesSkipped = 1024
+        )
+        assertEquals("~1KB output skipped", info.displayText)
+    }
+
+    @Test
+    fun `OutputSkippedInfo displayText boundary below 1024 bytes`() {
+        val info = com.ras.data.terminal.OutputSkippedInfo(
+            fromSequence = 0,
+            toSequence = 10,
+            bytesSkipped = 1023
+        )
+        assertEquals("~1023 bytes output skipped", info.displayText)
+    }
+
+    // ==========================================================================
+    // TerminalErrorCodes Tests
+    // ==========================================================================
+
+    @Test
+    fun `TerminalErrorCodes getDisplayMessage returns correct messages`() {
+        assertEquals("Session not found",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("SESSION_NOT_FOUND", "default"))
+        assertEquals("Session is being terminated",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("SESSION_KILLING", "default"))
+        assertEquals("Not attached to terminal",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("NOT_ATTACHED", "default"))
+        assertEquals("Already attached to this session",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("ALREADY_ATTACHED", "default"))
+        assertEquals("Reconnection sequence not available",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("INVALID_SEQUENCE", "default"))
+        assertEquals("Terminal communication error",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("PIPE_ERROR", "default"))
+        assertEquals("Failed to setup terminal",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("PIPE_SETUP_FAILED", "default"))
+        assertEquals("Too many inputs, please slow down",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("RATE_LIMITED", "default"))
+        assertEquals("Input too large",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("INPUT_TOO_LARGE", "default"))
+        assertEquals("Invalid session ID",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("INVALID_SESSION_ID", "default"))
+    }
+
+    @Test
+    fun `TerminalErrorCodes getDisplayMessage returns default for unknown code`() {
+        assertEquals("Custom error message",
+            com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("UNKNOWN_CODE", "Custom error message"))
+    }
+
+    // ==========================================================================
+    // QuickButton Validation Tests
+    // ==========================================================================
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `QuickButton requires keyType or character`() {
+        com.ras.data.terminal.QuickButton(
+            id = "test",
+            label = "Test",
+            keyType = null,
+            character = null
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `QuickButton requires non-empty id`() {
+        com.ras.data.terminal.QuickButton(
+            id = "",
+            label = "Test",
+            character = "x"
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `QuickButton requires non-empty label`() {
+        com.ras.data.terminal.QuickButton(
+            id = "test",
+            label = "",
+            character = "x"
+        )
+    }
+
+    @Test
+    fun `QuickButton accepts keyType only`() {
+        val button = com.ras.data.terminal.QuickButton(
+            id = "ctrl_c",
+            label = "Ctrl+C",
+            keyType = KeyType.KEY_CTRL_C
+        )
+        assertEquals(KeyType.KEY_CTRL_C, button.keyType)
+        assertNull(button.character)
+    }
+
+    @Test
+    fun `QuickButton accepts character only`() {
+        val button = com.ras.data.terminal.QuickButton(
+            id = "y",
+            label = "Y",
+            character = "y"
+        )
+        assertNull(button.keyType)
+        assertEquals("y", button.character)
+    }
+
+    // ==========================================================================
+    // TerminalState.canSendInput Tests
+    // ==========================================================================
+
+    @Test
+    fun `canSendInput is false when sessionId is null`() {
+        val state = com.ras.data.terminal.TerminalState(
+            sessionId = null,
+            isAttached = true,
+            error = null
+        )
+        assertFalse(state.canSendInput)
+    }
+
+    @Test
+    fun `canSendInput is false when not attached`() {
+        val state = com.ras.data.terminal.TerminalState(
+            sessionId = "abc123def456",
+            isAttached = false,
+            error = null
+        )
+        assertFalse(state.canSendInput)
+    }
+
+    @Test
+    fun `canSendInput is false when error present`() {
+        val state = com.ras.data.terminal.TerminalState(
+            sessionId = "abc123def456",
+            isAttached = true,
+            error = com.ras.data.terminal.TerminalErrorInfo("ERROR", "msg", null)
+        )
+        assertFalse(state.canSendInput)
+    }
+
+    @Test
+    fun `canSendInput is true when attached with sessionId and no error`() {
+        val state = com.ras.data.terminal.TerminalState(
+            sessionId = "abc123def456",
+            isAttached = true,
+            error = null
+        )
+        assertTrue(state.canSendInput)
+    }
+
+    // ==========================================================================
+    // TerminalInputValidator Tests
+    // ==========================================================================
+
+    @Test
+    fun `TerminalInputValidator accepts valid input size`() {
+        val data = ByteArray(65536) // Exactly 64KB
+        assertTrue(com.ras.data.terminal.TerminalInputValidator.isValidInputSize(data))
+    }
+
+    @Test
+    fun `TerminalInputValidator rejects oversized input`() {
+        val data = ByteArray(65537) // 64KB + 1
+        assertFalse(com.ras.data.terminal.TerminalInputValidator.isValidInputSize(data))
+    }
+
+    @Test
+    fun `TerminalInputValidator accepts empty input`() {
+        val data = ByteArray(0)
+        assertTrue(com.ras.data.terminal.TerminalInputValidator.isValidInputSize(data))
+    }
+
+    // ==========================================================================
+    // Error Event with Empty Session ID Tests
+    // ==========================================================================
+
+    @Test
+    fun `error event with empty sessionId converts to null`() = runTest {
+        repository.events.test {
+            val errorEvent = ProtoTerminalEvent.newBuilder()
+                .setError(TerminalError.newBuilder()
+                    .setSessionId("")
+                    .setErrorCode("TEST_ERROR")
+                    .setMessage("test")
+                    .build())
+                .build()
+            terminalEventsFlow.emit(errorEvent)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem() as TerminalEvent.Error
+            assertNull(event.sessionId)
+        }
+    }
+
+    @Test
+    fun `error state with empty sessionId stores null`() = runTest {
+        val errorEvent = ProtoTerminalEvent.newBuilder()
+            .setError(TerminalError.newBuilder()
+                .setSessionId("")
+                .setErrorCode("TEST_ERROR")
+                .setMessage("test")
+                .build())
+            .build()
+        terminalEventsFlow.emit(errorEvent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(repository.state.value.error?.sessionId)
+    }
+
+    // ==========================================================================
     // Helper Methods
     // ==========================================================================
 
