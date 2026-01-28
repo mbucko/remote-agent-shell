@@ -113,12 +113,17 @@ class NtfySignalingClient(
 
         /**
          * Build WebSocket URL for a topic.
+         *
+         * Includes ?since=30s to retrieve recent messages. This is needed because
+         * the WebSocket may not connect before messages are published (cold Flow).
+         * The daemon's answer could arrive before we're subscribed, so we need to
+         * fetch recent messages to catch it.
          */
         fun buildWsUrl(topic: String, server: String = DEFAULT_SERVER): String {
             val wsServer = server
                 .replace("https://", "wss://")
                 .replace("http://", "ws://")
-            return "$wsServer/$topic/ws"
+            return "$wsServer/$topic/ws?since=30s"
         }
 
         /**
