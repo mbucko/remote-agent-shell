@@ -12,7 +12,6 @@ import asyncio
 import hmac as hmac_module
 import logging
 import secrets
-import socket
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -26,6 +25,7 @@ from ras.crypto import (
     derive_ntfy_topic,
     generate_master_secret,
 )
+from ras.ip_provider import IpProvider
 from ras.ntfy_signaling import NtfySignalingSubscriber
 from ras.pairing.auth_handler import AuthHandler
 from ras.peer import PeerConnection
@@ -40,26 +40,6 @@ if TYPE_CHECKING:
     from ras.device_store import JsonDeviceStore, PairedDevice
 
 logger = logging.getLogger(__name__)
-
-
-def get_local_ip() -> str:
-    """Get the local IP address of this machine.
-
-    Uses a UDP socket trick to find the preferred local IP that would be used
-    to reach external addresses.
-
-    Returns:
-        Local IP address (e.g., '192.168.1.100'), or '127.0.0.1' if detection fails.
-    """
-    try:
-        # Create a UDP socket and "connect" to an external address
-        # This doesn't send any packets, but determines the local IP
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            # Use Google DNS as the target (doesn't actually connect)
-            s.connect(("8.8.8.8", 80))
-            return s.getsockname()[0]
-    except Exception:
-        return "127.0.0.1"
 
 
 # =============================================================================
@@ -124,8 +104,8 @@ class UnifiedServer:
     def __init__(
         self,
         device_store: "JsonDeviceStore",
+        ip_provider: IpProvider,
         stun_servers: list[str] | None = None,
-        public_ip: str = "0.0.0.0",
         pairing_timeout: float = 300.0,  # 5 minutes
         max_pairing_sessions: int = 10,
         ntfy_server: str = "https://ntfy.sh",
@@ -140,8 +120,8 @@ class UnifiedServer:
 
         Args:
             device_store: Store for paired devices.
+            ip_provider: Provider for discovering IP address for QR codes.
             stun_servers: STUN servers for WebRTC.
-            public_ip: Public IP to include in QR code.
             pairing_timeout: How long pairing sessions are valid.
             max_pairing_sessions: Maximum concurrent pairing sessions.
             ntfy_server: ntfy server URL for signaling relay.
@@ -149,8 +129,8 @@ class UnifiedServer:
             on_pairing_complete: Callback when pairing completes.
         """
         self.device_store = device_store
+        self.ip_provider = ip_provider
         self.stun_servers = stun_servers or []
-        self.public_ip = public_ip
         self.pairing_timeout = pairing_timeout
         self.max_pairing_sessions = max_pairing_sessions
         self.ntfy_server = ntfy_server
@@ -238,11 +218,25 @@ class UnifiedServer:
 
         logger.info(f"Pairing session started: {session_id[:8]}...")
 
+        # Get IP from provider (fails fast if IP can't be determined)
+        try:
+            public_ip = await self.ip_provider.get_ip()
+            logger.info(f"Using IP for pairing: {public_ip}")
+        except Exception as e:
+            logger.error(f"Failed to determine IP for pairing: {e}")
+            # Clean up the session we just created
+            await self._cleanup_session(session)
+            del self._pairing_sessions[session_id]
+            return web.json_response(
+                {"error": f"Cannot determine IP address: {e}"},
+                status=500,
+            )
+
         return web.json_response({
             "session_id": session_id,
             "expires_at": session.expires_at,
             "qr_data": {
-                "ip": self.public_ip,
+                "ip": public_ip,
                 "port": self._port,
                 "master_secret": master_secret.hex(),
                 "session_id": session_id,
@@ -784,11 +778,6 @@ class UnifiedServer:
             self._port = self._site._server.sockets[0].getsockname()[1]
         else:
             self._port = port
-
-        # Auto-detect local IP if not explicitly set
-        if self.public_ip == "0.0.0.0":
-            self.public_ip = get_local_ip()
-            logger.info(f"Auto-detected local IP: {self.public_ip}")
 
         logger.info(f"Unified server started on {host}:{self._port}")
         return self._runner

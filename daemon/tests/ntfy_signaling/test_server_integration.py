@@ -20,11 +20,22 @@ import pytest
 from ras.config import Config
 from ras.crypto import derive_key, derive_ntfy_topic
 from ras.device_store import JsonDeviceStore
+from ras.ip_provider import IpDiscoveryError
 from ras.ntfy_signaling import NtfySignalingSubscriber
 from ras.ntfy_signaling.crypto import NtfySignalingCrypto, derive_signaling_key
 from ras.ntfy_signaling.validation import NONCE_SIZE
 from ras.proto.ras.ras import NtfySignalMessage, NtfySignalMessageMessageType
 from ras.server import UnifiedServer
+
+
+class MockIpProvider:
+    """Mock IP provider for testing."""
+
+    def __init__(self, ip: str = "192.168.1.100"):
+        self._ip = ip
+
+    async def get_ip(self) -> str:
+        return self._ip
 
 
 def create_encrypted_offer(
@@ -76,6 +87,7 @@ async def server(device_store):
     """Create and start UnifiedServer."""
     server = UnifiedServer(
         device_store=device_store,
+        ip_provider=MockIpProvider(),
         stun_servers=[],
         pairing_timeout=60.0,
         ntfy_server="https://ntfy.sh",
@@ -341,6 +353,7 @@ class TestNtfyCleanup:
         """Server close cleans up all ntfy subscribers."""
         server = UnifiedServer(
             device_store=device_store,
+            ip_provider=MockIpProvider(),
             stun_servers=[],
             pairing_timeout=60.0,
         )
@@ -783,6 +796,7 @@ class TestNtfySessionTimeoutCleanup:
         # Create server with very short timeout for testing
         server = UnifiedServer(
             device_store=device_store,
+            ip_provider=MockIpProvider(),
             stun_servers=[],
             pairing_timeout=0.5,  # 500ms timeout
         )
