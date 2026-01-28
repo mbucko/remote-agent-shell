@@ -50,12 +50,13 @@ RemoteAgentShell lets you control AI coding agents (Claude Code, Cursor, Aider, 
 A background service that runs on your development machine.
 
 - Manages tmux sessions running AI agents
-- Captures terminal output via `tmux capture-pane`
+- Captures terminal output via `tmux pipe-pane`
 - Sends input via `tmux send-keys`
+- Detects agent prompts and errors via pattern matching
 - Exposes a P2P endpoint for mobile connection
 - Handles encryption and authentication
 
-**Status:** Not yet designed. See [daemon.md](daemon.md)
+**Status:** Implemented. See [daemon.md](daemon.md)
 
 ### 2. Android App (Mobile)
 
@@ -63,11 +64,13 @@ Native Android app for remote control.
 
 - Pairs with daemon via QR code
 - Connects directly via P2P (WebRTC)
-- Displays agent output in real-time
-- Sends commands and responses
-- Receives push notifications for important events
+- Manages sessions (create, list, rename, kill)
+- Displays agent output in real-time terminal emulator
+- Sends keyboard input and special keys
+- Paste from clipboard to terminal
+- Receives push notifications for prompts/errors/completion
 
-**Status:** Not yet designed. See [android-app.md](android-app.md)
+**Status:** In progress. See [android-app.md](android-app.md)
 
 ### 3. Communication Layer
 
@@ -146,3 +149,28 @@ End-to-end encryption and authentication.
 | [communication.md](communication.md) | P2P protocol, WebRTC, STUN, signaling, multi-device |
 | [security.md](security.md) | Encryption, authentication, key management |
 | [daemon.md](daemon.md) | Laptop daemon architecture, CLI, config |
+
+## Implementation Tasks
+
+Tasks are tracked in `.tasks/` directory with detailed contracts and test scenarios.
+
+### Completed Phases
+
+| Phase | Description |
+|-------|-------------|
+| 1-5 | Daemon foundation (CLI, P2P, Security, tmux) |
+| 6 | Android app setup |
+| 7 | QR code pairing |
+| 8 | ntfy (IP change notifications) |
+| 9 | Session management |
+
+### Remaining MVP Phases
+
+| Phase | Description | Task Files |
+|-------|-------------|------------|
+| 10 | Terminal I/O | `010a-terminal-contract.md`, `010b-terminal-daemon.md`, `010c-terminal-android.md` |
+| 11 | Clipboard sync | `011a-clipboard-contract.md` (no daemon changes needed) |
+| 12 | Push notifications | `012a-notifications-contract.md`, `012b-notifications-daemon.md`, `012c-notifications-android.md` |
+| 13 | Settings UI | `013a-settings-contract.md` |
+
+**After Phase 13, MVP (v0.1) is complete.**

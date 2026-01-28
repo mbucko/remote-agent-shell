@@ -2,37 +2,38 @@
 
 This document lists all planned features for RemoteAgentShell.
 
-## MVP (v1.0)
+## MVP (v0.1)
 
 Core features needed for first usable release.
 
 ### Connection
-- [ ] QR code pairing
-- [ ] Auto-reconnect on connection loss
-- [ ] Connection status indicator
-- [ ] IP change handling via ntfy
+- [x] QR code pairing
+- [x] Auto-reconnect on connection loss
+- [x] Connection status indicator
+- [x] IP change handling via ntfy
 
 ### Session Management
-- [ ] List running sessions
-- [ ] Select session to view/control
-- [ ] Start new session
-- [ ] Stop/kill session
+- [x] List running sessions
+- [x] Select session to view/control
+- [x] Start new session
+- [x] Stop/kill session
+- [x] Rename session
 
 ### New Session Creation
 
 **Directory Selection:**
-- [ ] Default directory configurable in settings (e.g., `~/repos`)
-- [ ] Directory browser rooted at default directory
-- [ ] Navigate into subdirectories
-- [ ] Navigate to parent (within allowed root)
-- [ ] Remember last used directory
+- [x] Default directory configurable in settings (e.g., `~/repos`)
+- [x] Directory browser rooted at default directory
+- [x] Navigate into subdirectories
+- [x] Navigate to parent (within allowed root)
+- [x] Remember last used directory
+- [x] Whitelist/blacklist directory paths
 
 **Agent Selection:**
-- [ ] Auto-detect installed agents on daemon startup
-- [ ] Show only installed agents as options
-- [ ] Support: Claude Code, Open Code, Aider, Cursor, Cline
+- [x] Auto-detect installed agents on daemon startup
+- [x] Show only installed agents as options
+- [x] Support: Claude Code, Open Code, Aider, Cursor, Cline
 - [ ] Default agent configurable in settings
-- [ ] Custom command option (any command, not just AI agents)
 
 **Agent Detection (Daemon):**
 ```bash
@@ -63,45 +64,54 @@ Or for custom command:
 ```
 
 ### Terminal
-- [ ] Real-time output streaming
-- [ ] Send text input
-- [ ] Approve/reject prompts (quick action buttons)
-- [ ] Cancel running operation (Ctrl+C)
+- [x] Real-time output streaming (via tmux pipe-pane)
+- [x] Send text input (line-buffered mode)
+- [x] Send raw input (raw mode toggle)
+- [x] Approve/reject prompts (quick action buttons)
+- [x] Cancel running operation (Ctrl+C)
+- [x] Scrollback buffer (10,000 lines)
+- [x] Reconnection buffer (100KB on daemon)
 
 ### Shortcut Keys
-- [ ] Escape key
-- [ ] Ctrl+C (cancel/interrupt)
-- [ ] Ctrl+D (EOF)
-- [ ] Ctrl+Z (suspend)
-- [ ] Ctrl+B (tmux prefix)
-- [ ] Ctrl+L (clear screen)
-- [ ] Arrow keys (up/down/left/right)
-- [ ] Paste from clipboard
-- [ ] Custom shortcut configuration
+- [x] Escape key
+- [x] Ctrl+C (cancel/interrupt)
+- [x] Ctrl+D (EOF)
+- [x] Ctrl+Z (suspend)
+- [x] Ctrl+B (tmux prefix)
+- [x] Ctrl+L (clear screen)
+- [x] Arrow keys (up/down/left/right)
+- [x] Paste from clipboard (64KB limit)
 
 ### Notifications
-- [ ] Push notification: agent needs approval
-- [ ] Push notification: task completed
-- [ ] Push notification: error/failure
-- [ ] Notification tap → opens relevant session
+- [x] Push notification: agent needs approval (pattern detection)
+- [x] Push notification: task completed (shell prompt detection)
+- [x] Push notification: error/failure (error pattern detection)
+- [x] Notification tap → opens relevant session (deep linking)
+- [x] Delivered via WebRTC (instant when connected)
+- [x] Rate limiting (5s cooldown, deduplication)
 
 ### UI
-- [ ] Dark theme (only, no light theme)
-- [ ] Scrollable output history
-- [ ] Quick action bar (approve/reject/cancel)
-- [ ] Connection status indicator
+- [x] Dark theme (only, no light theme)
+- [x] Scrollable output history (10,000 lines)
+- [x] Quick action bar (Y/N/Ctrl+C, customizable)
+- [x] Connection status indicator
+- [x] Raw mode toggle button
+- [x] Paste button in input bar
+- [x] Terminal emulator (Termux library)
 
 ### Settings
-- [ ] Default directory (for new sessions)
+- [x] Default directory (for new sessions) - daemon config
 - [ ] Default agent (for new sessions)
-- [ ] View installed agents (with paths)
-- [ ] Refresh agent detection
-- [ ] ntfy server URL (default: ntfy.sh, or self-hosted)
-- [ ] Notification preferences
+- [x] View installed agents (with paths)
+- [x] Refresh agent detection
+- [x] ntfy server URL (default: ntfy.sh, or self-hosted)
+- [ ] Notification preferences (Android)
+- [x] Directory whitelist/blacklist (daemon config)
+- [x] Shell prompt pattern (daemon config)
 
 ---
 
-## Post-MVP (v1.x)
+## Post-MVP (v0.x)
 
 Features for subsequent releases.
 
@@ -137,6 +147,7 @@ Features for subsequent releases.
 - [ ] Optional: TTS for notifications
 
 ### UI (Enhanced)
+- [ ] Custom shortcut configuration (user-defined quick action buttons)
 - [ ] Customizable quick actions
 - [ ] Font size adjustment
 - [ ] Gesture support (swipe to switch sessions)
@@ -151,10 +162,11 @@ Features for subsequent releases.
 - [ ] Annotations (mark important output)
 
 ### Daemon Features
-- [ ] Prompt detection - Detect when AI agent is waiting for approval/input (pattern matching)
+- [x] Prompt detection - Detect when AI agent is waiting for approval/input (pattern matching) - Moved to MVP
+- [ ] Custom command option - Run any command, not just AI agents (e.g., `npm run dev`)
 - [ ] Image/clipboard handling - Send images from phone to agent via system clipboard
 - [ ] Local echo - Show typed characters immediately for low-latency feel (like Mosh)
-- [ ] Daemon-managed sessions - Daemon creates tmux sessions and starts agents
+- [x] Daemon-managed sessions - Daemon creates tmux sessions and starts agents - Moved to MVP
 
 ---
 
