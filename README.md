@@ -24,7 +24,81 @@ A mobile app to remotely control your AI coding agents (Claude Code, Cursor, Cli
 
 ```bash
 cd daemon
-uv sync --extra dev
+uv sync
+```
+
+### Running the Daemon
+
+```bash
+# Start the daemon (foreground)
+cd daemon
+uv run ras daemon start
+
+# Check daemon status
+uv run ras daemon status
+
+# Stop the daemon
+uv run ras daemon stop
+```
+
+### Install as System Service (Recommended)
+
+The daemon should run in the background and start automatically on login.
+
+**One-line install:**
+
+```bash
+./services/install.sh
+```
+
+This auto-detects your OS (macOS/Linux) and installs the appropriate service.
+
+**Manual installation:**
+
+<details>
+<summary>macOS (launchd)</summary>
+
+```bash
+# Copy service file
+cp services/com.ras.daemon.plist ~/Library/LaunchAgents/
+
+# Edit paths in the plist to match your installation
+# Then load the service
+launchctl load ~/Library/LaunchAgents/com.ras.daemon.plist
+
+# Commands
+launchctl start com.ras.daemon    # Start
+launchctl stop com.ras.daemon     # Stop
+tail -f /tmp/ras.log              # View logs
+```
+
+</details>
+
+<details>
+<summary>Linux (systemd)</summary>
+
+```bash
+# Copy service file
+mkdir -p ~/.config/systemd/user
+cp services/ras.service ~/.config/systemd/user/
+
+# Edit paths in the service file to match your installation
+# Then enable and start
+systemctl --user daemon-reload
+systemctl --user enable ras
+systemctl --user start ras
+
+# Commands
+systemctl --user status ras       # Status
+journalctl --user -u ras -f       # View logs
+```
+
+</details>
+
+**Uninstall:**
+
+```bash
+./services/install.sh --remove
 ```
 
 ### Running Tests

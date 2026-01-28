@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+RemoteAgentShell launchd service file for macOS
+
+Installation:
+  1. Copy this file to ~/Library/LaunchAgents/com.ras.daemon.plist
+  2. Edit the ProgramArguments path to match your installation
+  3. Run: launchctl load ~/Library/LaunchAgents/com.ras.daemon.plist
+  4. The daemon will start automatically on login
+
+To start manually: launchctl start com.ras.daemon
+To stop:           launchctl stop com.ras.daemon
+To unload:         launchctl unload ~/Library/LaunchAgents/com.ras.daemon.plist
+View logs:         tail -f /tmp/ras.log
+-->
+<dict>
+    <key>Label</key>
+    <string>com.ras.daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- IMPORTANT: Update this path to your installation -->
+
+        <!-- Option 1: If installed globally with pipx -->
+        <!-- <string>/Users/YOUR_USER/.local/bin/ras</string> -->
+
+        <!-- Option 2: If running from source with uv (recommended) -->
+        <string>/Users/YOUR_USER/.local/bin/uv</string>
+        <string>run</string>
+        <string>--project</string>
+        <string>/Users/YOUR_USER/repos/remote-agent-shell/daemon</string>
+        <string>ras</string>
+        <string>daemon</string>
+        <string>start</string>
+    </array>
+
+    <!-- Start on login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on failure -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Throttle restarts (wait 5 seconds between restarts) -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/YOUR_USER</string>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/tmp/ras.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/ras.log</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

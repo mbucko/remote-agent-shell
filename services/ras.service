@@ -1,0 +1,52 @@
+# RemoteAgentShell systemd service file
+#
+# Installation:
+#   1. Copy this file to ~/.config/systemd/user/ras.service
+#   2. Edit the ExecStart path to match your installation
+#   3. Run: systemctl --user daemon-reload
+#   4. Run: systemctl --user enable ras
+#   5. Run: systemctl --user start ras
+#
+# Check status: systemctl --user status ras
+# View logs:    journalctl --user -u ras -f
+
+[Unit]
+Description=RemoteAgentShell Daemon
+Documentation=https://github.com/mbucko/remote-agent-shell
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# IMPORTANT: Update this path to your installation
+# Option 1: If installed globally with pipx
+# ExecStart=/home/YOUR_USER/.local/bin/ras daemon start
+#
+# Option 2: If running from source with uv
+# ExecStart=/home/YOUR_USER/repos/remote-agent-shell/daemon/.venv/bin/ras daemon start
+#
+# Option 3: Using uv run (slower startup but always works)
+# ExecStart=/home/YOUR_USER/.local/bin/uv run --project /home/YOUR_USER/repos/remote-agent-shell/daemon ras daemon start
+
+ExecStart=%h/.local/bin/ras daemon start
+
+# Restart on failure with backoff
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=0
+
+# Environment
+Environment="HOME=%h"
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ras
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
