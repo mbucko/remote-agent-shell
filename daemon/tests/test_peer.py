@@ -77,6 +77,7 @@ class TestPeerConnection:
         mock_pc.createAnswer = AsyncMock(return_value=mock_answer)
         mock_pc.setLocalDescription = AsyncMock()
         mock_pc.localDescription = mock_answer
+        mock_pc.createDataChannel = Mock(return_value=Mock())
 
         handlers = {}
 

@@ -96,6 +96,7 @@ class TestSdpRoundtrip:
         mock_pc.createAnswer = AsyncMock(return_value=mock_answer)
         mock_pc.setLocalDescription = AsyncMock()
         mock_pc.localDescription = mock_answer
+        mock_pc.createDataChannel = Mock(return_value=Mock())
 
         def mock_on(event):
             return lambda fn: fn
@@ -169,6 +170,7 @@ class TestSdpNotJsonWrapped:
         mock_pc.createAnswer = AsyncMock(return_value=mock_answer)
         mock_pc.setLocalDescription = AsyncMock()
         mock_pc.localDescription = mock_answer
+        mock_pc.createDataChannel = Mock(return_value=Mock())
 
         def mock_on(event):
             return lambda fn: fn
