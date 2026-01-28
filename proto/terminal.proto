@@ -104,7 +104,26 @@ message TerminalEvent {
         TerminalDetached detached = 3;
         TerminalError error = 4;
         OutputSkipped skipped = 5;
+        TerminalNotification notification = 6;
     }
+}
+
+// ============ Notifications ============
+
+enum NotificationType {
+    NOTIFICATION_TYPE_UNSPECIFIED = 0;
+    NOTIFICATION_TYPE_APPROVAL_NEEDED = 1;
+    NOTIFICATION_TYPE_TASK_COMPLETED = 2;
+    NOTIFICATION_TYPE_ERROR_DETECTED = 3;
+}
+
+message TerminalNotification {
+    string session_id = 1;           // Session that triggered notification
+    NotificationType type = 2;       // Event type
+    string title = 3;                // "claude-myproject: Approval needed"
+    string body = 4;                 // "Proceed with edit? (y/n)"
+    string snippet = 5;              // ~50 chars of matched context
+    int64 timestamp = 6;             // Unix timestamp milliseconds
 }
 
 message TerminalAttached {
