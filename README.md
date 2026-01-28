@@ -10,6 +10,7 @@ A mobile app to remotely control your AI coding agents (Claude Code, Cursor, Cli
 - **Push Notifications** - Get notified when agents need approval
 - **QR Code Pairing** - Secure device pairing with mutual authentication
 - **P2P Connection** - Direct WebRTC connection, no cloud required
+- **NAT Traversal** - ntfy signaling relay when direct connection fails
 
 ## Quick Start
 
@@ -57,18 +58,21 @@ uv run ras pair --output qr.png
 
 1. Daemon generates master secret and displays QR code
 2. Mobile app scans QR, extracts secret and connection info
-3. Mobile sends HTTP signaling request with HMAC authentication
-4. WebRTC connection established
-5. Mutual authentication handshake over data channel
-6. Device stored for future connections
+3. Mobile attempts direct HTTP signaling with HMAC authentication
+4. If direct connection fails (NAT), falls back to ntfy signaling relay
+5. WebRTC connection established via STUN/TURN
+6. Mutual authentication handshake over data channel
+7. Device stored for future reconnections
 
 ## Security
 
 - **HKDF** (RFC 5869) for key derivation
+- **AES-256-GCM** for authenticated encryption (ntfy signaling)
 - **HMAC-SHA256** for authentication
 - **Constant-time comparison** for all HMAC verification
-- **Rate limiting** on signaling endpoint
+- **Rate limiting** on signaling endpoints
 - **Timestamp validation** (±30 seconds)
+- **Nonce replay protection** for ntfy messages
 - **Sensitive data zeroing** on cleanup
 
 ## Architecture
@@ -76,11 +80,12 @@ uv run ras pair --output qr.png
 ### Daemon (Python)
 
 - **Pairing Module**: QR generation, HTTP signaling, authentication
+- **ntfy Signaling**: Encrypted relay for NAT traversal (AES-256-GCM)
 - **Session Manager**: Create/list/kill sessions, persistence, validation
 - **Terminal Handler**: Output capture via pipe-pane, input via send-keys
 - **Notification Detector**: Pattern matching for prompts/errors/completion
 - **WebRTC**: Peer connection management via aiortc
-- **Crypto**: HKDF key derivation, HMAC utilities
+- **Crypto**: HKDF key derivation, AES-GCM, HMAC utilities
 - **CLI**: Click-based command interface
 
 ### Mobile App (Kotlin)
@@ -101,7 +106,11 @@ Protocol definitions are in `proto/`:
 - `signaling.proto` - HTTP signaling messages
 - `auth.proto` - Authentication handshake
 - `ntfy.proto` - IP change notifications
-- `ras.proto` - Main protocol (sessions, terminal I/O, notifications)
+- `ntfy_signaling.proto` - Encrypted ntfy relay for NAT traversal
+- `sessions.proto` - Session management messages
+- `terminal.proto` - Terminal I/O messages
+- `clipboard.proto` - Clipboard sync messages
+- `daemon.proto` - Daemon control messages
 
 Regenerate Python code after changing protos:
 
@@ -156,6 +165,9 @@ implementations are compatible:
 - `qr_payload.json` - QR payload encoding
 - `auth_handshake.json` - Authentication protocol
 - `signaling.json` - HTTP signaling format
+- `ntfy.json` - ntfy notification format
+- `ntfy_signaling.json` - ntfy signaling relay encryption
+- `sessions.json` - Session management protocol
 
 ## License
 
