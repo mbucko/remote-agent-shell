@@ -74,6 +74,7 @@ fun SessionsScreen(
     onSessionClick: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToCreateSession: () -> Unit,
+    onNavigateToPairing: () -> Unit,
     viewModel: SessionsViewModel = hiltViewModel()
 ) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
@@ -171,9 +172,11 @@ fun SessionsScreen(
                 }
 
                 is SessionsScreenState.Error -> {
+                    val isConnectionError = state.message.contains("Not connected", ignoreCase = true)
                     ErrorContent(
                         message = state.message,
                         onRetry = { viewModel.refreshSessions() },
+                        onPairDevice = if (isConnectionError) onNavigateToPairing else null,
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }
@@ -225,6 +228,7 @@ private fun EmptySessionsContent(
 private fun ErrorContent(
     message: String,
     onRetry: () -> Unit,
+    onPairDevice: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -237,8 +241,15 @@ private fun ErrorContent(
             color = MaterialTheme.colorScheme.error
         )
         Spacer(modifier = Modifier.height(16.dp))
-        TextButton(onClick = onRetry) {
-            Text("Retry")
+        if (onPairDevice != null) {
+            // Show "Pair Device" button when not connected
+            TextButton(onClick = onPairDevice) {
+                Text("Pair Device")
+            }
+        } else {
+            TextButton(onClick = onRetry) {
+                Text("Retry")
+            }
         }
     }
 }

@@ -47,6 +47,11 @@ fun NavGraph(
                 },
                 onNavigateToCreateSession = {
                     navController.navigate(Routes.CreateSession.route)
+                },
+                onNavigateToPairing = {
+                    navController.navigate(Routes.Pairing.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }
