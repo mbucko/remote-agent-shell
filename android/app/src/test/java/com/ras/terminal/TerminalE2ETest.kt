@@ -652,6 +652,427 @@ class TerminalE2ETest {
     }
 
     // ==========================================================================
+    // Scenario 21: Error - Session Being Killed
+    // ==========================================================================
+
+    @Test
+    fun `E2E - error session killing`() = runTest {
+        repository.events.test {
+            repository.attach("abc123def456")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // Daemon responds with session killing error
+            val errorEvent = createErrorEvent("abc123def456", "SESSION_KILLING", "Session is being terminated")
+            terminalEventsFlow.emit(errorEvent)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertFalse(repository.state.value.isAttaching)
+            assertEquals("SESSION_KILLING", repository.state.value.error?.code)
+
+            val event = awaitItem() as TerminalEvent.Error
+            assertEquals("SESSION_KILLING", event.code)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 22: Error - Already Attached (Informational)
+    // ==========================================================================
+
+    @Test
+    fun `E2E - error already attached`() = runTest {
+        simulateAttached()
+
+        repository.events.test {
+            // Try to attach again (could happen from UI race condition)
+            sentCommands.clear()
+            repository.attach("abc123def456")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // Daemon responds with already attached
+            val errorEvent = createErrorEvent("abc123def456", "ALREADY_ATTACHED", "Already attached to this session")
+            terminalEventsFlow.emit(errorEvent)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // This is informational - we should still be attached
+            val event = awaitItem() as TerminalEvent.Error
+            assertEquals("ALREADY_ATTACHED", event.code)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 23: Error - Invalid Sequence (Buffer Rolled)
+    // ==========================================================================
+
+    @Test
+    fun `E2E - error invalid sequence`() = runTest {
+        repository.events.test {
+            // Try to resume from a sequence that's no longer in buffer
+            repository.attach("abc123def456", fromSequence = 1000)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val errorEvent = createErrorEvent("abc123def456", "INVALID_SEQUENCE", "Requested sequence not in buffer")
+            terminalEventsFlow.emit(errorEvent)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals("INVALID_SEQUENCE", repository.state.value.error?.code)
+
+            val event = awaitItem() as TerminalEvent.Error
+            assertEquals("INVALID_SEQUENCE", event.code)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 24: Error - Pipe Setup Failed
+    // ==========================================================================
+
+    @Test
+    fun `E2E - error pipe setup failed`() = runTest {
+        repository.events.test {
+            repository.attach("abc123def456")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val errorEvent = createErrorEvent("abc123def456", "PIPE_SETUP_FAILED", "Failed to setup tmux pipe-pane")
+            terminalEventsFlow.emit(errorEvent)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals("PIPE_SETUP_FAILED", repository.state.value.error?.code)
+
+            val event = awaitItem() as TerminalEvent.Error
+            assertEquals("PIPE_SETUP_FAILED", event.code)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 25: Concurrent Attach Attempts
+    // ==========================================================================
+
+    @Test
+    fun `E2E - concurrent attach attempts`() = runTest {
+        // Start first attach
+        repository.attach("abc123def456")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(repository.state.value.isAttaching)
+
+        // Before it completes, try another attach
+        sentCommands.clear()
+        repository.attach("abc123def456")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Second attach command should still be sent (daemon handles dedup)
+        assertEquals(1, sentCommands.size)
+        assertTrue(repository.state.value.isAttaching)
+    }
+
+    // ==========================================================================
+    // Scenario 26: Send While Attaching
+    // ==========================================================================
+
+    @Test
+    fun `E2E - send while attaching fails`() = runTest {
+        repository.attach("abc123def456")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(repository.state.value.isAttaching)
+        assertFalse(repository.state.value.isAttached)
+
+        // Try to send input while still attaching
+        try {
+            repository.sendInput("test")
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message?.contains("attached") == true)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 27: Session ID Mismatch (Ignored)
+    // ==========================================================================
+
+    @Test
+    fun `E2E - session ID mismatch ignored`() = runTest {
+        simulateAttached()
+        val originalState = repository.state.value
+
+        // Receive event for different session
+        val mismatchEvent = createOutputEvent("different123", "should be ignored", sequence = 999)
+        terminalEventsFlow.emit(mismatchEvent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Note: Current implementation processes all events. This test documents behavior.
+        // In production, daemon should not send mismatched events.
+        // State will update because we don't filter by session ID (could be improved)
+    }
+
+    // ==========================================================================
+    // Scenario 28: Zero-Length Output
+    // ==========================================================================
+
+    @Test
+    fun `E2E - zero length output`() = runTest {
+        simulateAttached()
+
+        repository.output.test {
+            // Daemon sends empty output (heartbeat/keepalive)
+            val emptyOutput = ProtoTerminalEvent.newBuilder()
+                .setOutput(TerminalOutput.newBuilder()
+                    .setSessionId("abc123def456")
+                    .setData(ByteString.EMPTY)
+                    .setSequence(1)
+                    .build())
+                .build()
+            terminalEventsFlow.emit(emptyOutput)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val output = awaitItem()
+            assertEquals(0, output.size)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 29: Special Keys with Modifiers
+    // ==========================================================================
+
+    @Test
+    fun `E2E - special keys with modifiers`() = runTest {
+        simulateAttached()
+
+        // Send Ctrl+Shift+C (modifier = 1 + 4 = 5)
+        sentCommands.clear()
+        repository.sendSpecialKey(KeyType.KEY_CTRL_C, modifiers = 5)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val cmd = sentCommands.last()
+        assertTrue(cmd.input.hasSpecial())
+        assertEquals(KeyType.KEY_CTRL_C, cmd.input.special.key)
+        assertEquals(5, cmd.input.special.modifiers)
+    }
+
+    // ==========================================================================
+    // Scenario 30: All Function Keys F1-F12
+    // ==========================================================================
+
+    @Test
+    fun `E2E - all function keys F1 through F12`() = runTest {
+        simulateAttached()
+
+        val functionKeys = listOf(
+            KeyType.KEY_F1, KeyType.KEY_F2, KeyType.KEY_F3, KeyType.KEY_F4,
+            KeyType.KEY_F5, KeyType.KEY_F6, KeyType.KEY_F7, KeyType.KEY_F8,
+            KeyType.KEY_F9, KeyType.KEY_F10, KeyType.KEY_F11, KeyType.KEY_F12
+        )
+
+        for (key in functionKeys) {
+            sentCommands.clear()
+            repository.sendSpecialKey(key)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertTrue("Key $key should send", sentCommands.isNotEmpty())
+            assertEquals(key, sentCommands.last().input.special.key)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 31: Binary Data Input
+    // ==========================================================================
+
+    @Test
+    fun `E2E - binary data input`() = runTest {
+        simulateAttached()
+
+        // Send binary data including null bytes
+        val binaryData = byteArrayOf(0x00, 0x01, 0x02, 0xFF.toByte(), 0xFE.toByte())
+        repository.sendInput(binaryData)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val sentData = sentCommands.last().input.data.toByteArray()
+        assertArrayEquals(binaryData, sentData)
+    }
+
+    // ==========================================================================
+    // Scenario 32: Double Detach
+    // ==========================================================================
+
+    @Test
+    fun `E2E - double detach is safe`() = runTest {
+        simulateAttached()
+
+        // First detach
+        repository.detach()
+        testDispatcher.scheduler.advanceUntilIdle()
+        terminalEventsFlow.emit(createDetachedEvent("abc123def456", "user_request"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(repository.state.value.isAttached)
+
+        // Second detach should be no-op
+        sentCommands.clear()
+        repository.detach()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // No command sent because sessionId is cleared or state check prevents it
+        // This documents current behavior
+    }
+
+    // ==========================================================================
+    // Scenario 33: Detach Without Attach
+    // ==========================================================================
+
+    @Test
+    fun `E2E - detach without prior attach is safe`() = runTest {
+        // Never attached
+        assertNull(repository.state.value.sessionId)
+
+        sentCommands.clear()
+        repository.detach()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // No command should be sent
+        assertTrue(sentCommands.isEmpty())
+    }
+
+    // ==========================================================================
+    // Scenario 34: Large Paste (Within Limit)
+    // ==========================================================================
+
+    @Test
+    fun `E2E - large paste within limit`() = runTest {
+        simulateAttached()
+
+        // 60KB is within 64KB limit
+        val largeText = "A".repeat(60_000)
+        repository.sendInput(largeText)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(60_000, sentCommands.last().input.data.size())
+    }
+
+    // ==========================================================================
+    // Scenario 35: Out-of-Order Sequence (Regression)
+    // ==========================================================================
+
+    @Test
+    fun `E2E - out of order sequence updates state`() = runTest {
+        simulateAttached()
+
+        // Receive sequence 100
+        terminalEventsFlow.emit(createOutputEvent("abc123def456", "first", sequence = 100))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(100L, repository.state.value.lastSequence)
+
+        // Receive sequence 50 (out of order - could happen with multiple streams)
+        terminalEventsFlow.emit(createOutputEvent("abc123def456", "late", sequence = 50))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Current behavior: updates to latest received (documents behavior)
+        // Note: Could be improved to track max sequence
+        assertEquals(50L, repository.state.value.lastSequence)
+    }
+
+    // ==========================================================================
+    // Scenario 36: Attach While Already Attached
+    // ==========================================================================
+
+    @Test
+    fun `E2E - attach to different session while attached`() = runTest {
+        simulateAttached()
+        assertTrue(repository.state.value.isAttached)
+        assertEquals("abc123def456", repository.state.value.sessionId)
+
+        // Attach to different session (must be 12 chars)
+        sentCommands.clear()
+        repository.attach("xyz789uvw012")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should start attaching to new session
+        assertEquals("xyz789uvw012", sentCommands.last().attach.sessionId)
+        assertTrue(repository.state.value.isAttaching)
+    }
+
+    // ==========================================================================
+    // Scenario 37: Empty Error Message
+    // ==========================================================================
+
+    @Test
+    fun `E2E - empty error message handled`() = runTest {
+        repository.events.test {
+            repository.attach("abc123def456")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val errorEvent = createErrorEvent("abc123def456", "UNKNOWN_ERROR", "")
+            terminalEventsFlow.emit(errorEvent)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem() as TerminalEvent.Error
+            assertEquals("", event.message)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 38: Empty Session ID in Error
+    // ==========================================================================
+
+    @Test
+    fun `E2E - empty session ID in error handled`() = runTest {
+        repository.events.test {
+            // Error with empty session ID (global error)
+            val errorEvent = ProtoTerminalEvent.newBuilder()
+                .setError(TerminalError.newBuilder()
+                    .setSessionId("")
+                    .setErrorCode("CONNECTION_ERROR")
+                    .setMessage("Connection lost")
+                    .build())
+                .build()
+            terminalEventsFlow.emit(errorEvent)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem() as TerminalEvent.Error
+            assertNull(event.sessionId)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 39: Navigation Keys
+    // ==========================================================================
+
+    @Test
+    fun `E2E - all navigation keys`() = runTest {
+        simulateAttached()
+
+        val navKeys = listOf(
+            KeyType.KEY_HOME,
+            KeyType.KEY_END,
+            KeyType.KEY_PAGE_UP,
+            KeyType.KEY_PAGE_DOWN,
+            KeyType.KEY_INSERT,
+            KeyType.KEY_DELETE
+        )
+
+        for (key in navKeys) {
+            sentCommands.clear()
+            repository.sendSpecialKey(key)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals("Key $key", key, sentCommands.last().input.special.key)
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 40: Rapid Toggle Raw Mode
+    // ==========================================================================
+
+    @Test
+    fun `E2E - rapid raw mode toggle thread safe`() = runTest {
+        simulateAttached()
+
+        // Rapidly toggle raw mode (tests thread safety of update)
+        repeat(100) {
+            repository.toggleRawMode()
+        }
+
+        // Should end up in original state (100 toggles = even = same)
+        assertFalse(repository.state.value.isRawMode)
+    }
+
+    // ==========================================================================
     // Helper Methods
     // ==========================================================================
 

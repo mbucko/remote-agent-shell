@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -87,16 +88,18 @@ class TerminalRepository @Inject constructor(
 
     private suspend fun handleAttached(attached: com.ras.proto.TerminalAttached) {
         Log.d(TAG, "Attached to session: ${attached.sessionId}")
-        _state.value = _state.value.copy(
-            sessionId = attached.sessionId,
-            isAttached = true,
-            isAttaching = false,
-            cols = attached.cols,
-            rows = attached.rows,
-            bufferStartSeq = attached.bufferStartSeq,
-            lastSequence = attached.currentSeq,
-            error = null
-        )
+        _state.update { current ->
+            current.copy(
+                sessionId = attached.sessionId,
+                isAttached = true,
+                isAttaching = false,
+                cols = attached.cols,
+                rows = attached.rows,
+                bufferStartSeq = attached.bufferStartSeq,
+                lastSequence = attached.currentSeq,
+                error = null
+            )
+        }
         _events.emit(
             TerminalEvent.Attached(
                 sessionId = attached.sessionId,
@@ -110,17 +113,19 @@ class TerminalRepository @Inject constructor(
 
     private suspend fun handleDetached(detached: com.ras.proto.TerminalDetached) {
         Log.d(TAG, "Detached from session: ${detached.sessionId}, reason: ${detached.reason}")
-        _state.value = _state.value.copy(
-            isAttached = false,
-            isAttaching = false,
-            error = if (detached.reason != "user_request") {
-                TerminalErrorInfo(
-                    code = "DETACHED",
-                    message = detached.reason,
-                    sessionId = detached.sessionId
-                )
-            } else null
-        )
+        _state.update { current ->
+            current.copy(
+                isAttached = false,
+                isAttaching = false,
+                error = if (detached.reason != "user_request") {
+                    TerminalErrorInfo(
+                        code = "DETACHED",
+                        message = detached.reason,
+                        sessionId = detached.sessionId
+                    )
+                } else null
+            )
+        }
         _events.emit(
             TerminalEvent.Detached(
                 sessionId = detached.sessionId,
@@ -133,8 +138,8 @@ class TerminalRepository @Inject constructor(
         val data = output.data.toByteArray()
         Log.v(TAG, "Output: ${data.size} bytes, seq=${output.sequence}")
 
-        // Update sequence
-        _state.value = _state.value.copy(lastSequence = output.sequence)
+        // Update sequence (thread-safe)
+        _state.update { current -> current.copy(lastSequence = output.sequence) }
 
         // Emit raw output for terminal emulator
         _output.emit(data)
@@ -152,14 +157,16 @@ class TerminalRepository @Inject constructor(
 
     private suspend fun handleError(error: com.ras.proto.TerminalError) {
         Log.e(TAG, "Terminal error: ${error.errorCode} - ${error.message}")
-        _state.value = _state.value.copy(
-            isAttaching = false,
-            error = TerminalErrorInfo(
-                code = error.errorCode,
-                message = error.message,
-                sessionId = error.sessionId.ifEmpty { null }
+        _state.update { current ->
+            current.copy(
+                isAttaching = false,
+                error = TerminalErrorInfo(
+                    code = error.errorCode,
+                    message = error.message,
+                    sessionId = error.sessionId.ifEmpty { null }
+                )
             )
-        )
+        }
         _events.emit(
             TerminalEvent.Error(
                 sessionId = error.sessionId.ifEmpty { null },
@@ -171,13 +178,15 @@ class TerminalRepository @Inject constructor(
 
     private suspend fun handleSkipped(skipped: com.ras.proto.OutputSkipped) {
         Log.w(TAG, "Output skipped: seq ${skipped.fromSequence}-${skipped.toSequence}, ${skipped.bytesSkipped} bytes")
-        _state.value = _state.value.copy(
-            outputSkipped = OutputSkippedInfo(
-                fromSequence = skipped.fromSequence,
-                toSequence = skipped.toSequence,
-                bytesSkipped = skipped.bytesSkipped
+        _state.update { current ->
+            current.copy(
+                outputSkipped = OutputSkippedInfo(
+                    fromSequence = skipped.fromSequence,
+                    toSequence = skipped.toSequence,
+                    bytesSkipped = skipped.bytesSkipped
+                )
             )
-        )
+        }
         _events.emit(
             TerminalEvent.OutputSkipped(
                 sessionId = skipped.sessionId,
@@ -203,11 +212,13 @@ class TerminalRepository @Inject constructor(
         TerminalInputValidator.requireValidSessionId(sessionId)
 
         Log.d(TAG, "Attaching to session: $sessionId from seq $fromSequence")
-        _state.value = _state.value.copy(
-            sessionId = sessionId,
-            isAttaching = true,
-            error = null
-        )
+        _state.update { current ->
+            current.copy(
+                sessionId = sessionId,
+                isAttaching = true,
+                error = null
+            )
+        }
 
         val command = TerminalCommand.newBuilder()
             .setAttach(
@@ -331,34 +342,34 @@ class TerminalRepository @Inject constructor(
      * In normal mode, input is line-buffered.
      */
     fun setRawMode(enabled: Boolean) {
-        _state.value = _state.value.copy(isRawMode = enabled)
+        _state.update { current -> current.copy(isRawMode = enabled) }
     }
 
     /**
      * Toggle raw mode.
      */
     fun toggleRawMode() {
-        _state.value = _state.value.copy(isRawMode = !_state.value.isRawMode)
+        _state.update { current -> current.copy(isRawMode = !current.isRawMode) }
     }
 
     /**
      * Clear the current error.
      */
     fun clearError() {
-        _state.value = _state.value.copy(error = null)
+        _state.update { current -> current.copy(error = null) }
     }
 
     /**
      * Clear the output skipped notification.
      */
     fun clearOutputSkipped() {
-        _state.value = _state.value.copy(outputSkipped = null)
+        _state.update { current -> current.copy(outputSkipped = null) }
     }
 
     /**
      * Reset terminal state (e.g., when navigating away).
      */
     fun reset() {
-        _state.value = TerminalState()
+        _state.update { TerminalState() }
     }
 }
