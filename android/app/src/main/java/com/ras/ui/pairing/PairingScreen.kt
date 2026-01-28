@@ -111,9 +111,25 @@ fun PairingScreen(
                 }
 
                 is PairingState.QrParsed,
-                PairingState.Signaling -> {
+                PairingState.Signaling,
+                PairingState.TryingDirect,
+                PairingState.DirectSignaling -> {
                     ProgressSection(
                         message = "Connecting to laptop...",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                PairingState.NtfySubscribing -> {
+                    ProgressSection(
+                        message = "Setting up relay connection...",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                PairingState.NtfyWaitingForAnswer -> {
+                    ProgressSection(
+                        message = "Waiting for laptop response...",
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -378,6 +394,9 @@ private fun getFailureReasonMessage(reason: PairingState.FailureReason): String 
     return when (reason) {
         PairingState.FailureReason.QR_PARSE_ERROR -> "Invalid QR code"
         PairingState.FailureReason.SIGNALING_FAILED -> "Could not reach laptop.\nMake sure you're on the same network."
+        PairingState.FailureReason.DIRECT_TIMEOUT -> "Direct connection timed out.\nTrying relay..."
+        PairingState.FailureReason.NTFY_SUBSCRIBE_FAILED -> "Could not connect to relay.\nPlease check your internet connection."
+        PairingState.FailureReason.NTFY_TIMEOUT -> "Relay connection timed out.\nMake sure the laptop is running."
         PairingState.FailureReason.CONNECTION_FAILED -> "Connection failed.\nPlease try again."
         PairingState.FailureReason.AUTH_FAILED -> "Authentication failed.\nPlease scan a new QR code."
         PairingState.FailureReason.TIMEOUT -> "Connection timed out.\nPlease try again."

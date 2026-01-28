@@ -1,0 +1,38 @@
+// ntfy signaling relay messages for WebRTC connection establishment
+// Used when direct HTTP connection fails due to NAT
+// Shared between: Python daemon, Android app, iOS app
+
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+option swift_prefix = "RAS";
+
+// Message sent via ntfy for signaling relay
+// Encrypted with signaling_key (AES-256-GCM) before sending
+// Wire format: base64(IV + ciphertext + tag)
+message NtfySignalMessage {
+  // Message type
+  MessageType type = 1;
+
+  enum MessageType {
+    OFFER = 0;   // Phone -> Daemon: WebRTC offer
+    ANSWER = 1;  // Daemon -> Phone: WebRTC answer
+  }
+
+  // Session ID from QR code (must match pending session)
+  string session_id = 2;
+
+  // SDP content (WebRTC offer or answer, includes ICE candidates)
+  string sdp = 3;
+
+  // Device info (required in OFFER, optional in ANSWER)
+  string device_id = 4;
+  string device_name = 5;
+
+  // Replay protection
+  int64 timestamp = 6;   // Unix timestamp (seconds)
+  bytes nonce = 7;       // 16 random bytes (CSPRNG)
+}

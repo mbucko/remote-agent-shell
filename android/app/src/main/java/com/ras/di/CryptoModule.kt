@@ -5,6 +5,8 @@ import com.ras.data.keystore.KeyManager
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.pairing.PairingManager
 import com.ras.pairing.SignalingClient
+import com.ras.signaling.NtfyClientInterface
+import com.ras.signaling.NtfySignalingClient
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -46,12 +48,19 @@ object CryptoModule {
 
     @Provides
     @Singleton
+    fun provideNtfyClient(): NtfyClientInterface {
+        return NtfySignalingClient()
+    }
+
+    @Provides
+    @Singleton
     fun providePairingManager(
         @ApplicationContext context: Context,
         signalingClient: SignalingClient,
         keyManager: KeyManager,
-        webRTCClientFactory: WebRTCClient.Factory
+        webRTCClientFactory: WebRTCClient.Factory,
+        ntfyClient: NtfyClientInterface
     ): PairingManager {
-        return PairingManager(context, signalingClient, keyManager, webRTCClientFactory)
+        return PairingManager(context, signalingClient, keyManager, webRTCClientFactory, ntfyClient)
     }
 }

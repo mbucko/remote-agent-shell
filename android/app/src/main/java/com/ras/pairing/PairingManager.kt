@@ -4,6 +4,10 @@ import android.content.Context
 import com.ras.crypto.KeyDerivation
 import com.ras.data.keystore.KeyManager
 import com.ras.data.webrtc.WebRTCClient
+import com.ras.signaling.NtfyClientInterface
+import com.ras.signaling.NtfySignalingClient
+import com.ras.signaling.PairingSignaler
+import com.ras.signaling.PairingSignalerResult
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -20,7 +24,8 @@ class PairingManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val signalingClient: SignalingClient,
     private val keyManager: KeyManager,
-    private val webRTCClientFactory: WebRTCClient.Factory
+    private val webRTCClientFactory: WebRTCClient.Factory,
+    private val ntfyClient: NtfyClientInterface
 ) {
     // Internal scope that can be overridden for testing
     // Using lazy initialization to allow tests to override before first use
@@ -52,9 +57,8 @@ class PairingManager @Inject constructor(
 
     private suspend fun performSignaling() {
         val payload = currentPayload ?: return
-        val key = authKey ?: return
 
-        _state.value = PairingState.Signaling
+        _state.value = PairingState.TryingDirect
 
         // Create WebRTC client and generate offer
         val client = webRTCClientFactory.create()
@@ -72,23 +76,39 @@ class PairingManager @Inject constructor(
         val deviceId = keyManager.getOrCreateDeviceId()
         val deviceName = android.os.Build.MODEL ?: "Unknown Device"
 
-        // Send signaling request
-        val result = signalingClient.sendSignal(
+        // Create PairingSignaler that handles direct HTTP and ntfy fallback
+        val pairingSignaler = PairingSignaler(
+            directClient = signalingClient,
+            ntfyClient = ntfyClient
+        )
+
+        // Exchange SDP using direct HTTP or ntfy fallback
+        val result = pairingSignaler.exchangeSdp(
             ip = payload.ip,
             port = payload.port,
             sessionId = payload.sessionId,
-            authKey = key,
+            masterSecret = payload.masterSecret,
             sdpOffer = sdpOffer,
             deviceId = deviceId,
             deviceName = deviceName
         )
 
         when (result) {
-            is SignalingResult.Success -> {
+            is PairingSignalerResult.Success -> {
+                // Update state based on which path was used
+                if (result.usedNtfyPath) {
+                    _state.value = PairingState.NtfyWaitingForAnswer
+                } else {
+                    _state.value = PairingState.DirectSignaling
+                }
                 _state.value = PairingState.Connecting
                 performConnection(result.sdpAnswer)
             }
-            is SignalingResult.Error -> {
+            is PairingSignalerResult.NtfyTimeout -> {
+                _state.value = PairingState.Failed(PairingState.FailureReason.NTFY_TIMEOUT)
+                cleanup()
+            }
+            is PairingSignalerResult.Error -> {
                 _state.value = PairingState.Failed(PairingState.FailureReason.SIGNALING_FAILED)
                 cleanup()
             }
