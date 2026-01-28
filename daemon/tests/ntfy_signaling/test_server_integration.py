@@ -394,6 +394,424 @@ class TestNtfyCleanup:
         assert handler._crypto._key == bytes(32)
 
 
+class TestNtfyClockSkewBoundary:
+    """Tests for E2E-NTFY-09: Clock skew boundary cases."""
+
+    @pytest.mark.asyncio
+    async def test_timestamp_exactly_30s_past_valid(self, server):
+        """E2E-NTFY-09: Timestamp exactly 30s in past is VALID (boundary)."""
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Create offer with timestamp exactly 30 seconds in past
+        encrypted = create_encrypted_offer(
+            master_secret=master_secret,
+            session_id=session_id,
+            timestamp=int(time.time()) - 30,  # Exactly 30s - boundary
+        )
+
+        # Mock peer
+        mock_peer = AsyncMock()
+        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.on_message = Mock()
+        mock_peer.close = AsyncMock()
+        pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
+
+        # Track published
+        published = []
+        pairing_session._ntfy_subscriber._publish = AsyncMock(
+            side_effect=lambda data: published.append(data) or True
+        )
+
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+        await asyncio.sleep(0.1)
+
+        # Should be accepted (exactly at boundary)
+        assert len(published) == 1
+
+    @pytest.mark.asyncio
+    async def test_timestamp_31s_past_rejected(self, server):
+        """E2E-NTFY-09: Timestamp 31s in past is INVALID (outside boundary)."""
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Create offer with timestamp 31 seconds in past
+        encrypted = create_encrypted_offer(
+            master_secret=master_secret,
+            session_id=session_id,
+            timestamp=int(time.time()) - 31,  # 31s - outside boundary
+        )
+
+        # Mock publish
+        pairing_session._ntfy_subscriber._publish = AsyncMock()
+
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+
+        # Should be rejected
+        pairing_session._ntfy_subscriber._publish.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_timestamp_exactly_30s_future_valid(self, server):
+        """E2E-NTFY-09: Timestamp exactly 30s in future is VALID (boundary)."""
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Create offer with timestamp exactly 30 seconds in future
+        encrypted = create_encrypted_offer(
+            master_secret=master_secret,
+            session_id=session_id,
+            timestamp=int(time.time()) + 30,  # Exactly 30s in future
+        )
+
+        # Mock peer
+        mock_peer = AsyncMock()
+        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.on_message = Mock()
+        mock_peer.close = AsyncMock()
+        pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
+
+        # Track published
+        published = []
+        pairing_session._ntfy_subscriber._publish = AsyncMock(
+            side_effect=lambda data: published.append(data) or True
+        )
+
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+        await asyncio.sleep(0.1)
+
+        # Should be accepted (exactly at boundary)
+        assert len(published) == 1
+
+    @pytest.mark.asyncio
+    async def test_timestamp_31s_future_rejected(self, server):
+        """E2E-NTFY-09: Timestamp 31s in future is INVALID (outside boundary)."""
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Create offer with timestamp 31 seconds in future
+        encrypted = create_encrypted_offer(
+            master_secret=master_secret,
+            session_id=session_id,
+            timestamp=int(time.time()) + 31,  # 31s in future - outside boundary
+        )
+
+        # Mock publish
+        pairing_session._ntfy_subscriber._publish = AsyncMock()
+
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+
+        # Should be rejected
+        pairing_session._ntfy_subscriber._publish.assert_not_called()
+
+
+class TestNtfyLargeSdp:
+    """Tests for E2E-NTFY-10: Large SDP handling."""
+
+    @pytest.mark.asyncio
+    async def test_large_sdp_with_many_ice_candidates(self, server):
+        """E2E-NTFY-10: SDP with many ICE candidates (~50KB)."""
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Create a large SDP with 500 ICE candidates (~50KB)
+        base_sdp = "v=0\r\no=- 0 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\n"
+        base_sdp += "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
+        base_sdp += "c=IN IP4 0.0.0.0\r\n"
+
+        # Add 500 ICE candidates (~100 bytes each = ~50KB)
+        for i in range(500):
+            base_sdp += f"a=candidate:foundation{i} 1 udp 2130706431 192.168.{(i // 256) % 256}.{i % 256} {50000 + i} typ host generation 0 ufrag abcd network-id {i}\r\n"
+
+        assert len(base_sdp) > 40000  # Verify it's actually large
+
+        encrypted = create_encrypted_offer(
+            master_secret=master_secret,
+            session_id=session_id,
+            sdp=base_sdp,
+        )
+
+        # Mock peer
+        mock_peer = AsyncMock()
+        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\na=answer\r\n")
+        mock_peer.on_message = Mock()
+        mock_peer.close = AsyncMock()
+        pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
+
+        # Track published
+        published = []
+        pairing_session._ntfy_subscriber._publish = AsyncMock(
+            side_effect=lambda data: published.append(data) or True
+        )
+
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+        await asyncio.sleep(0.1)
+
+        # Should handle large SDP successfully
+        assert len(published) == 1
+
+
+class TestNtfyUnicodeDeviceName:
+    """Tests for E2E-NTFY-11: Unicode device name handling."""
+
+    @pytest.mark.asyncio
+    async def test_unicode_device_name_preserved_e2e(self, server):
+        """E2E-NTFY-11: Device name with Unicode characters is preserved."""
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Unicode device name with emojis and international characters
+        unicode_name = "📱 Téléphone de José 日本語"
+
+        encrypted = create_encrypted_offer(
+            master_secret=master_secret,
+            session_id=session_id,
+            device_id="unicode-phone-123",
+            device_name=unicode_name,
+        )
+
+        # Mock peer
+        mock_peer = AsyncMock()
+        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.on_message = Mock()
+        mock_peer.close = AsyncMock()
+        pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
+
+        # Track published
+        published = []
+        pairing_session._ntfy_subscriber._publish = AsyncMock(
+            side_effect=lambda data: published.append(data) or True
+        )
+
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+        await asyncio.sleep(0.1)
+
+        # Should succeed
+        assert len(published) == 1
+
+        # Verify device name was stored correctly (sanitized but Unicode preserved)
+        assert pairing_session.device_name is not None
+        assert "Téléphone" in pairing_session.device_name
+        assert "José" in pairing_session.device_name
+        assert "日本語" in pairing_session.device_name
+
+
+class TestNtfyWrongMessageType:
+    """Tests for E2E-NTFY-12: Wrong message type handling."""
+
+    @pytest.mark.asyncio
+    async def test_daemon_ignores_answer_message(self, server):
+        """E2E-NTFY-12: Daemon ignores ANSWER message (expects OFFER)."""
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Create ANSWER message instead of OFFER
+        msg = NtfySignalMessage(
+            type=NtfySignalMessageMessageType.ANSWER,  # Wrong type!
+            session_id=session_id,
+            sdp="v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n",
+            device_id="",
+            device_name="",
+            timestamp=int(time.time()),
+            nonce=os.urandom(NONCE_SIZE),
+        )
+        signaling_key = derive_signaling_key(master_secret)
+        crypto = NtfySignalingCrypto(signaling_key)
+        encrypted = crypto.encrypt(bytes(msg))
+
+        # Mock publish
+        pairing_session._ntfy_subscriber._publish = AsyncMock()
+
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+
+        # Should be silently rejected (wrong message type)
+        pairing_session._ntfy_subscriber._publish.assert_not_called()
+        assert pairing_session.state == "pending"
+
+
+class TestNtfyDuplicateMessage:
+    """Tests for E2E-NTFY-21: Duplicate message handling."""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_offer_only_one_response(self, server):
+        """E2E-NTFY-21: Same message delivered multiple times -> only one response."""
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Create offer with fixed nonce
+        nonce = os.urandom(NONCE_SIZE)
+        encrypted = create_encrypted_offer(
+            master_secret=master_secret,
+            session_id=session_id,
+            nonce=nonce,
+        )
+
+        # Mock peer
+        mock_peer = AsyncMock()
+        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.on_message = Mock()
+        mock_peer.close = AsyncMock()
+        pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
+
+        # Track published
+        publish_count = 0
+        async def mock_publish(data):
+            nonlocal publish_count
+            publish_count += 1
+            return True
+        pairing_session._ntfy_subscriber._publish = mock_publish
+
+        # Deliver same message 3 times (simulating ntfy duplication)
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+        await pairing_session._ntfy_subscriber._process_message(encrypted)
+        await asyncio.sleep(0.1)
+
+        # Should only respond once (nonce replay protection)
+        assert publish_count == 1
+
+
+class TestNtfyTamperedCiphertext:
+    """Tests for tampered ciphertext rejection."""
+
+    @pytest.mark.asyncio
+    async def test_tampered_ciphertext_rejected(self, server):
+        """Tampered ciphertext is silently rejected (GCM auth failure)."""
+        import base64
+
+        # Start pairing
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:{server.get_port()}/api/pair"
+            ) as resp:
+                data = await resp.json()
+
+        session_id = data["session_id"]
+        master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
+        pairing_session = server._pairing_sessions.get(session_id)
+
+        # Create valid offer
+        encrypted = create_encrypted_offer(
+            master_secret=master_secret,
+            session_id=session_id,
+        )
+
+        # Tamper with the ciphertext
+        raw = bytearray(base64.b64decode(encrypted))
+        raw[-5] ^= 0xFF  # Flip some bits
+        tampered = base64.b64encode(bytes(raw)).decode()
+
+        # Mock publish
+        pairing_session._ntfy_subscriber._publish = AsyncMock()
+
+        await pairing_session._ntfy_subscriber._process_message(tampered)
+
+        # Should be silently rejected (authentication failure)
+        pairing_session._ntfy_subscriber._publish.assert_not_called()
+        assert pairing_session.state == "pending"
+
+
+class TestNtfySessionTimeoutCleanup:
+    """Tests for session timeout cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_session_timeout_cleans_up_subscriber(self, device_store):
+        """Session expiration cleans up ntfy subscriber."""
+        # Create server with very short timeout for testing
+        server = UnifiedServer(
+            device_store=device_store,
+            stun_servers=[],
+            pairing_timeout=0.5,  # 500ms timeout
+        )
+        await server.start(host="127.0.0.1", port=0)
+
+        try:
+            # Start pairing
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"http://127.0.0.1:{server.get_port()}/api/pair"
+                ) as resp:
+                    data = await resp.json()
+
+            session_id = data["session_id"]
+            pairing_session = server._pairing_sessions.get(session_id)
+            subscriber = pairing_session._ntfy_subscriber
+
+            assert subscriber.is_subscribed()
+
+            # Wait for timeout
+            await asyncio.sleep(1.0)
+
+            # Verify cleanup
+            assert not subscriber.is_subscribed()
+            assert pairing_session.state == "expired"
+        finally:
+            await server.close()
+
+
 class TestNtfySecurityRequirements:
     """Tests for security requirements of ntfy signaling."""
 
