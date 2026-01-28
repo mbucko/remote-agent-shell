@@ -429,7 +429,6 @@ class UnifiedServer:
             success = await auth_handler.run_handshake(send_message, receive_message)
 
             if success:
-                session.state = "completed"
                 logger.info(f"Pairing completed: {session.device_name} ({session.device_id})")
 
                 # Store device
@@ -455,12 +454,19 @@ class UnifiedServer:
                     )
 
                 # Hand off complete - null out peer so cleanup doesn't close it
+                # IMPORTANT: Must happen BEFORE setting state to "completed"
+                # because CLI polls for state and sends DELETE when complete,
+                # which triggers _cleanup_session that would close the peer
                 session.peer = None
 
                 # Stop ntfy subscriber (no longer needed)
                 if session._ntfy_subscriber:
                     await session._ntfy_subscriber.close()
                     session._ntfy_subscriber = None
+
+                # Set state to completed LAST - this signals CLI to send DELETE
+                # By this point, peer is already nulled so cleanup won't affect it
+                session.state = "completed"
             else:
                 session.state = "failed"
                 logger.warning(f"Pairing auth failed for session {session_id[:8]}...")
