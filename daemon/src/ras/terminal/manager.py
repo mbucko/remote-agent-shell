@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import Callable, Optional, Protocol
+from typing import Awaitable, Callable, Optional, Protocol
 
 import betterproto
 
@@ -19,6 +19,19 @@ from ras.terminal.buffer import CircularBuffer
 from ras.terminal.capture import OutputCapture
 from ras.terminal.input import InputHandler, TmuxExecutor
 from ras.terminal.validation import validate_session_id
+
+# Optional notification support
+try:
+    from ras.notifications.matcher import PatternMatcher
+    from ras.notifications.dispatcher import NotificationDispatcher
+    from ras.notifications.types import NotificationConfig
+
+    NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    NOTIFICATIONS_AVAILABLE = False
+    PatternMatcher = None  # type: ignore
+    NotificationDispatcher = None  # type: ignore
+    NotificationConfig = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +67,8 @@ class TerminalManager:
         chunk_interval_ms: int = 50,
         tmux_path: str = "tmux",
         socket_path: Optional[str] = None,
+        broadcast_notification: Optional[Callable[[bytes], Awaitable[None]]] = None,
+        notification_config: Optional["NotificationConfig"] = None,
     ):
         """Initialize the terminal manager.
 
@@ -65,6 +80,8 @@ class TerminalManager:
             chunk_interval_ms: Interval for chunking output (default 50).
             tmux_path: Path to tmux binary.
             socket_path: Optional tmux socket path for isolated server.
+            broadcast_notification: Optional async function to broadcast notifications.
+            notification_config: Optional notification configuration.
         """
         self._sessions = session_provider
         self._send_event = send_event
@@ -80,6 +97,25 @@ class TerminalManager:
         self._buffers: dict[str, CircularBuffer] = {}
         # session_id -> set of connection_ids
         self._attachments: dict[str, set[str]] = {}
+
+        # Notification support (optional)
+        self._notification_matcher: Optional["PatternMatcher"] = None
+        self._notification_dispatcher: Optional["NotificationDispatcher"] = None
+        self._notification_matchers: dict[str, "PatternMatcher"] = {}  # Per-session
+
+        if NOTIFICATIONS_AVAILABLE and broadcast_notification is not None:
+            config = notification_config or NotificationConfig.default()
+            self._notification_dispatcher = NotificationDispatcher(
+                broadcast_notification, config
+            )
+            self._notification_config = config
+            logger.info("Notification system enabled")
+        else:
+            self._notification_config = None
+            if broadcast_notification is not None and not NOTIFICATIONS_AVAILABLE:
+                logger.warning(
+                    "Notification broadcast provided but notifications module not available"
+                )
 
     async def handle_command(
         self,
@@ -294,6 +330,62 @@ class TerminalManager:
         for conn_id in connections:
             self._send_event(conn_id, event)
 
+        # Process notifications if enabled
+        if self._notification_dispatcher is not None:
+            self._process_notifications(session_id, data)
+
+    def _process_notifications(self, session_id: str, data: bytes) -> None:
+        """Process terminal output for notification patterns.
+
+        Args:
+            session_id: The session ID.
+            data: The captured output data.
+        """
+        # Get or create per-session matcher
+        if session_id not in self._notification_matchers:
+            self._notification_matchers[session_id] = PatternMatcher(
+                self._notification_config
+            )
+
+        matcher = self._notification_matchers[session_id]
+        matches = matcher.process_chunk(data)
+
+        if not matches:
+            return
+
+        # Get session name for notification title
+        session = self._sessions.get_session(session_id)
+        session_name = session.get("display_name", session_id) if session else session_id
+
+        # Dispatch notifications (async, fire-and-forget)
+        for match in matches:
+            asyncio.create_task(
+                self._dispatch_notification(session_id, session_name, match)
+            )
+
+    async def _dispatch_notification(
+        self, session_id: str, session_name: str, match
+    ) -> None:
+        """Dispatch a notification.
+
+        Args:
+            session_id: The session ID.
+            session_name: The display name for the session.
+            match: The pattern match result.
+        """
+        try:
+            sent = await self._notification_dispatcher.dispatch(
+                session_id, session_name, match
+            )
+            if sent:
+                logger.debug(
+                    "Notification sent: session=%s, type=%s",
+                    session_id,
+                    match.type.value,
+                )
+        except Exception as e:
+            logger.error("Failed to dispatch notification: %s", e)
+
     async def _stop_capture(self, session_id: str) -> None:
         """Stop output capture for a session.
 
@@ -346,6 +438,11 @@ class TerminalManager:
         self._buffers.pop(session_id, None)
         self._input_handler.reset_rate_limit(session_id)
 
+        # Clear notification state for this session
+        self._notification_matchers.pop(session_id, None)
+        if self._notification_dispatcher is not None:
+            self._notification_dispatcher.clear_session(session_id)
+
     async def on_connection_closed(self, connection_id: str) -> None:
         """Called when a connection closes.
 
@@ -365,6 +462,7 @@ class TerminalManager:
             await self._stop_capture(session_id)
         self._buffers.clear()
         self._attachments.clear()
+        self._notification_matchers.clear()
 
     def get_attachment_count(self, session_id: str) -> int:
         """Get number of connections attached to a session.

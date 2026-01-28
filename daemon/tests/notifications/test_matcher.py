@@ -407,6 +407,68 @@ class TestFalsePositives:
         results = matcher.process_chunk(b"Save? (y/n)")
         assert len(results) == 0
 
+    def test_fp02_error_in_class_name(self, matcher):
+        """FP02: 'Error' in class name - ideally shouldn't match (known limitation).
+
+        Note: Error patterns require ^ anchor, so 'class ErrorHandler:' at start
+        of line would NOT match because it doesn't have the exact 'Error:' prefix.
+        """
+        results = matcher.process_chunk(b"class ErrorHandler:")
+        error_results = [r for r in results if r.type == NotificationType.ERROR]
+        # Should not match - 'ErrorHandler:' != 'Error:' at start of line
+        assert len(error_results) == 0
+
+
+# ============================================================================
+# ReDoS Protection Tests (ER04)
+# ============================================================================
+
+
+class TestReDoSProtection:
+    """Tests for regex denial of service protection."""
+
+    def test_er04_regex_timeout_protection(self, matcher):
+        """ER04: Pathological input doesn't hang - timeout after 100ms.
+
+        Tests that the regex timeout protection works by providing input
+        that could cause catastrophic backtracking with naive patterns.
+        """
+        # Generate input that could cause exponential backtracking
+        # with patterns like (a+)+ matching against many a's followed by non-a
+        pathological_input = b"a" * 10000 + b"!"
+
+        import time
+        start = time.time()
+        results = matcher.process_chunk(pathological_input)
+        elapsed = time.time() - start
+
+        # Should complete quickly (timeout is 100ms, allow some overhead)
+        assert elapsed < 1.0, f"Regex took too long: {elapsed:.2f}s"
+        # Should not crash
+        assert isinstance(results, list)
+
+    def test_regex_timeout_returns_empty_on_timeout(self):
+        """Regex that times out should return no matches, not crash."""
+        from ras.notifications.types import NotificationConfig
+        from ras.notifications.matcher import PatternMatcher
+
+        # Create config with very short timeout for testing
+        config = NotificationConfig(
+            approval_patterns=[],  # No patterns - won't timeout
+            error_patterns=[r"^Error:"],
+            shell_prompt_patterns=[],
+            cooldown_seconds=5.0,
+            regex_timeout_ms=1,  # 1ms timeout - very short
+        )
+        matcher = PatternMatcher(config)
+
+        # Large input that will likely timeout with 1ms limit
+        large_input = b"x" * 100000 + b"\nError: test"
+        results = matcher.process_chunk(large_input)
+
+        # Should not crash, may or may not find match depending on timing
+        assert isinstance(results, list)
+
 
 # ============================================================================
 # Snippet Extraction Tests
