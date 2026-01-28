@@ -25,6 +25,7 @@ Usage:
 """
 
 import asyncio
+import json
 import logging
 from typing import Any, Callable, Coroutine, Optional
 
@@ -166,8 +167,9 @@ class NtfySignalingSubscriber:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.debug(f"SSE subscription error: {e}")
+                logger.warning(f"SSE subscription error: {e}")
                 if self._subscribed:
+                    logger.info(f"Reconnecting in {self.SSE_RECONNECT_DELAY}s...")
                     await asyncio.sleep(self.SSE_RECONNECT_DELAY)
 
     async def _subscribe_sse(self, url: str) -> None:
@@ -179,25 +181,62 @@ class NtfySignalingSubscriber:
         if not self._session:
             return
 
+        logger.info(f"Connecting to SSE: {url}")
         async with self._session.get(
             url,
             timeout=aiohttp.ClientTimeout(total=None),  # No timeout for SSE
         ) as response:
             if response.status != 200:
-                logger.debug(f"SSE subscription failed: {response.status}")
+                logger.warning(f"SSE subscription failed: {response.status}")
                 return
 
+            logger.info(f"SSE connected, listening for messages...")
             async for line in response.content:
                 if self._stop_event.is_set():
                     break
 
                 line_str = line.decode("utf-8").strip()
                 if line_str.startswith("data:"):
-                    # Extract message data
-                    data = line_str[5:].strip()
-                    if data:
-                        # Process message in background
-                        asyncio.create_task(self._process_message(data))
+                    # Extract JSON data from SSE
+                    json_data = line_str[5:].strip()
+                    if json_data:
+                        # Parse ntfy JSON envelope to extract message
+                        encrypted = self._parse_ntfy_message(json_data)
+                        if encrypted:
+                            logger.info(f"Received ntfy message ({len(encrypted)} bytes)")
+                            # Process message in background
+                            asyncio.create_task(self._process_message(encrypted))
+
+    def _parse_ntfy_message(self, json_data: str) -> Optional[str]:
+        """Parse ntfy JSON envelope and extract message.
+
+        ntfy SSE sends JSON like:
+        {"id":"...", "time":..., "event":"message", "topic":"...", "message":"<content>"}
+
+        Args:
+            json_data: Raw JSON string from SSE data field.
+
+        Returns:
+            The message content if event is "message", None otherwise.
+        """
+        try:
+            data = json.loads(json_data)
+            event = data.get("event", "")
+
+            # Only process "message" events (ignore "open", "keepalive", etc.)
+            if event != "message":
+                logger.debug(f"Ignoring ntfy event: {event}")
+                return None
+
+            message = data.get("message", "")
+            if not message:
+                logger.debug("ntfy message event has empty message")
+                return None
+
+            return message
+        except json.JSONDecodeError as e:
+            logger.debug(f"Failed to parse ntfy JSON: {e}")
+            return None
 
     async def _process_message(self, encrypted: str) -> None:
         """Process an encrypted signaling message.
@@ -220,8 +259,8 @@ class NtfySignalingSubscriber:
                         result.peer,
                     )
         except Exception as e:
-            # Silent ignore all errors
-            logger.debug(f"Error processing signaling message: {e}")
+            # Log processing errors (but don't expose details that could help attackers)
+            logger.warning(f"Error processing signaling message: {type(e).__name__}")
 
     async def _publish(self, data: str) -> bool:
         """Publish response to ntfy topic with retry.

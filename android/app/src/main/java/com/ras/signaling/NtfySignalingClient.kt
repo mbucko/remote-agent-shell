@@ -2,10 +2,13 @@ package com.ras.signaling
 
 import com.ras.crypto.KeyDerivation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -27,11 +30,13 @@ data class NtfyMessage(
 /**
  * Interface for ntfy client operations.
  *
- * Allows for easy mocking in tests.
+ * CONTRACT: All suspend functions MUST be main-safe (callable from any dispatcher).
+ * Implementations must handle their own dispatcher switching for blocking I/O.
  */
 interface NtfyClientInterface {
     /**
      * Subscribe to a topic and receive messages as a Flow.
+     * Main-safe: can be called from any dispatcher.
      */
     suspend fun subscribe(topic: String): Flow<NtfyMessage>
 
@@ -42,12 +47,16 @@ interface NtfyClientInterface {
 
     /**
      * Publish a message to a topic.
+     * Main-safe: can be called from any dispatcher.
      */
     suspend fun publish(topic: String, message: String)
 }
 
 /**
  * Client for ntfy signaling relay.
+ *
+ * All suspend functions are main-safe - they can be called from any dispatcher.
+ * Blocking I/O is internally dispatched to the IO dispatcher.
  *
  * Provides:
  * - Topic computation from master secret
@@ -64,13 +73,14 @@ interface NtfyClientInterface {
  *     // Process message
  * }
  *
- * // Publish a message
+ * // Publish a message (safe to call from main thread)
  * client.publish(topic, encryptedMessage)
  * ```
  */
 class NtfySignalingClient(
     private val server: String = DEFAULT_SERVER,
-    private val httpClient: OkHttpClient = defaultHttpClient()
+    private val httpClient: OkHttpClient = defaultHttpClient(),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : NtfyClientInterface {
 
     companion object {
@@ -188,11 +198,13 @@ class NtfySignalingClient(
     /**
      * Publish a message to a topic via HTTP POST.
      *
+     * Main-safe: switches to IO dispatcher for blocking network call.
+     *
      * @param topic The ntfy topic to publish to
      * @param message The message content (should be encrypted)
      * @throws IOException if the request fails
      */
-    override suspend fun publish(topic: String, message: String) {
+    override suspend fun publish(topic: String, message: String) = withContext(ioDispatcher) {
         val url = buildPublishUrl(topic, server)
 
         val request = Request.Builder()

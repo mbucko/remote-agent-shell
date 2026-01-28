@@ -5,8 +5,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -193,6 +197,83 @@ class NtfySignalingClientTest {
     fun `returns null for empty string`() {
         val result = NtfySignalingClient.parseNtfyMessage("")
         assertEquals(null, result)
+    }
+}
+
+/**
+ * Tests for main-thread safety of NtfySignalingClient.
+ *
+ * These tests verify that the real implementation (not mocks) is safe to call
+ * from any dispatcher, including the main thread. This would have caught the
+ * NetworkOnMainThreadException bug.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+class NtfySignalingClientMainSafetyTest {
+
+    @Test
+    fun `publish is main-safe with injected IO dispatcher`() = runTest {
+        // Use MockWebServer to avoid real network calls
+        val mockServer = MockWebServer()
+        mockServer.enqueue(MockResponse().setResponseCode(200))
+        mockServer.start()
+
+        try {
+            val serverUrl = mockServer.url("/").toString().removeSuffix("/")
+
+            // Create client with test dispatcher for IO operations
+            // In production, this defaults to Dispatchers.IO
+            val testDispatcher = StandardTestDispatcher(testScheduler)
+            val client = NtfySignalingClient(
+                server = serverUrl,
+                httpClient = OkHttpClient(),
+                ioDispatcher = testDispatcher
+            )
+
+            // Call publish - this would throw NetworkOnMainThreadException
+            // if the implementation didn't use withContext(ioDispatcher)
+            client.publish("test-topic", "test message")
+
+            // Advance the dispatcher to execute the IO work
+            advanceUntilIdle()
+
+            // Verify the request was made
+            val request = mockServer.takeRequest()
+            assertEquals("/test-topic", request.path)
+            assertEquals("test message", request.body.readUtf8())
+        } finally {
+            mockServer.shutdown()
+        }
+    }
+
+    @Test
+    fun `publish handles HTTP errors correctly`() = runTest {
+        val mockServer = MockWebServer()
+        mockServer.enqueue(MockResponse().setResponseCode(500))
+        mockServer.start()
+
+        try {
+            val serverUrl = mockServer.url("/").toString().removeSuffix("/")
+            val testDispatcher = StandardTestDispatcher(testScheduler)
+            val client = NtfySignalingClient(
+                server = serverUrl,
+                httpClient = OkHttpClient(),
+                ioDispatcher = testDispatcher
+            )
+
+            var exceptionThrown = false
+            try {
+                client.publish("test-topic", "test message")
+                advanceUntilIdle()
+            } catch (e: Exception) {
+                exceptionThrown = true
+                assertTrue("Should be IOException", e.message?.contains("Failed to publish") == true)
+            }
+
+            assertTrue("Should throw exception on HTTP error", exceptionThrown)
+        } finally {
+            mockServer.shutdown()
+        }
     }
 }
 

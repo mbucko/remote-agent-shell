@@ -54,6 +54,64 @@ def create_encrypted_offer(crypto: NtfySignalingCrypto, **kwargs) -> str:
     return crypto.encrypt(bytes(msg))
 
 
+class TestNtfySignalingSubscriberNtfyJsonParsing:
+    """Tests for ntfy SSE JSON envelope parsing.
+
+    ntfy sends messages as JSON: {"event":"message", "message":"<content>"}
+    This tests the parsing of that envelope format.
+    """
+
+    @pytest.fixture
+    def subscriber(self):
+        master_secret = os.urandom(32)
+        return NtfySignalingSubscriber(
+            master_secret=master_secret,
+            session_id="test-session-123",
+            ntfy_topic="test-topic",
+        )
+
+    def test_parse_message_event_extracts_message(self, subscriber):
+        """Message event JSON extracts the message field."""
+        json_data = '{"event":"message","message":"encrypted_payload"}'
+        result = subscriber._parse_ntfy_message(json_data)
+        assert result == "encrypted_payload"
+
+    def test_parse_message_event_with_extra_fields(self, subscriber):
+        """Message event with extra ntfy fields still works."""
+        json_data = '{"id":"abc123","time":1234567890,"event":"message","topic":"test","message":"payload"}'
+        result = subscriber._parse_ntfy_message(json_data)
+        assert result == "payload"
+
+    def test_parse_keepalive_event_returns_none(self, subscriber):
+        """Keepalive events are ignored."""
+        json_data = '{"event":"keepalive"}'
+        result = subscriber._parse_ntfy_message(json_data)
+        assert result is None
+
+    def test_parse_open_event_returns_none(self, subscriber):
+        """Open events are ignored."""
+        json_data = '{"event":"open"}'
+        result = subscriber._parse_ntfy_message(json_data)
+        assert result is None
+
+    def test_parse_empty_message_returns_none(self, subscriber):
+        """Empty message field is ignored."""
+        json_data = '{"event":"message","message":""}'
+        result = subscriber._parse_ntfy_message(json_data)
+        assert result is None
+
+    def test_parse_invalid_json_returns_none(self, subscriber):
+        """Invalid JSON is silently ignored."""
+        result = subscriber._parse_ntfy_message("not valid json")
+        assert result is None
+
+    def test_parse_missing_event_returns_none(self, subscriber):
+        """Missing event field is ignored."""
+        json_data = '{"message":"payload"}'
+        result = subscriber._parse_ntfy_message(json_data)
+        assert result is None
+
+
 class TestNtfySignalingSubscriberInit:
     """Tests for subscriber initialization."""
 

@@ -99,37 +99,42 @@ class NtfySignalingHandler:
         try:
             # Decrypt
             plaintext = self._crypto.decrypt(encrypted)
-        except DecryptionError:
+            logger.info(f"Decrypted ntfy message ({len(plaintext)} bytes)")
+        except DecryptionError as e:
             # Silent ignore - could be wrong key or tampered
-            logger.debug("Decryption failed for ntfy message")
+            logger.info(f"Decryption failed: {e}")
             return None
-        except Exception:
+        except Exception as e:
             # Silent ignore
-            logger.debug("Unexpected error decrypting ntfy message")
+            logger.info(f"Unexpected error decrypting: {type(e).__name__}")
             return None
 
         # Parse protobuf
         try:
             msg = NtfySignalMessage().parse(plaintext)
-        except Exception:
-            logger.debug("Failed to parse ntfy message protobuf")
+            logger.info(f"Parsed ntfy message: type={msg.type}, session={msg.session_id[:8]}...")
+        except Exception as e:
+            logger.info(f"Failed to parse protobuf: {type(e).__name__}")
             return None
 
         # Validate
         result = self._validator.validate(msg)
         if not result.is_valid:
-            logger.debug(f"Validation failed: {result.error}")
+            logger.info(f"Validation failed: {result.error}")
             return None
+        logger.info("Message validated successfully")
 
         # Sanitize device name
         device_name = sanitize_device_name(msg.device_name)
 
         # Create WebRTC peer and accept offer
         try:
+            logger.info("Creating WebRTC peer connection...")
             peer = self._create_peer()
             answer_sdp = await peer.accept_offer(msg.sdp)
+            logger.info("WebRTC peer created, answer SDP generated")
         except Exception as e:
-            logger.debug(f"WebRTC peer creation failed: {e}")
+            logger.warning(f"WebRTC peer creation failed: {e}")
             return None
 
         self._peer = peer
@@ -148,10 +153,12 @@ class NtfySignalingHandler:
         # Encrypt answer
         try:
             answer_encrypted = self._crypto.encrypt(bytes(answer_msg))
-        except Exception:
-            logger.debug("Failed to encrypt answer")
+            logger.info(f"Answer encrypted ({len(answer_encrypted)} bytes)")
+        except Exception as e:
+            logger.warning(f"Failed to encrypt answer: {e}")
             return None
 
+        logger.info("Returning successful handler result")
         return HandlerResult(
             should_respond=True,
             answer_encrypted=answer_encrypted,

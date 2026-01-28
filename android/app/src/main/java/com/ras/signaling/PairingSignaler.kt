@@ -1,5 +1,6 @@
 package com.ras.signaling
 
+import android.util.Log
 import com.ras.crypto.KeyDerivation
 import com.ras.pairing.SignalingClient
 import com.ras.pairing.SignalingResult
@@ -11,6 +12,8 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.security.SecureRandom
+
+private const val TAG = "PairingSignaler"
 
 /**
  * Result of a pairing signaling exchange.
@@ -86,6 +89,7 @@ class PairingSignaler(
         val authKey = KeyDerivation.deriveKey(masterSecret, "auth")
 
         // Try direct signaling first
+        Log.d(TAG, "Trying direct signaling to $ip:$port")
         val directResult = tryDirectSignaling(
             ip = ip,
             port = port,
@@ -98,6 +102,7 @@ class PairingSignaler(
 
         // If direct succeeded, return
         if (directResult is SignalingResult.Success) {
+            Log.d(TAG, "Direct signaling succeeded")
             // Zero auth key
             authKey.fill(0)
             return PairingSignalerResult.Success(
@@ -106,6 +111,8 @@ class PairingSignaler(
                 usedNtfyPath = false
             )
         }
+
+        Log.d(TAG, "Direct signaling failed, falling back to ntfy")
 
         // Zero auth key - no longer needed
         authKey.fill(0)
@@ -175,9 +182,11 @@ class PairingSignaler(
 
         // Compute topic
         val topic = NtfySignalingClient.computeTopic(masterSecret)
+        Log.d(TAG, "Ntfy topic: $topic")
 
         try {
             return withTimeout(timeoutMs) {
+                Log.d(TAG, "Creating encrypted offer message")
                 // Create and encrypt OFFER message
                 val offerMsg = NtfySignalMessage.newBuilder()
                     .setType(NtfySignalMessage.MessageType.OFFER)
@@ -190,12 +199,15 @@ class PairingSignaler(
                     .build()
 
                 val encryptedOffer = crypto.encryptToBase64(offerMsg.toByteArray())
+                Log.d(TAG, "Offer encrypted, subscribing to ntfy topic")
 
                 // Subscribe to topic
                 val messageFlow = ntfyClient.subscribe(topic)
+                Log.d(TAG, "Subscribed to ntfy, publishing offer")
 
                 // Publish offer
                 ntfyClient.publish(topic, encryptedOffer)
+                Log.d(TAG, "Offer published, waiting for answer")
 
                 // Wait for valid answer
                 messageFlow.collect { ntfyMessage ->
@@ -215,6 +227,7 @@ class PairingSignaler(
                 PairingSignalerResult.NtfyTimeout
             }
         } catch (e: AnswerReceivedException) {
+            Log.d(TAG, "Received answer via ntfy")
             // Clean up
             ntfyClient.unsubscribe()
             crypto.zeroKey()
@@ -226,6 +239,7 @@ class PairingSignaler(
                 usedNtfyPath = true
             )
         } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "Ntfy signaling timed out")
             // Clean up
             ntfyClient.unsubscribe()
             crypto.zeroKey()
@@ -233,12 +247,14 @@ class PairingSignaler(
 
             return PairingSignalerResult.NtfyTimeout
         } catch (e: CancellationException) {
+            Log.d(TAG, "Ntfy signaling cancelled")
             // Clean up and rethrow
             ntfyClient.unsubscribe()
             crypto.zeroKey()
             validator.clearNonceCache()
             throw e
         } catch (e: Exception) {
+            Log.e(TAG, "Ntfy signaling failed: ${e.message}", e)
             // Clean up
             ntfyClient.unsubscribe()
             crypto.zeroKey()
