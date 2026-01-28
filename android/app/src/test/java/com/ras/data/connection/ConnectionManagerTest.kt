@@ -86,18 +86,13 @@ class ConnectionManagerTest {
     // ============================================================================
 
     @Test
-    fun `connect sends ConnectionReady after setup`() = runTest {
+    fun `connect sends ConnectionReady synchronously before returning`() = runTest {
+        // connect() is now a suspend function that sends ConnectionReady synchronously
         connectionManager.connect(webRTCClient, authKey)
 
-        // Wait for the send coroutine to complete
-        withTimeout(1000) {
-            while (sentMessages.isEmpty()) {
-                delay(10)
-            }
-        }
-
-        // Should have sent ConnectionReady
-        assertTrue("Should send at least one message", sentMessages.isNotEmpty())
+        // ConnectionReady should be sent IMMEDIATELY - no waiting needed
+        // Because connect() is a suspend function that sends before returning
+        assertTrue("Should have sent ConnectionReady", sentMessages.isNotEmpty())
 
         // Decrypt and parse the message
         val codec = BytesCodec(authKey.copyOf())
@@ -114,13 +109,7 @@ class ConnectionManagerTest {
     @Test
     fun `sendSessionCommand wraps in RasCommand`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
-
-        // Wait for ConnectionReady to be sent
-        withTimeout(1000) {
-            while (sentMessages.isEmpty()) {
-                delay(10)
-            }
-        }
+        // ConnectionReady is sent synchronously, so it's already in sentMessages
         sentMessages.clear()
 
         // Send a session command
@@ -145,12 +134,7 @@ class ConnectionManagerTest {
     fun `sendTerminalCommand wraps in RasCommand`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
 
-        // Wait for ConnectionReady to be sent
-        withTimeout(1000) {
-            while (sentMessages.isEmpty()) {
-                delay(10)
-            }
-        }
+        // ConnectionReady is sent synchronously, so it's already in sentMessages
         sentMessages.clear()
 
         // Send a terminal command
@@ -175,12 +159,7 @@ class ConnectionManagerTest {
     fun `sendPing wraps in RasCommand`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
 
-        // Wait for ConnectionReady to be sent
-        withTimeout(1000) {
-            while (sentMessages.isEmpty()) {
-                delay(10)
-            }
-        }
+        // ConnectionReady is sent synchronously, so it's already in sentMessages
         sentMessages.clear()
 
         // Send ping

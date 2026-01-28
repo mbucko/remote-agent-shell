@@ -6,7 +6,7 @@ from typing import Awaitable, Callable
 
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 
-from ras.protocols import PeerState
+from ras.protocols import PeerOwnership, PeerState
 from ras.sdp_validator import validate_sdp
 
 logger = logging.getLogger(__name__)
@@ -30,16 +30,19 @@ class PeerConnection:
         self,
         stun_servers: list[str] | None = None,
         pc_factory: Callable[[RTCConfiguration], RTCPeerConnection] | None = None,
+        owner: PeerOwnership = PeerOwnership.SignalingHandler,
     ):
         """Initialize peer connection.
 
         Args:
             stun_servers: List of STUN server URLs.
             pc_factory: Factory to create RTCPeerConnection (for testing).
+            owner: Initial owner of this connection.
         """
         self.stun_servers = stun_servers or self.DEFAULT_STUN_SERVERS
         self._pc_factory = pc_factory or self._default_pc_factory
         self._state = PeerState.NEW
+        self._owner = owner
         self._pc: RTCPeerConnection | None = None
         self._channel = None
         self._message_callback: Callable[[bytes], Awaitable[None]] | None = None
@@ -259,18 +262,73 @@ class PeerConnection:
         """
         self._close_callback = callback
 
-    async def close(self) -> None:
-        """Close the peer connection.
+    @property
+    def owner(self) -> PeerOwnership:
+        """Current owner of this connection."""
+        return self._owner
 
-        This method is idempotent - calling it multiple times is safe.
+    def transfer_ownership(self, new_owner: PeerOwnership) -> bool:
+        """Transfer ownership of this connection.
+
+        Args:
+            new_owner: The new owner.
+
+        Returns:
+            True if transfer succeeded, False if already disposed.
         """
+        if self._owner == PeerOwnership.Disposed:
+            logger.warning("transfer_ownership() called but connection is disposed")
+            return False
         if self._state == PeerState.CLOSED:
-            return  # Already closed
+            logger.warning("transfer_ownership() called but connection is closed")
+            return False
+        old_owner = self._owner
+        self._owner = new_owner
+        logger.debug(f"Ownership transferred from {old_owner.value} to {new_owner.value}")
+        return True
+
+    async def close_by_owner(self, caller: PeerOwnership) -> bool:
+        """Close the connection, but only if caller is the current owner.
+
+        This prevents accidental closes during handoff where cleanup code
+        might try to close a connection that has been transferred.
+
+        Args:
+            caller: The owner attempting to close.
+
+        Returns:
+            True if closed, False if caller is not owner.
+        """
+        if self._owner != caller:
+            logger.warning(
+                f"close_by_owner() called by {caller.value} "
+                f"but owner is {self._owner.value} - ignoring"
+            )
+            return False
+        self._owner = PeerOwnership.Disposed
+        await self._do_close()
+        return True
+
+    async def _do_close(self) -> None:
+        """Internal close implementation."""
+        if self._state == PeerState.CLOSED:
+            return
         if self._pc:
             await self._pc.close()
             self._pc = None
         self._state = PeerState.CLOSED
         logger.info("Peer connection closed")
+
+    async def close(self) -> None:
+        """Close the peer connection.
+
+        This method is idempotent - calling it multiple times is safe.
+
+        Note: Prefer close_by_owner() when ownership tracking is in use,
+        as it prevents accidental closes after ownership transfer.
+        """
+        self._owner = PeerOwnership.Disposed
+        await self._do_close()
 
     async def __aenter__(self):
         """Enter async context."""

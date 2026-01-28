@@ -181,6 +181,20 @@ class NtfySignalingHandler:
         """Get the WebRTC peer connection if one was created."""
         return self._peer
 
+    def take_peer(self) -> Optional[Any]:
+        """Take ownership of the WebRTC peer connection.
+
+        Returns the peer and clears the internal reference so that
+        close() won't close the peer. The caller becomes responsible
+        for closing the peer.
+
+        Returns:
+            The peer connection, or None if no peer exists.
+        """
+        peer = self._peer
+        self._peer = None
+        return peer
+
     def clear_nonce_cache(self) -> None:
         """Clear the nonce cache.
 
@@ -198,10 +212,16 @@ class NtfySignalingHandler:
     async def close(self) -> None:
         """Clean up handler resources.
 
-        Zeros key, clears nonce cache, and closes peer if open.
+        Zeros key, clears nonce cache, and closes peer if still owned.
+
+        Note: If ownership was transferred via transfer_ownership() on the peer,
+        close_by_owner() will be a no-op and the peer will remain open.
         """
+        from ras.protocols import PeerOwnership
+
         self.zero_key()
         self.clear_nonce_cache()
         if self._peer:
-            await self._peer.close()
+            # Only close if we still own it - prevents double-close after handoff
+            await self._peer.close_by_owner(PeerOwnership.SignalingHandler)
             self._peer = None

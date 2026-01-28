@@ -114,6 +114,8 @@ class TestPairingStateOrder:
         mock_peer.wait_connected = AsyncMock()
         mock_peer.send = AsyncMock()
         mock_peer.close = AsyncMock()
+        mock_peer.close_by_owner = AsyncMock(return_value=True)
+        mock_peer.transfer_ownership = MagicMock(return_value=True)
         session.peer = mock_peer
         session._auth_queue = asyncio.Queue()
 
@@ -166,6 +168,8 @@ class TestPairingStateOrder:
         mock_peer.wait_connected = AsyncMock()
         mock_peer.send = AsyncMock()
         mock_peer.close = AsyncMock()
+        mock_peer.close_by_owner = AsyncMock(return_value=True)
+        mock_peer.transfer_ownership = MagicMock(return_value=True)
         session.peer = mock_peer
         session._auth_queue = asyncio.Queue()
 
@@ -262,6 +266,7 @@ class TestConcurrentCleanup:
         # Even if peer reference exists (shouldn't, but let's be safe)
         mock_peer = MagicMock(spec=PeerConnection)
         mock_peer.close = AsyncMock()
+        mock_peer.close_by_owner = AsyncMock(return_value=True)
         session.peer = mock_peer
 
         server._pairing_sessions[session.session_id] = session
@@ -270,11 +275,13 @@ class TestConcurrentCleanup:
         await server._cleanup_session(session)
 
         mock_peer.close.assert_not_called()
+        mock_peer.close_by_owner.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_cleanup_closes_peer_if_not_transferred(self):
         """Cleanup should close peer if it was NOT transferred."""
         from ras.server import PairingSession, UnifiedServer
+        from ras.protocols import PeerOwnership
 
         device_store = MockDeviceStore()
         ip_provider = MockIpProvider()
@@ -300,6 +307,8 @@ class TestConcurrentCleanup:
 
         mock_peer = MagicMock(spec=PeerConnection)
         mock_peer.close = AsyncMock()
+        # Add close_by_owner which is now used for ownership-aware closing
+        mock_peer.close_by_owner = AsyncMock(return_value=True)
         session.peer = mock_peer
 
         server._pairing_sessions[session.session_id] = session
@@ -307,7 +316,8 @@ class TestConcurrentCleanup:
         # Cleanup SHOULD close peer because peer_transferred is False
         await server._cleanup_session(session)
 
-        mock_peer.close.assert_called_once()
+        # Uses ownership-aware close now
+        mock_peer.close_by_owner.assert_called_once_with(PeerOwnership.PairingSession)
 
     @pytest.mark.asyncio
     async def test_concurrent_cleanup_and_completion_is_safe(self):
@@ -350,6 +360,8 @@ class TestConcurrentCleanup:
         mock_peer.wait_connected = AsyncMock()
         mock_peer.send = AsyncMock()
         mock_peer.close = AsyncMock()
+        mock_peer.close_by_owner = AsyncMock(return_value=True)
+        mock_peer.transfer_ownership = MagicMock(return_value=True)
         session.peer = mock_peer
         session._auth_queue = asyncio.Queue()
 

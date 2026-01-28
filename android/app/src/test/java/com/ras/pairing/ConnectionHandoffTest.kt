@@ -184,8 +184,8 @@ class ConnectionHandoffTest {
         // But after handoff, PairingManager no longer owns the client
         verify(exactly = 0) { webRTCClient.close() }
 
-        // ConnectionManager should still have the connection
-        verify { connectionManager.connect(webRTCClient, any()) }
+        // ConnectionManager should still have the connection (connect is now suspend)
+        coVerify { connectionManager.connect(webRTCClient, any()) }
     }
 
     // ============================================================================
@@ -243,7 +243,7 @@ class ConnectionHandoffTest {
         )
 
         // But ConnectionManager should have received it
-        verify { connectionManager.connect(any(), any()) }
+        coVerify { connectionManager.connect(any(), any()) }
     }
 
     @Test
@@ -281,7 +281,7 @@ class ConnectionHandoffTest {
         every { connectionManager.isConnected } returns isConnectedFlow
 
         // When connect() is called, mark as connected
-        every { connectionManager.connect(any(), any()) } answers {
+        coEvery { connectionManager.connect(any(), any()) } coAnswers {
             isConnectedFlow.value = true
         }
 

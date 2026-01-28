@@ -124,7 +124,8 @@ class ConnectionManager:
             asyncio.create_task(old_conn.close())
 
         # Set up message handler (wraps with decryption)
-        def handle_encrypted(data: bytes) -> None:
+        # Must be async because peer.py awaits the callback
+        async def handle_encrypted(data: bytes) -> None:
             try:
                 decrypted = conn.decrypt(data)
                 conn.update_activity()

@@ -113,10 +113,18 @@ class ConnectionManager @Inject constructor(
     /**
      * Connect using an existing WebRTC client with encryption.
      *
+     * This is a suspend function that:
+     * 1. Sets up the connection
+     * 2. Starts event listener and heartbeat
+     * 3. Sends ConnectionReady to daemon (synchronously - not fire-and-forget)
+     *
+     * The caller should await this function to ensure the connection is fully established.
+     *
      * @param client The WebRTC client to use for communication
      * @param authKey 32-byte key for AES-256-GCM encryption (must match daemon's key)
+     * @throws IllegalStateException if sending ConnectionReady fails
      */
-    fun connect(client: WebRTCClient, authKey: ByteArray) {
+    suspend fun connect(client: WebRTCClient, authKey: ByteArray) {
         require(authKey.size == 32) { "Auth key must be 32 bytes" }
 
         synchronized(connectionLock) {
@@ -132,17 +140,18 @@ class ConnectionManager @Inject constructor(
             startEventListener()
             startHeartbeatMonitor()
             Log.i(TAG, "Connected to daemon with encryption")
+        }
 
-            // Send ConnectionReady to signal daemon we're ready to receive InitialState
-            // This must happen AFTER event listener is started
-            scope.launch {
-                try {
-                    sendConnectionReady()
-                    Log.i(TAG, "Sent ConnectionReady to daemon")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to send ConnectionReady", e)
-                }
-            }
+        // Send ConnectionReady SYNCHRONOUSLY (outside the lock to avoid blocking)
+        // This ensures the daemon knows we're ready before this function returns
+        try {
+            sendConnectionReady()
+            Log.i(TAG, "Sent ConnectionReady to daemon - handoff complete")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send ConnectionReady", e)
+            // If we can't send ConnectionReady, the connection is broken
+            disconnect()
+            throw IllegalStateException("Failed to send ConnectionReady: ${e.message}", e)
         }
     }
 

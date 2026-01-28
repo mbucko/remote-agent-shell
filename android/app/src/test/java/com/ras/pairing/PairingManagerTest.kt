@@ -559,7 +559,7 @@ class PairingManagerTest {
         authJob.join()
 
         // Verify connection was handed off to ConnectionManager with auth key
-        verify { connectionManager.connect(webRTCClient, any()) }
+        coVerify { connectionManager.connect(webRTCClient, any()) }
     }
 
     // ============================================================================

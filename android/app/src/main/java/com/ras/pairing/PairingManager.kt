@@ -171,22 +171,35 @@ class PairingManager @Inject constructor(
                 }
 
                 // Hand off WebRTC connection to ConnectionManager with encryption key
-                // Use ownership transfer to prevent cleanup() from closing it
+                // IMPORTANT: This is a critical section - we must complete the handoff
+                // before returning, so ConnectionManager has a fully working connection
+                val client = webRTCClient
                 val key = authKey
-                webRTCClient?.let { client ->
-                    if (key != null) {
-                        // Transfer ownership BEFORE passing to ConnectionManager
-                        // This ensures cleanup() won't close it even if called concurrently
-                        client.transferOwnership(ConnectionOwnership.ConnectionManager)
-                        connectionState = PairingConnectionState.HandedOff("ConnectionManager")
+
+                if (client != null && key != null) {
+                    // Transfer ownership BEFORE passing to ConnectionManager
+                    // This ensures cleanup() won't close it even if called concurrently
+                    client.transferOwnership(ConnectionOwnership.ConnectionManager)
+                    connectionState = PairingConnectionState.HandedOff("ConnectionManager")
+                    webRTCClient = null  // Clear reference BEFORE calling connect
+
+                    try {
+                        // AWAIT the connection setup - this sends ConnectionReady synchronously
                         connectionManager.connect(client, key)
-                    } else {
-                        // Fallback: shouldn't happen, but handle gracefully
-                        android.util.Log.e("PairingManager", "No auth key available for handoff")
+                        android.util.Log.i("PairingManager", "Handoff to ConnectionManager complete")
+                    } catch (e: Exception) {
+                        // Handoff failed - connection is broken
+                        android.util.Log.e("PairingManager", "Handoff failed: ${e.message}")
+                        _state.value = PairingState.Failed(PairingState.FailureReason.CONNECTION_FAILED)
+                        return
                     }
-                    webRTCClient = null  // Clear reference (ownership already transferred)
+                } else {
+                    android.util.Log.e("PairingManager", "No client or key available for handoff")
+                    _state.value = PairingState.Failed(PairingState.FailureReason.CONNECTION_FAILED)
+                    return
                 }
-                // Zero auth key after handoff (ConnectionManager has its own copy)
+
+                // Zero auth key after successful handoff (ConnectionManager has its own copy)
                 authKey?.fill(0)
                 authKey = null
 

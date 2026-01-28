@@ -380,8 +380,12 @@ class UnifiedServer:
             session.device_id = signal_request.device_id
             session.device_name = signal_request.device_name
 
-            # Create WebRTC peer
-            peer = PeerConnection(stun_servers=self.stun_servers)
+            # Create WebRTC peer with PairingSession ownership
+            from ras.protocols import PeerOwnership
+            peer = PeerConnection(
+                stun_servers=self.stun_servers,
+                owner=PeerOwnership.PairingSession,
+            )
             session.peer = peer
             session._auth_queue = asyncio.Queue()
 
@@ -453,6 +457,11 @@ class UnifiedServer:
                         session.device_name or "",
                     )
 
+                # Transfer ownership BEFORE calling on_device_connected
+                # This ensures the handler's close_by_owner() is a no-op
+                from ras.protocols import PeerOwnership
+                session.peer.transfer_ownership(PeerOwnership.ConnectionManager)
+
                 if self._on_device_connected:
                     await self._on_device_connected(
                         session.device_id or "",
@@ -469,6 +478,8 @@ class UnifiedServer:
                 session.peer = None
 
                 # Stop ntfy subscriber (no longer needed)
+                # Handler's close_by_owner(SignalingHandler) will be a no-op
+                # since ownership was transferred to ConnectionManager
                 if session._ntfy_subscriber:
                     await session._ntfy_subscriber.close()
                     session._ntfy_subscriber = None
@@ -626,6 +637,10 @@ class UnifiedServer:
                 device.update_last_seen()
                 await self.device_store.save()
 
+                # Transfer ownership BEFORE calling on_device_connected
+                from ras.protocols import PeerOwnership
+                peer.transfer_ownership(PeerOwnership.ConnectionManager)
+
                 if self._on_device_connected:
                     await self._on_device_connected(
                         device_id,
@@ -666,17 +681,20 @@ class UnifiedServer:
             session: Session to clean up.
 
         Note:
-            If peer_transferred is True, the peer was handed off to another
-            owner (via on_device_connected callback) and should NOT be closed.
+            Uses ownership-aware closing. If ownership was transferred to
+            ConnectionManager, close_by_owner() will be a no-op.
         """
-        # Close ntfy subscriber
+        from ras.protocols import PeerOwnership
+
+        # Close ntfy subscriber - handler's close_by_owner() will be no-op
+        # if ownership was transferred
         if session._ntfy_subscriber:
             await session._ntfy_subscriber.close()
             session._ntfy_subscriber = None
 
-        # Close peer only if ownership was NOT transferred
+        # Close peer only if we still own it (ownership-aware)
         if session.peer and not session.peer_transferred:
-            await session.peer.close()
+            await session.peer.close_by_owner(PeerOwnership.PairingSession)
             session.peer = None
 
     # =========================================================================

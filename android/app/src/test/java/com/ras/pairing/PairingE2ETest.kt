@@ -157,7 +157,7 @@ class PairingE2ETest {
         assertEquals("ntfy should not be used", 0, mockNtfyClient.getPublishedMessages().size)
 
         // Verify connection handoff
-        verify { connectionManager.connect(webRTCClient, any()) }
+        coVerify { connectionManager.connect(webRTCClient, any()) }
 
         // Verify credentials stored
         coVerify { keyManager.storeMasterSecret(any()) }
@@ -553,7 +553,7 @@ class PairingE2ETest {
         val (clientChannel, serverChannel) = setupAuthChannels()
 
         val capturedKey = slot<ByteArray>()
-        every { connectionManager.connect(any(), capture(capturedKey)) } just Runs
+        coEvery { connectionManager.connect(any(), capture(capturedKey)) } just Runs
 
         val pairingManager = createPairingManager(this)
 
@@ -565,7 +565,7 @@ class PairingE2ETest {
         authJob.join()
 
         // Verify handoff occurred with correct client and key
-        verify { connectionManager.connect(webRTCClient, any()) }
+        coVerify { connectionManager.connect(webRTCClient, any()) }
         assertTrue("Key should be captured", capturedKey.isCaptured)
         assertEquals("Key should be correct size", 32, capturedKey.captured.size)
     }

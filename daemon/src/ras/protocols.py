@@ -35,6 +35,31 @@ class PeerState(Enum):
     CLOSED = "closed"
 
 
+class PeerOwnership(Enum):
+    """Ownership of a WebRTC peer connection.
+
+    This enum tracks who currently owns a peer connection:
+    - Only the current owner can close the connection
+    - Ownership must be explicitly transferred via transfer_ownership()
+    - Prevents accidental closes during handoff from signaling to ConnectionManager
+
+    Usage:
+        # Handler creates peer and owns it initially
+        peer = PeerConnection(owner=PeerOwnership.SignalingHandler)
+
+        # After successful auth, transfer ownership
+        peer.transfer_ownership(PeerOwnership.ConnectionManager)
+
+        # Handler cleanup won't close (not the owner anymore)
+        peer.close_by_owner(PeerOwnership.SignalingHandler)  # Returns False, no-op
+    """
+
+    SignalingHandler = "signaling_handler"  # ntfy handler or HTTP handler
+    PairingSession = "pairing_session"  # Session owns during pairing
+    ConnectionManager = "connection_manager"  # Daemon's ConnectionManager
+    Disposed = "disposed"  # Connection was closed
+
+
 # ============================================================================
 # tmux Data Classes
 # ============================================================================

@@ -154,6 +154,18 @@ class NtfySignalingSubscriber:
         """Get the WebRTC peer connection if one was created."""
         return self._handler.get_peer()
 
+    def take_peer(self) -> Optional[Any]:
+        """Take ownership of the WebRTC peer connection.
+
+        Returns the peer and clears the internal reference so that
+        close() won't close the peer. The caller becomes responsible
+        for closing the peer.
+
+        Returns:
+            The peer connection, or None if no peer exists.
+        """
+        return self._handler.take_peer()
+
     async def _run_subscription(self) -> None:
         """Run SSE subscription loop.
 
