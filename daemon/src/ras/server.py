@@ -25,6 +25,7 @@ from ras.crypto import (
     derive_ntfy_topic,
     generate_master_secret,
 )
+from ras.ntfy_signaling import NtfySignalingSubscriber
 from ras.pairing.auth_handler import AuthHandler
 from ras.peer import PeerConnection
 from ras.proto.ras import (
@@ -81,6 +82,7 @@ class PairingSession:
     device_name: Optional[str] = None
     peer: Optional[PeerConnection] = None
     _auth_queue: Optional[asyncio.Queue] = field(default=None, repr=False)
+    _ntfy_subscriber: Optional[NtfySignalingSubscriber] = field(default=None, repr=False)
 
     def is_expired(self) -> bool:
         return time.time() > self.expires_at
@@ -105,6 +107,7 @@ class UnifiedServer:
         public_ip: str = "0.0.0.0",
         pairing_timeout: float = 300.0,  # 5 minutes
         max_pairing_sessions: int = 10,
+        ntfy_server: str = "https://ntfy.sh",
         on_device_connected: Optional[
             Callable[[str, str, PeerConnection, bytes], Awaitable[None]]
         ] = None,
@@ -120,6 +123,7 @@ class UnifiedServer:
             public_ip: Public IP to include in QR code.
             pairing_timeout: How long pairing sessions are valid.
             max_pairing_sessions: Maximum concurrent pairing sessions.
+            ntfy_server: ntfy server URL for signaling relay.
             on_device_connected: Callback when device connects (paired or new).
             on_pairing_complete: Callback when pairing completes.
         """
@@ -128,6 +132,7 @@ class UnifiedServer:
         self.public_ip = public_ip
         self.pairing_timeout = pairing_timeout
         self.max_pairing_sessions = max_pairing_sessions
+        self.ntfy_server = ntfy_server
         self._on_device_connected = on_device_connected
         self._on_pairing_complete = on_pairing_complete
 
@@ -204,6 +209,9 @@ class UnifiedServer:
         )
         self._pairing_sessions[session_id] = session
 
+        # Start ntfy signaling subscriber for NAT traversal fallback
+        await self._start_ntfy_signaling(session)
+
         # Start expiration timer
         asyncio.create_task(self._session_expiration_timer(session_id))
 
@@ -245,8 +253,7 @@ class UnifiedServer:
             return web.json_response({"error": "Session not found"}, status=404)
 
         # Cleanup
-        if session.peer:
-            await session.peer.close()
+        await self._cleanup_session(session)
 
         logger.info(f"Pairing session cancelled: {session_id[:8]}...")
 
@@ -263,6 +270,8 @@ class UnifiedServer:
         session = self._pairing_sessions.get(session_id)
         if session and session.state == "pending":
             session.state = "expired"
+            # Cleanup ntfy subscriber
+            await self._cleanup_session(session)
             logger.info(f"Pairing session expired: {session_id[:8]}...")
             # Keep for a bit so CLI can see "expired" status
             await asyncio.sleep(30)
@@ -604,6 +613,101 @@ class UnifiedServer:
             content_type="application/x-protobuf",
         )
 
+    async def _cleanup_session(self, session: PairingSession) -> None:
+        """Clean up session resources.
+
+        Args:
+            session: Session to clean up.
+        """
+        # Close ntfy subscriber
+        if session._ntfy_subscriber:
+            await session._ntfy_subscriber.close()
+            session._ntfy_subscriber = None
+
+        # Close peer
+        if session.peer:
+            await session.peer.close()
+            session.peer = None
+
+    # =========================================================================
+    # ntfy Signaling (NAT traversal fallback)
+    # =========================================================================
+
+    async def _start_ntfy_signaling(self, session: PairingSession) -> None:
+        """Start ntfy signaling subscriber for a pairing session.
+
+        Creates subscriber that listens for OFFER messages via ntfy
+        when direct HTTP signaling is not possible (NAT traversal).
+
+        Args:
+            session: Pairing session to start signaling for.
+        """
+        subscriber = NtfySignalingSubscriber(
+            master_secret=session.master_secret,
+            session_id=session.session_id,
+            ntfy_topic=session.ntfy_topic,
+            ntfy_server=self.ntfy_server,
+            stun_servers=self.stun_servers,
+        )
+
+        # Set callback for when offer is received
+        async def on_offer_received(
+            device_id: str, device_name: str, peer: PeerConnection
+        ) -> None:
+            await self._on_ntfy_offer_received(session, device_id, device_name, peer)
+
+        subscriber.on_offer_received = on_offer_received
+
+        # Store and start subscriber
+        session._ntfy_subscriber = subscriber
+        await subscriber.start()
+
+        logger.debug(f"Started ntfy signaling for session {session.session_id[:8]}...")
+
+    async def _on_ntfy_offer_received(
+        self,
+        session: PairingSession,
+        device_id: str,
+        device_name: str,
+        peer: PeerConnection,
+    ) -> None:
+        """Handle OFFER received via ntfy signaling.
+
+        This is called when the phone successfully sends an offer via ntfy
+        because direct HTTP signaling was not possible.
+
+        Args:
+            session: The pairing session.
+            device_id: Device ID from the offer.
+            device_name: Device name from the offer.
+            peer: WebRTC peer connection created for this session.
+        """
+        # Check if session is still valid
+        if session.is_expired() or session.state != "pending":
+            logger.debug(f"Ignoring ntfy offer for invalid session {session.session_id[:8]}...")
+            if peer:
+                await peer.close()
+            return
+
+        # Update session state
+        session.state = "signaling"
+        session.device_id = device_id
+        session.device_name = device_name
+        session.peer = peer
+        session._auth_queue = asyncio.Queue()
+
+        # Set up message handler for auth
+        async def on_message(message: bytes) -> None:
+            if session._auth_queue:
+                await session._auth_queue.put(message)
+
+        peer.on_message(on_message)
+
+        logger.info(f"Received ntfy offer for session {session.session_id[:8]}... from {device_name}")
+
+        # Start auth flow in background
+        asyncio.create_task(self._run_pairing_auth(session.session_id))
+
     # =========================================================================
     # Pairing completion (called by Daemon after external auth)
     # =========================================================================
@@ -669,10 +773,9 @@ class UnifiedServer:
 
     async def close(self) -> None:
         """Close all connections and stop server."""
-        # Close pending pairing sessions
+        # Close pending pairing sessions (including ntfy subscribers)
         for session in self._pairing_sessions.values():
-            if session.peer:
-                await session.peer.close()
+            await self._cleanup_session(session)
         self._pairing_sessions.clear()
 
         # Close pending reconnections
