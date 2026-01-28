@@ -488,3 +488,28 @@ class SignalResponse(betterproto.Message):
 class SignalError(betterproto.Message):
     code: "SignalErrorErrorCode" = betterproto.enum_field(1)
     """Error code (generic, doesn't leak info)"""
+
+
+# ============ Ntfy Signaling Messages ============
+# Used for NAT traversal when direct HTTP connection fails
+
+class NtfySignalMessageMessageType(betterproto.Enum):
+    """Message type for ntfy signaling relay."""
+    OFFER = 0   # Phone -> Daemon: WebRTC offer
+    ANSWER = 1  # Daemon -> Phone: WebRTC answer
+
+
+@dataclass(eq=False, repr=False)
+class NtfySignalMessage(betterproto.Message):
+    """
+    Message sent via ntfy for signaling relay.
+    Encrypted with signaling_key (AES-256-GCM) before sending.
+    Wire format: base64(IV + ciphertext + tag)
+    """
+    type: "NtfySignalMessageMessageType" = betterproto.enum_field(1)
+    session_id: str = betterproto.string_field(2)
+    sdp: str = betterproto.string_field(3)
+    device_id: str = betterproto.string_field(4)
+    device_name: str = betterproto.string_field(5)
+    timestamp: int = betterproto.int64_field(6)
+    nonce: bytes = betterproto.bytes_field(7)

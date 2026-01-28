@@ -43,6 +43,9 @@ from ras.proto.ras import (
     SignalRequest,
     SignalResponse,
     SignalError,
+    # Ntfy signaling messages
+    NtfySignalMessage,
+    NtfySignalMessageMessageType,
     # Terminal messages
     TerminalOutput,
     TerminalInput,
@@ -103,6 +106,8 @@ __all__ = [
     "SignalRequest",
     "SignalResponse",
     "SignalError",
+    "NtfySignalMessage",
+    "NtfySignalMessageMessageType",
     "TerminalOutput",
     "TerminalInput",
     "SpecialKey",

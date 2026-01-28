@@ -1,0 +1,45 @@
+{
+  "description": "Signaling key derivation and encryption test vectors for ntfy relay",
+  "algorithm": {
+    "key_derivation": "HKDF-SHA256 with info='signaling'",
+    "encryption": "AES-256-GCM (12-byte IV, 16-byte tag)"
+  },
+  "key_derivation_vectors": [
+    {
+      "id": "derive_signaling_key_1",
+      "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "info": "signaling",
+      "expected_signaling_key_hex": "7f888af2e2d09f628559c3fd853370672752c98fac3377690938f72519d86347"
+    },
+    {
+      "id": "derive_signaling_key_zeros",
+      "master_secret_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "info": "signaling",
+      "expected_signaling_key_hex": "e4c8547bc85e3ec081f0246b5a27944c3dbc6464da4232cc969987c6b1021c7e"
+    },
+    {
+      "id": "derive_signaling_key_ones",
+      "master_secret_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "info": "signaling",
+      "expected_signaling_key_hex": "00867693eec02db5b4d0da6e224f07e329c1631dc167fdbf3f2b3b2066c247c4"
+    }
+  ],
+  "encryption_vectors": [
+    {
+      "id": "encrypt_offer_message",
+      "signaling_key_hex": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+      "iv_hex": "112233445566778899aabbcc",
+      "plaintext_utf8": "{\"type\":\"OFFER\",\"session_id\":\"abc123\",\"sdp\":\"v=0...\"}",
+      "expected_ciphertext_base64": "ESIzRFVmd4iZqrvM3vb+eOINH0iViUgTfOOjwCHS5Yp9WRtaiqNq7q942vVM9xTcm8LXCrpga9mur1MltMsWcLhZRqDS/Je/uQc9gJ2K6rqE",
+      "note": "IV + ciphertext + tag, base64 encoded (RFC 4648 Section 4 with padding)"
+    },
+    {
+      "id": "encrypt_empty",
+      "signaling_key_hex": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+      "iv_hex": "112233445566778899aabbcc",
+      "plaintext_utf8": "",
+      "expected_ciphertext_base64": "ESIzRFVmd4iZqrvMQu21/ncKihS/2X8/ABTl2A==",
+      "note": "Empty plaintext should encrypt to IV + 16-byte auth tag"
+    }
+  ]
+}

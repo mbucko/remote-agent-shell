@@ -101,6 +101,9 @@ typecheck:
 PROTO_DIR := proto
 PROTO_OUT := daemon/src/ras/proto/ras
 
+# NOTE: Proto generation currently has issues with betterproto enum naming.
+# The committed proto files use short enum names (ACTIVE, not SESSION_STATUS_ACTIVE).
+# Regenerating will break existing code. Only regenerate if you plan to update all enum usages.
 proto:
 	@echo "Generating Python code from proto files..."
 	@mkdir -p $(PROTO_OUT)
@@ -109,9 +112,12 @@ proto:
 		--python_betterproto_out=src/ras/proto/ras \
 		../$(PROTO_DIR)/*.proto
 	@echo "Proto files generated in $(PROTO_OUT)"
+	@echo ""
+	@echo "WARNING: You may need to update ras/proto/ras/ras/__init__.py to re-export new types"
+	@echo "         if you added new .proto files."
 
 proto-clean:
-	rm -rf $(PROTO_OUT)/__init__.py
+	rm -rf $(PROTO_OUT)/__init__.py $(PROTO_OUT)/ras $(PROTO_OUT)/clipboard
 	@echo "Proto files cleaned"
 
 # =============================================================================
