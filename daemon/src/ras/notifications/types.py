@@ -1,8 +1,13 @@
 """Notification types and pattern definitions."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from ras.config import NotificationsConfig as FileNotificationsConfig
 
 
 class NotificationType(Enum):
@@ -48,6 +53,39 @@ class NotificationConfig:
             approval_patterns=list(APPROVAL_PATTERNS),
             error_patterns=list(ERROR_PATTERNS),
             shell_prompt_patterns=list(DEFAULT_SHELL_PROMPTS),
+        )
+
+    @classmethod
+    def from_config(cls, config: "FileNotificationsConfig") -> "NotificationConfig":
+        """Create NotificationConfig from file configuration.
+
+        Args:
+            config: NotificationsConfig loaded from config file.
+
+        Returns:
+            NotificationConfig with patterns from defaults + custom patterns.
+        """
+        # Start with defaults
+        approval_patterns = list(APPROVAL_PATTERNS)
+        error_patterns = list(ERROR_PATTERNS)
+        shell_prompt_patterns = list(DEFAULT_SHELL_PROMPTS)
+
+        # Add custom patterns from config
+        if config.patterns.custom_approval:
+            approval_patterns.extend(config.patterns.custom_approval)
+        if config.patterns.custom_error:
+            error_patterns.extend(config.patterns.custom_error)
+
+        # Override shell prompt pattern if specified
+        if config.patterns.shell_prompt:
+            shell_prompt_patterns = [config.patterns.shell_prompt]
+
+        return cls(
+            approval_patterns=approval_patterns,
+            error_patterns=error_patterns,
+            shell_prompt_patterns=shell_prompt_patterns,
+            cooldown_seconds=config.cooldown_seconds,
+            regex_timeout_ms=config.regex_timeout_ms,
         )
 
 

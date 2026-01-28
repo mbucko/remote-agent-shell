@@ -30,6 +30,25 @@ class IpMonitorConfig:
 
 
 @dataclass
+class NotificationPatternsConfig:
+    """Custom notification patterns configuration."""
+
+    shell_prompt: str | None = None  # Override default shell prompt pattern
+    custom_approval: list[str] = field(default_factory=list)  # Additional approval patterns
+    custom_error: list[str] = field(default_factory=list)  # Additional error patterns
+
+
+@dataclass
+class NotificationsConfig:
+    """Notification detection configuration."""
+
+    enabled: bool = True  # Master toggle
+    cooldown_seconds: float = 5.0  # Dedup cooldown
+    regex_timeout_ms: int = 100  # ReDoS protection timeout
+    patterns: NotificationPatternsConfig = field(default_factory=NotificationPatternsConfig)
+
+
+@dataclass
 class Config:
     """Daemon configuration."""
 
@@ -42,6 +61,7 @@ class Config:
     stun_servers: list[str] = field(default_factory=lambda: DEFAULT_STUN_SERVERS.copy())
     ntfy: NtfyConfig = field(default_factory=NtfyConfig)
     ip_monitor: IpMonitorConfig = field(default_factory=IpMonitorConfig)
+    notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
 
 
 def get_config_path(custom_path: Path | None = None) -> Path:
@@ -108,6 +128,25 @@ def load_config(
         enabled=ip_monitor_data.get("enabled", IpMonitorConfig.enabled),
     )
 
+    # Parse notifications config section
+    notifications_data = data.get("notifications", {})
+    patterns_data = notifications_data.get("patterns", {})
+    patterns_config = NotificationPatternsConfig(
+        shell_prompt=patterns_data.get("shell_prompt"),
+        custom_approval=patterns_data.get("custom_approval", []),
+        custom_error=patterns_data.get("custom_error", []),
+    )
+    notifications_config = NotificationsConfig(
+        enabled=notifications_data.get("enabled", NotificationsConfig.enabled),
+        cooldown_seconds=notifications_data.get(
+            "cooldown_seconds", NotificationsConfig.cooldown_seconds
+        ),
+        regex_timeout_ms=notifications_data.get(
+            "regex_timeout_ms", NotificationsConfig.regex_timeout_ms
+        ),
+        patterns=patterns_config,
+    )
+
     return Config(
         port=data.get("port", Config.port),
         bind_address=data.get("bind_address", Config.bind_address),
@@ -118,4 +157,5 @@ def load_config(
         stun_servers=data.get("stun_servers", DEFAULT_STUN_SERVERS.copy()),
         ntfy=ntfy_config,
         ip_monitor=ip_monitor_config,
+        notifications=notifications_config,
     )

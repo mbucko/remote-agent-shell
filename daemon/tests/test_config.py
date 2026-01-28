@@ -6,7 +6,13 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
-from ras.config import Config, get_config_path, load_config
+from ras.config import (
+    Config,
+    NotificationPatternsConfig,
+    NotificationsConfig,
+    get_config_path,
+    load_config,
+)
 
 
 class TestConfigDefaults:
@@ -108,3 +114,172 @@ class TestLoadConfig:
         config = load_config(config_file)
 
         assert config.port == 8765
+
+
+class TestNotificationsConfig:
+    """Test notification configuration loading."""
+
+    def test_notifications_defaults(self):
+        """NotificationsConfig has sensible defaults."""
+        config = NotificationsConfig()
+
+        assert config.enabled is True
+        assert config.cooldown_seconds == 5.0
+        assert config.regex_timeout_ms == 100
+        assert config.patterns.shell_prompt is None
+        assert config.patterns.custom_approval == []
+        assert config.patterns.custom_error == []
+
+    def test_load_notifications_enabled(self, tmp_path):
+        """Can disable notifications via config."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "notifications": {
+                        "enabled": False,
+                    }
+                }
+            )
+        )
+
+        config = load_config(config_file)
+
+        assert config.notifications.enabled is False
+
+    def test_load_notifications_cooldown(self, tmp_path):
+        """Can configure cooldown seconds."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "notifications": {
+                        "cooldown_seconds": 10.0,
+                    }
+                }
+            )
+        )
+
+        config = load_config(config_file)
+
+        assert config.notifications.cooldown_seconds == 10.0
+
+    def test_load_notifications_regex_timeout(self, tmp_path):
+        """Can configure regex timeout."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "notifications": {
+                        "regex_timeout_ms": 200,
+                    }
+                }
+            )
+        )
+
+        config = load_config(config_file)
+
+        assert config.notifications.regex_timeout_ms == 200
+
+    def test_load_notifications_shell_prompt(self, tmp_path):
+        """Can override shell prompt pattern."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "notifications": {
+                        "patterns": {
+                            "shell_prompt": r"^myhost\$ ",
+                        }
+                    }
+                }
+            )
+        )
+
+        config = load_config(config_file)
+
+        assert config.notifications.patterns.shell_prompt == r"^myhost\$ "
+
+    def test_load_notifications_custom_approval(self, tmp_path):
+        """Can add custom approval patterns."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "notifications": {
+                        "patterns": {
+                            "custom_approval": ["my custom pattern", "another pattern"],
+                        }
+                    }
+                }
+            )
+        )
+
+        config = load_config(config_file)
+
+        assert config.notifications.patterns.custom_approval == [
+            "my custom pattern",
+            "another pattern",
+        ]
+
+    def test_load_notifications_custom_error(self, tmp_path):
+        """Can add custom error patterns."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "notifications": {
+                        "patterns": {
+                            "custom_error": ["CUSTOM_ERROR:", "MyAppError"],
+                        }
+                    }
+                }
+            )
+        )
+
+        config = load_config(config_file)
+
+        assert config.notifications.patterns.custom_error == [
+            "CUSTOM_ERROR:",
+            "MyAppError",
+        ]
+
+    def test_load_notifications_full_config(self, tmp_path):
+        """Can load full notifications config."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump(
+                {
+                    "notifications": {
+                        "enabled": True,
+                        "cooldown_seconds": 3.0,
+                        "regex_timeout_ms": 50,
+                        "patterns": {
+                            "shell_prompt": r"^\$ ",
+                            "custom_approval": ["custom approve"],
+                            "custom_error": ["custom error"],
+                        },
+                    }
+                }
+            )
+        )
+
+        config = load_config(config_file)
+
+        assert config.notifications.enabled is True
+        assert config.notifications.cooldown_seconds == 3.0
+        assert config.notifications.regex_timeout_ms == 50
+        assert config.notifications.patterns.shell_prompt == r"^\$ "
+        assert config.notifications.patterns.custom_approval == ["custom approve"]
+        assert config.notifications.patterns.custom_error == ["custom error"]
+
+    def test_notifications_defaults_when_missing(self, tmp_path):
+        """Notifications uses defaults when not in config."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml.dump({"port": 9000}))
+
+        config = load_config(config_file)
+
+        assert config.notifications.enabled is True
+        assert config.notifications.cooldown_seconds == 5.0
+        assert config.notifications.regex_timeout_ms == 100

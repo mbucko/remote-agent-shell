@@ -583,3 +583,242 @@ class TestMatcherConfiguration:
         matcher = PatternMatcher(config)
         results = matcher.process_chunk(b"Some output")
         assert results == []
+
+
+# ============================================================================
+# Config File Integration Tests
+# ============================================================================
+
+
+# ============================================================================
+# PM15 Invalid UTF-8 Tests
+# ============================================================================
+
+
+class TestInvalidUTF8:
+    """Tests for handling invalid UTF-8 input."""
+
+    def test_pm15_invalid_utf8_replaced(self, matcher):
+        """PM15: Invalid UTF-8 bytes replaced with replacement char."""
+        # Invalid UTF-8 sequence followed by valid error
+        invalid_utf8 = b"\xff\xfe\nError: something\n"
+        results = matcher.process_chunk(invalid_utf8)
+
+        # Should still match despite invalid bytes
+        error_results = [r for r in results if r.type == NotificationType.ERROR]
+        assert len(error_results) >= 1
+
+    def test_pm15_truncated_utf8_sequence(self, matcher):
+        """PM15: Truncated UTF-8 sequence handled."""
+        # Start of 2-byte sequence without second byte
+        truncated = b"\xc2Proceed? (y/n)"
+        results = matcher.process_chunk(truncated)
+
+        # Should still match
+        approval_results = [r for r in results if r.type == NotificationType.APPROVAL]
+        assert len(approval_results) >= 1
+
+    def test_pm15_overlong_encoding(self, matcher):
+        """PM15: Overlong UTF-8 encoding handled."""
+        # Overlong encoding of '/'
+        overlong = b"\xc0\xafError: test\n"
+        results = matcher.process_chunk(overlong)
+
+        # Should handle gracefully (may or may not match depending on decode)
+        # Key is it doesn't crash
+        assert isinstance(results, list)
+
+    def test_pm15_mixed_valid_invalid(self, matcher):
+        """PM15: Mixed valid and invalid UTF-8 handled."""
+        mixed = b"Valid text \xff\xfe more valid Error: test\n"
+        results = matcher.process_chunk(mixed)
+
+        # Should not crash and should try to match
+        assert isinstance(results, list)
+
+
+# ============================================================================
+# Performance Tests
+# ============================================================================
+
+
+class TestPerformance:
+    """Performance tests for pattern matching."""
+
+    def test_pm12_pattern_matching_under_10ms(self, matcher):
+        """PM12: Pattern matching completes in < 10ms for typical input."""
+        import time
+
+        # Typical terminal output chunk
+        test_input = b"Running tests...\nTest passed\nProceed? (y/n)"
+
+        # Warm up
+        matcher.process_chunk(test_input)
+        matcher.reset()
+
+        # Time 100 iterations
+        iterations = 100
+        start = time.time()
+        for _ in range(iterations):
+            matcher.process_chunk(test_input)
+            matcher.reset()
+        elapsed = time.time() - start
+
+        avg_ms = (elapsed / iterations) * 1000
+        assert avg_ms < 10, f"Average matching time {avg_ms:.2f}ms exceeds 10ms"
+
+    def test_large_input_performance(self, matcher):
+        """Large input (100KB) processed in reasonable time."""
+        import time
+
+        # 100KB of data with pattern at end
+        large_input = b"x" * 100000 + b"\nError: at the end\n"
+
+        start = time.time()
+        results = matcher.process_chunk(large_input)
+        elapsed = time.time() - start
+
+        # Should complete in < 100ms for 100KB
+        assert elapsed < 0.1, f"100KB took {elapsed:.3f}s"
+        # Should find the pattern
+        error_results = [r for r in results if r.type == NotificationType.ERROR]
+        assert len(error_results) >= 1
+
+    def test_rapid_small_chunks_performance(self, matcher):
+        """Many small chunks processed efficiently."""
+        import time
+
+        # 1000 small chunks
+        chunks = [b"line of output\n" for _ in range(1000)]
+        chunks.append(b"Proceed? (y/n)")
+
+        start = time.time()
+        for chunk in chunks:
+            matcher.process_chunk(chunk)
+        elapsed = time.time() - start
+
+        # 1000 chunks should complete in < 1s
+        assert elapsed < 1.0, f"1000 chunks took {elapsed:.3f}s"
+
+
+# ============================================================================
+# Config File Integration Tests
+# ============================================================================
+
+
+class TestConfigFileIntegration:
+    """Tests for loading NotificationConfig from file config."""
+
+    def test_from_config_uses_defaults(self):
+        """from_config uses default patterns when no custom ones."""
+        from ras.config import NotificationsConfig, NotificationPatternsConfig
+
+        file_config = NotificationsConfig()
+        config = NotificationConfig.from_config(file_config)
+
+        # Should have default patterns
+        assert config.approval_patterns == list(APPROVAL_PATTERNS)
+        assert config.error_patterns == list(ERROR_PATTERNS)
+        assert config.shell_prompt_patterns == list(DEFAULT_SHELL_PROMPTS)
+
+    def test_from_config_adds_custom_approval(self):
+        """from_config appends custom approval patterns."""
+        from ras.config import NotificationsConfig, NotificationPatternsConfig
+
+        patterns = NotificationPatternsConfig(
+            custom_approval=["CUSTOM_APPROVAL_1", "CUSTOM_APPROVAL_2"]
+        )
+        file_config = NotificationsConfig(patterns=patterns)
+        config = NotificationConfig.from_config(file_config)
+
+        # Should have defaults + custom
+        assert "CUSTOM_APPROVAL_1" in config.approval_patterns
+        assert "CUSTOM_APPROVAL_2" in config.approval_patterns
+        # Plus the defaults
+        for default in APPROVAL_PATTERNS:
+            assert default in config.approval_patterns
+
+    def test_from_config_adds_custom_error(self):
+        """from_config appends custom error patterns."""
+        from ras.config import NotificationsConfig, NotificationPatternsConfig
+
+        patterns = NotificationPatternsConfig(
+            custom_error=["MY_CUSTOM_ERROR:", "ANOTHER_ERROR"]
+        )
+        file_config = NotificationsConfig(patterns=patterns)
+        config = NotificationConfig.from_config(file_config)
+
+        # Should have defaults + custom
+        assert "MY_CUSTOM_ERROR:" in config.error_patterns
+        assert "ANOTHER_ERROR" in config.error_patterns
+        # Plus the defaults
+        for default in ERROR_PATTERNS:
+            assert default in config.error_patterns
+
+    def test_from_config_overrides_shell_prompt(self):
+        """from_config replaces shell prompt when specified."""
+        from ras.config import NotificationsConfig, NotificationPatternsConfig
+
+        patterns = NotificationPatternsConfig(shell_prompt=r"^myhost\$ ")
+        file_config = NotificationsConfig(patterns=patterns)
+        config = NotificationConfig.from_config(file_config)
+
+        # Should have only the custom shell prompt
+        assert config.shell_prompt_patterns == [r"^myhost\$ "]
+
+    def test_from_config_uses_cooldown_seconds(self):
+        """from_config uses cooldown_seconds from file config."""
+        from ras.config import NotificationsConfig
+
+        file_config = NotificationsConfig(cooldown_seconds=10.0)
+        config = NotificationConfig.from_config(file_config)
+
+        assert config.cooldown_seconds == 10.0
+
+    def test_from_config_uses_regex_timeout(self):
+        """from_config uses regex_timeout_ms from file config."""
+        from ras.config import NotificationsConfig
+
+        file_config = NotificationsConfig(regex_timeout_ms=200)
+        config = NotificationConfig.from_config(file_config)
+
+        assert config.regex_timeout_ms == 200
+
+    def test_from_config_full_integration(self):
+        """from_config works with full file config."""
+        from ras.config import NotificationsConfig, NotificationPatternsConfig
+
+        patterns = NotificationPatternsConfig(
+            shell_prompt=r"^custom\$ ",
+            custom_approval=["APPROVE_ME"],
+            custom_error=["FAIL_ME"],
+        )
+        file_config = NotificationsConfig(
+            enabled=True,
+            cooldown_seconds=3.0,
+            regex_timeout_ms=50,
+            patterns=patterns,
+        )
+        config = NotificationConfig.from_config(file_config)
+
+        assert config.cooldown_seconds == 3.0
+        assert config.regex_timeout_ms == 50
+        assert "APPROVE_ME" in config.approval_patterns
+        assert "FAIL_ME" in config.error_patterns
+        assert config.shell_prompt_patterns == [r"^custom\$ "]
+
+    def test_custom_pattern_matches(self):
+        """Custom pattern from config file actually works in matcher."""
+        from ras.config import NotificationsConfig, NotificationPatternsConfig
+
+        patterns = NotificationPatternsConfig(
+            custom_approval=["MY_APP_ASKS_YOU"]
+        )
+        file_config = NotificationsConfig(patterns=patterns)
+        config = NotificationConfig.from_config(file_config)
+
+        matcher = PatternMatcher(config)
+        results = matcher.process_chunk(b"MY_APP_ASKS_YOU for something")
+
+        approval_results = [r for r in results if r.type == NotificationType.APPROVAL]
+        assert len(approval_results) >= 1
