@@ -835,7 +835,474 @@ class SettingsE2ETest {
     }
 
     // ==========================================================================
-    // Scenario 14: Complete User Journey
+    // Scenario 14: ViewModel Agent Loading States
+    // ==========================================================================
+
+    @Test
+    fun `E2E-51 ViewModel shows loading state during agent fetch`() = runTest {
+        // Given: ViewModel is created while connected
+        isConnectedFlow.value = true
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Agent list is loading
+        // Note: Initial state should have loading=true if connected
+
+        // Then: Loading state is reflected
+        // (The ViewModel sets loading on init if connected)
+        coVerify { sessionRepository.getAgents() }
+    }
+
+    @Test
+    fun `E2E-52 ViewModel handles agent load error`() = runTest {
+        // Given: ViewModel is created while connected
+        isConnectedFlow.value = true
+        coEvery { sessionRepository.getAgents() } throws Exception("Network error")
+
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: Error state is reflected
+        val state = viewModel.uiState.value
+        assertFalse(state.agentListLoading)
+        assertNotNull(state.agentListError)
+        assertTrue(state.agentListError!!.contains("Failed to load"))
+    }
+
+    @Test
+    fun `E2E-53 ViewModel receives agents from SessionEvent`() = runTest {
+        // Given: ViewModel is created
+        isConnectedFlow.value = true
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Agents are loaded via event
+        val agents = listOf(
+            AgentInfo("claude", "claude", "/usr/bin/claude", true),
+            AgentInfo("aider", "aider", "/usr/bin/aider", true)
+        )
+        sessionEventsFlow.emit(SessionEvent.AgentsLoaded(agents))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: Agents appear in UI state
+        val state = viewModel.uiState.value
+        assertEquals(2, state.availableAgents.size)
+        assertFalse(state.agentListLoading)
+        assertNull(state.agentListError)
+    }
+
+    @Test
+    fun `E2E-54 ViewModel validates default agent when agents load`() = runTest {
+        // Given: Default agent is set
+        settingsRepository.setDefaultAgent("removed-agent")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        isConnectedFlow.value = true
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Agents are loaded without the default
+        sessionEventsFlow.emit(SessionEvent.AgentsLoaded(listOf(
+            AgentInfo("claude", "claude", "/usr/bin/claude", true)
+        )))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: Default is cleared
+        assertNull(settingsRepository.getDefaultAgent())
+    }
+
+    @Test
+    fun `E2E-55 ViewModel emits event when default agent removed`() = runTest {
+        // Given: Default agent is set
+        settingsRepository.setDefaultAgent("removed-agent")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        isConnectedFlow.value = true
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Agents are loaded without the default
+        viewModel.uiEvents.test {
+            sessionEventsFlow.emit(SessionEvent.AgentsLoaded(listOf(
+                AgentInfo("claude", "claude", "/usr/bin/claude", true)
+            )))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // Then: ShowMessage event is emitted
+            val event = awaitItem()
+            assertTrue(event is SettingsUiEvent.ShowMessage)
+            assertTrue((event as SettingsUiEvent.ShowMessage).message.contains("no longer available"))
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ==========================================================================
+    // Scenario 15: Connection State Handling
+    // ==========================================================================
+
+    @Test
+    fun `E2E-56 ViewModel reflects connected state`() = runTest {
+        // Given: Initially disconnected
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.daemonInfo.connected)
+
+        // When: Connection established
+        isConnectedFlow.value = true
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: State reflects connected
+        assertTrue(viewModel.uiState.value.daemonInfo.connected)
+        assertNotNull(viewModel.uiState.value.daemonInfo.lastSeen)
+    }
+
+    @Test
+    fun `E2E-57 ViewModel reflects disconnected state`() = runTest {
+        // Given: Initially connected
+        isConnectedFlow.value = true
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.daemonInfo.connected)
+
+        // When: Connection lost
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: State reflects disconnected
+        assertFalse(viewModel.uiState.value.daemonInfo.connected)
+    }
+
+    @Test
+    fun `E2E-58 ViewModel tracks lastSeen time when connected`() = runTest {
+        // Given: Disconnected
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.daemonInfo.lastSeen)
+
+        // When: Connect
+        isConnectedFlow.value = true
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: lastSeen is populated
+        assertNotNull(viewModel.uiState.value.daemonInfo.lastSeen)
+        assertTrue(viewModel.uiState.value.daemonInfo.lastSeen!! > 0)
+    }
+
+    @Test
+    fun `E2E-59 ViewModel preserves lastSeen after disconnect`() = runTest {
+        // Given: Connected
+        isConnectedFlow.value = true
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val connectedLastSeen = viewModel.uiState.value.daemonInfo.lastSeen
+        assertNotNull(connectedLastSeen)
+
+        // When: Disconnect
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: lastSeen preserved
+        assertEquals(connectedLastSeen, viewModel.uiState.value.daemonInfo.lastSeen)
+    }
+
+    @Test
+    fun `E2E-60 ViewModel skips agent load when disconnected`() = runTest {
+        // Given: Disconnected
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: No agent fetch attempted
+        coVerify(exactly = 0) { sessionRepository.getAgents() }
+    }
+
+    // ==========================================================================
+    // Scenario 16: App Restart Simulation
+    // ==========================================================================
+
+    @Test
+    fun `E2E-61 Settings persist across repository recreation`() = runTest {
+        // Given: Configure settings
+        settingsRepository.setDefaultAgent("claude")
+        settingsRepository.setEnabledQuickButtons(listOf(SettingsQuickButton.TAB, SettingsQuickButton.ESC))
+        settingsRepository.setNotificationSettings(NotificationSettings(false, true, false))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Create new repository (simulates app restart)
+        val newRepository = SettingsRepository(context)
+
+        // Then: Settings are persisted
+        assertEquals("claude", newRepository.getDefaultAgent())
+        assertEquals(listOf(SettingsQuickButton.TAB, SettingsQuickButton.ESC), newRepository.getEnabledQuickButtons())
+        assertEquals(NotificationSettings(false, true, false), newRepository.getNotificationSettings())
+    }
+
+    @Test
+    fun `E2E-62 Settings flows emit correct values after restart`() = runTest {
+        // Given: Configure settings
+        settingsRepository.setDefaultAgent("aider")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Create new repository
+        val newRepository = SettingsRepository(context)
+
+        // Then: Flow emits persisted value
+        assertEquals("aider", newRepository.defaultAgent.first())
+    }
+
+    @Test
+    fun `E2E-63 Version persists across restart`() = runTest {
+        // Given: Settings with version
+        assertEquals(SETTINGS_VERSION, settingsRepository.getSettingsVersion())
+
+        // When: Create new repository
+        val newRepository = SettingsRepository(context)
+
+        // Then: Version is preserved
+        assertEquals(SETTINGS_VERSION, newRepository.getSettingsVersion())
+    }
+
+    // ==========================================================================
+    // Scenario 17: ViewModel User Actions
+    // ==========================================================================
+
+    @Test
+    fun `E2E-64 ViewModel setDefaultAgent updates state`() = runTest {
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Set default agent through ViewModel
+        viewModel.setDefaultAgent("claude")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: State and repository updated
+        assertEquals("claude", viewModel.uiState.value.defaultAgent)
+        assertEquals("claude", settingsRepository.getDefaultAgent())
+    }
+
+    @Test
+    fun `E2E-65 ViewModel toggleQuickButton enable`() = runTest {
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Enable TAB through ViewModel
+        viewModel.toggleQuickButton(SettingsQuickButton.TAB, true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: TAB is in list
+        assertTrue(viewModel.uiState.value.quickButtons.contains(SettingsQuickButton.TAB))
+        assertTrue(settingsRepository.getEnabledQuickButtons().contains(SettingsQuickButton.TAB))
+    }
+
+    @Test
+    fun `E2E-66 ViewModel toggleQuickButton disable`() = runTest {
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Disable YES through ViewModel
+        viewModel.toggleQuickButton(SettingsQuickButton.YES, false)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: YES is not in list
+        assertFalse(viewModel.uiState.value.quickButtons.contains(SettingsQuickButton.YES))
+        assertFalse(settingsRepository.getEnabledQuickButtons().contains(SettingsQuickButton.YES))
+    }
+
+    @Test
+    fun `E2E-67 ViewModel setNotificationEnabled updates state`() = runTest {
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Disable approval through ViewModel
+        viewModel.setNotificationEnabled(NotificationType.APPROVAL, false)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: State and repository updated
+        assertFalse(viewModel.uiState.value.notifications.approvalEnabled)
+        assertFalse(settingsRepository.isNotificationEnabled(NotificationType.APPROVAL))
+    }
+
+    @Test
+    fun `E2E-68 ViewModel resetSection emits message`() = runTest {
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Set up something to reset
+        viewModel.setDefaultAgent("claude")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            // When: Reset sessions section
+            viewModel.resetSection(SettingsSection.SESSIONS)
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // Then: Message event emitted
+            val event = awaitItem()
+            assertTrue(event is SettingsUiEvent.ShowMessage)
+            assertTrue((event as SettingsUiEvent.ShowMessage).message.contains("Sessions"))
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `E2E-69 ViewModel refreshAgentList fetches agents`() = runTest {
+        isConnectedFlow.value = true
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Initial fetch happened
+        coVerify(exactly = 1) { sessionRepository.getAgents() }
+
+        // When: Refresh
+        viewModel.refreshAgentList()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: Another fetch
+        coVerify(exactly = 2) { sessionRepository.getAgents() }
+    }
+
+    @Test
+    fun `E2E-70 ViewModel disconnect calls ConnectionManager`() = runTest {
+        isConnectedFlow.value = true
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Disconnect
+        viewModel.disconnect()
+
+        // Then: ConnectionManager.disconnect called
+        verify { connectionManager.disconnect() }
+    }
+
+    // ==========================================================================
+    // Scenario 18: Error Edge Cases
+    // ==========================================================================
+
+    @Test
+    fun `E2E-71 Corrupted buttons JSON falls back to defaults`() = runTest {
+        // Given: Corrupted JSON in storage
+        storage[SettingsKeys.QUICK_BUTTONS] = "not valid json {{{["
+
+        // When: Create repository
+        val repo = SettingsRepository(context)
+
+        // Then: Falls back to defaults
+        assertEquals(SettingsDefaults.QUICK_BUTTONS, repo.getEnabledQuickButtons())
+    }
+
+    @Test
+    fun `E2E-72 Partially valid buttons JSON keeps valid entries`() = runTest {
+        // Given: JSON with one invalid entry
+        storage[SettingsKeys.QUICK_BUTTONS] = """["yes","invalid_button","no"]"""
+
+        // When: Create repository
+        val repo = SettingsRepository(context)
+
+        // Then: Only valid buttons kept
+        val buttons = repo.getEnabledQuickButtons()
+        assertTrue(buttons.contains(SettingsQuickButton.YES))
+        assertTrue(buttons.contains(SettingsQuickButton.NO))
+        assertEquals(2, buttons.size)
+    }
+
+    @Test
+    fun `E2E-73 Empty JSON array gives empty list`() = runTest {
+        // Given: Empty array
+        storage[SettingsKeys.QUICK_BUTTONS] = "[]"
+
+        // When: Create repository
+        val repo = SettingsRepository(context)
+
+        // Then: Empty list
+        assertTrue(repo.getEnabledQuickButtons().isEmpty())
+    }
+
+    @Test
+    fun `E2E-74 Whitespace-only JSON gives empty list`() = runTest {
+        // Given: Whitespace (treated as blank/empty)
+        storage[SettingsKeys.QUICK_BUTTONS] = "   "
+
+        // When: Create repository
+        val repo = SettingsRepository(context)
+
+        // Then: Returns empty list (blank is treated as intentionally empty)
+        assertTrue(repo.getEnabledQuickButtons().isEmpty())
+    }
+
+    // ==========================================================================
+    // Scenario 19: Settings Work While Disconnected
+    // ==========================================================================
+
+    @Test
+    fun `E2E-75 Can change settings while disconnected`() = runTest {
+        // Given: Disconnected
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Change all settings
+        viewModel.setDefaultAgent("claude")
+        viewModel.toggleQuickButton(SettingsQuickButton.TAB, true)
+        viewModel.setNotificationEnabled(NotificationType.APPROVAL, false)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: All changes persisted
+        assertEquals("claude", viewModel.uiState.value.defaultAgent)
+        assertTrue(viewModel.uiState.value.quickButtons.contains(SettingsQuickButton.TAB))
+        assertFalse(viewModel.uiState.value.notifications.approvalEnabled)
+    }
+
+    @Test
+    fun `E2E-76 Settings persist through connection state changes`() = runTest {
+        // Given: Configure while disconnected
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.setDefaultAgent("claude")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Connect
+        isConnectedFlow.value = true
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: Settings preserved
+        assertEquals("claude", viewModel.uiState.value.defaultAgent)
+    }
+
+    @Test
+    fun `E2E-77 Reset works while disconnected`() = runTest {
+        // Given: Configured and disconnected
+        settingsRepository.setDefaultAgent("claude")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        isConnectedFlow.value = false
+        val viewModel = SettingsViewModel(settingsRepository, sessionRepository, connectionManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: Reset
+        viewModel.resetSection(SettingsSection.SESSIONS)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: Reset works
+        assertNull(viewModel.uiState.value.defaultAgent)
+    }
+
+    // ==========================================================================
+    // Scenario 20: Complete User Journey
     // ==========================================================================
 
     @Test

@@ -59,6 +59,9 @@ class SettingsViewModel @Inject constructor(
     private val _uiEvents = MutableSharedFlow<SettingsUiEvent>(extraBufferCapacity = 16)
     val uiEvents: SharedFlow<SettingsUiEvent> = _uiEvents.asSharedFlow()
 
+    // Track last connection time for daemon info
+    private var lastConnectedTime: Long? = null
+
     init {
         // Combine all settings into UI state
         combine(
@@ -67,15 +70,22 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.notificationSettings,
             connectionManager.isConnected
         ) { defaultAgent, quickButtons, notifications, connected ->
+            // Update lastConnectedTime when connected
+            if (connected) {
+                lastConnectedTime = System.currentTimeMillis()
+            }
+
             SettingsUiState(
                 defaultAgent = defaultAgent,
                 quickButtons = quickButtons,
                 notifications = notifications,
                 daemonInfo = DaemonInfo(
                     connected = connected,
-                    version = null, // TODO: Get from daemon when available
-                    ipAddress = null, // TODO: Get from daemon when available
-                    lastSeen = if (connected) System.currentTimeMillis() else null
+                    // Note: Daemon version/IP require protocol extension to fetch from daemon
+                    // For now, these will be null until ConnectionManager exposes this data
+                    version = null,
+                    ipAddress = null,
+                    lastSeen = lastConnectedTime
                 ),
                 availableAgents = _uiState.value.availableAgents,
                 agentListLoading = _uiState.value.agentListLoading,
