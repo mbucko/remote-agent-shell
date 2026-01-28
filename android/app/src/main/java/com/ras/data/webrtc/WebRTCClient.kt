@@ -132,7 +132,10 @@ class WebRTCClient(
         val localDesc = peerConnection?.localDescription
             ?: throw IllegalStateException("Local description not available")
 
-        Log.d(TAG, "ICE gathering complete, returning offer with candidates")
+        // Validate SDP contains candidates
+        SdpValidator.requireCandidates(localDesc.description, "Offer SDP")
+        Log.d(TAG, "Offer contains ${SdpValidator.countCandidates(localDesc.description)} ICE candidates")
+
         return localDesc.description
     }
 

@@ -7,6 +7,7 @@ from typing import Awaitable, Callable
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 
 from ras.protocols import PeerState
+from ras.sdp_validator import validate_sdp
 
 logger = logging.getLogger(__name__)
 
@@ -159,14 +160,14 @@ class PeerConnection:
         )
         self._setup_channel(self._channel)
 
-        # Log remote candidates from offer
-        candidate_count = 0
-        for line in offer_sdp.splitlines():
-            if 'candidate' in line.lower():
-                logger.info(f"Remote ICE candidate: {line}")
-                candidate_count += 1
-        if candidate_count == 0:
-            logger.warning("No ICE candidates in remote offer! (trickle ICE?)")
+        # Validate remote offer contains candidates
+        validation = validate_sdp(offer_sdp, "Remote offer")
+        if not validation.is_valid:
+            logger.warning(f"Remote offer validation issues: {validation.errors}")
+        logger.info(
+            f"Remote offer: {validation.candidate_count} candidates "
+            f"(host={validation.has_host}, srflx={validation.has_srflx}, relay={validation.has_relay})"
+        )
 
         offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
         await self._pc.setRemoteDescription(offer)
