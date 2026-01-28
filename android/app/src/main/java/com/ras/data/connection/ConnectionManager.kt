@@ -1,6 +1,8 @@
 package com.ras.data.connection
 
 import android.util.Log
+import com.ras.crypto.BytesCodec
+import com.ras.crypto.CryptoException
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.di.IoDispatcher
 import com.ras.proto.SessionCommand
@@ -56,6 +58,9 @@ class ConnectionManager @Inject constructor(
     @Volatile
     private var webRtcClient: WebRTCClient? = null
 
+    @Volatile
+    private var codec: BytesCodec? = null
+
     private var eventListenerJob: Job? = null
     private var heartbeatJob: Job? = null
 
@@ -89,9 +94,14 @@ class ConnectionManager @Inject constructor(
     val connectionErrors: SharedFlow<ConnectionError> = _connectionErrors.asSharedFlow()
 
     /**
-     * Connect using an existing WebRTC client.
+     * Connect using an existing WebRTC client with encryption.
+     *
+     * @param client The WebRTC client to use for communication
+     * @param authKey 32-byte key for AES-256-GCM encryption (must match daemon's key)
      */
-    fun connect(client: WebRTCClient) {
+    fun connect(client: WebRTCClient, authKey: ByteArray) {
+        require(authKey.size == 32) { "Auth key must be 32 bytes" }
+
         synchronized(connectionLock) {
             if (webRtcClient != null) {
                 Log.w(TAG, "Already connected, disconnecting first")
@@ -99,11 +109,12 @@ class ConnectionManager @Inject constructor(
             }
 
             webRtcClient = client
+            codec = BytesCodec(authKey.copyOf())  // Copy to avoid external mutation
             _isConnected.value = true
             _isHealthy.value = true
             startEventListener()
             startHeartbeatMonitor()
-            Log.i(TAG, "Connected to daemon")
+            Log.i(TAG, "Connected to daemon with encryption")
         }
     }
 
@@ -125,45 +136,54 @@ class ConnectionManager @Inject constructor(
         _isHealthy.value = false
         webRtcClient?.close()
         webRtcClient = null
+        codec?.zeroKey()
+        codec = null
         Log.i(TAG, "Disconnected from daemon")
     }
 
     /**
-     * Send a session command to the daemon.
+     * Send a session command to the daemon (encrypted).
      *
      * @throws IllegalStateException if not connected
      * @throws IllegalArgumentException if message too large
      */
     suspend fun sendSessionCommand(command: SessionCommand) {
-        val data = command.toByteArray()
-        validateMessageSize(data, "SessionCommand")
-        val client = requireConnected()
-        client.send(data)
+        val plaintext = command.toByteArray()
+        validateMessageSize(plaintext, "SessionCommand")
+        sendEncrypted(plaintext)
     }
 
     /**
-     * Send a terminal command to the daemon.
+     * Send a terminal command to the daemon (encrypted).
      *
      * @throws IllegalStateException if not connected
      * @throws IllegalArgumentException if message too large
      */
     suspend fun sendTerminalCommand(command: TerminalCommand) {
-        val data = command.toByteArray()
-        validateMessageSize(data, "TerminalCommand")
-        val client = requireConnected()
-        client.send(data)
+        val plaintext = command.toByteArray()
+        validateMessageSize(plaintext, "TerminalCommand")
+        sendEncrypted(plaintext)
     }
 
     /**
-     * Send raw bytes to the daemon.
+     * Send raw bytes to the daemon (encrypted).
      *
      * @throws IllegalStateException if not connected
      * @throws IllegalArgumentException if message too large
      */
     suspend fun send(data: ByteArray) {
         validateMessageSize(data, "raw data")
+        sendEncrypted(data)
+    }
+
+    /**
+     * Encrypt and send data.
+     */
+    private suspend fun sendEncrypted(plaintext: ByteArray) {
         val client = requireConnected()
-        client.send(data)
+        val c = codec ?: throw IllegalStateException("No encryption codec available")
+        val encrypted = c.encode(plaintext)
+        client.send(encrypted)
     }
 
     private fun validateMessageSize(data: ByteArray, type: String) {
@@ -236,18 +256,33 @@ class ConnectionManager @Inject constructor(
     /**
      * Route incoming message to appropriate handler.
      *
+     * Messages are decrypted first, then parsed as protobuf.
      * Protocol uses distinct message types, so we try parsing in order.
      * If one succeeds, we emit to the appropriate flow.
      */
-    private suspend fun routeMessage(data: ByteArray) {
+    private suspend fun routeMessage(encryptedData: ByteArray) {
         // Validate message size
-        if (data.size > MAX_MESSAGE_SIZE) {
-            Log.e(TAG, "Received oversized message: ${data.size} bytes, dropping")
+        if (encryptedData.size > MAX_MESSAGE_SIZE) {
+            Log.e(TAG, "Received oversized message: ${encryptedData.size} bytes, dropping")
             return
         }
 
-        if (data.isEmpty()) {
+        if (encryptedData.isEmpty()) {
             Log.w(TAG, "Received empty message, ignoring")
+            return
+        }
+
+        // Decrypt the message
+        val c = codec
+        if (c == null) {
+            Log.e(TAG, "Received message but no codec available")
+            return
+        }
+
+        val data = try {
+            c.decode(encryptedData)
+        } catch (e: CryptoException) {
+            Log.e(TAG, "Failed to decrypt message: ${e.message}")
             return
         }
 

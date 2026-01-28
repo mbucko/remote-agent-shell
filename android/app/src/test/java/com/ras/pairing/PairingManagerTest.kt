@@ -557,8 +557,8 @@ class PairingManagerTest {
         advanceUntilIdle()
         authJob.join()
 
-        // Verify connection was handed off to ConnectionManager
-        verify { connectionManager.connect(webRTCClient) }
+        // Verify connection was handed off to ConnectionManager with auth key
+        verify { connectionManager.connect(webRTCClient, any()) }
     }
 
     // ============================================================================

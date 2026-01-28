@@ -38,10 +38,16 @@ data class NtfyMessage(
  */
 interface NtfyClientInterface {
     /**
-     * Subscribe to a topic and receive messages as a Flow.
+     * Subscribe to a topic and receive an NtfySubscription.
+     *
+     * The subscription provides:
+     * - awaitReady() to wait for WebSocket connection
+     * - messages flow to receive messages
+     * - close() to clean up
+     *
      * Main-safe: can be called from any dispatcher.
      */
-    suspend fun subscribe(topic: String): Flow<NtfyMessage>
+    fun subscribe(topic: String): NtfySubscription
 
     /**
      * Unsubscribe from the current topic.
@@ -53,7 +59,36 @@ interface NtfyClientInterface {
      * Main-safe: can be called from any dispatcher.
      */
     suspend fun publish(topic: String, message: String)
+
+    /**
+     * Publish a message with retry on failure.
+     *
+     * @param topic The topic to publish to
+     * @param message The message content
+     * @param maxRetries Maximum number of retry attempts
+     * @param baseDelayMs Base delay for exponential backoff
+     * @throws PublishFailedException if all retries fail
+     */
+    suspend fun publishWithRetry(
+        topic: String,
+        message: String,
+        maxRetries: Int = DEFAULT_MAX_RETRIES,
+        baseDelayMs: Long = DEFAULT_RETRY_DELAY_MS
+    )
+
+    companion object {
+        const val DEFAULT_MAX_RETRIES = 3
+        const val DEFAULT_RETRY_DELAY_MS = 1000L
+    }
 }
+
+/**
+ * Exception thrown when publish fails after all retries.
+ */
+class PublishFailedException(
+    message: String,
+    cause: Throwable? = null
+) : Exception(message, cause)
 
 /**
  * Client for ntfy signaling relay.
@@ -154,35 +189,57 @@ class NtfySignalingClient(
     }
 
     private var currentWebSocket: WebSocket? = null
+    private var currentSubscription: NtfySubscription? = null
 
     /**
-     * Subscribe to a topic and receive messages as a Flow.
+     * Subscribe to a topic and receive an NtfySubscription.
      *
-     * The Flow emits NtfyMessage objects for each received message.
-     * Only "message" events contain actual data; "keepalive" and "open" are control events.
+     * The subscription provides:
+     * - awaitReady() to wait for WebSocket connection
+     * - messages flow to receive messages
+     * - close() to clean up
      *
      * Features:
      * - Automatic reconnection on failure (up to maxReconnectAttempts)
      * - Exponential backoff between retries
      * - Connection state logging
      */
-    override suspend fun subscribe(topic: String): Flow<NtfyMessage> = createWebSocketFlow(topic)
-        .retryWhen { cause, attempt ->
-            if (attempt < maxReconnectAttempts && cause is IOException) {
-                val backoffMs = minOf(INITIAL_BACKOFF_MS * (1 shl attempt.toInt()), MAX_BACKOFF_MS)
-                Log.w(TAG, "WebSocket connection failed, retrying in ${backoffMs}ms (attempt ${attempt + 1}/$maxReconnectAttempts)")
-                delay(backoffMs)
-                true
-            } else {
-                Log.e(TAG, "WebSocket connection failed after $attempt attempts, giving up", cause)
-                false
+    override fun subscribe(topic: String): NtfySubscription {
+        val readyDeferred = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+        val messagesFlow = createWebSocketFlow(topic, readyDeferred)
+            .retryWhen { cause, attempt ->
+                if (attempt < maxReconnectAttempts && cause is IOException) {
+                    val backoffMs = minOf(INITIAL_BACKOFF_MS * (1 shl attempt.toInt()), MAX_BACKOFF_MS)
+                    Log.w(TAG, "WebSocket connection failed, retrying in ${backoffMs}ms (attempt ${attempt + 1}/$maxReconnectAttempts)")
+                    delay(backoffMs)
+                    true
+                } else {
+                    Log.e(TAG, "WebSocket connection failed after $attempt attempts, giving up", cause)
+                    false
+                }
             }
-        }
+
+        val subscription = NtfySubscription(
+            messages = messagesFlow,
+            readyDeferred = readyDeferred,
+            onClose = { unsubscribe() }
+        )
+
+        currentSubscription = subscription
+        return subscription
+    }
 
     /**
      * Create the underlying WebSocket flow.
+     *
+     * @param topic The topic to subscribe to
+     * @param readyDeferred Deferred to complete when WebSocket connects
      */
-    private fun createWebSocketFlow(topic: String): Flow<NtfyMessage> = callbackFlow {
+    private fun createWebSocketFlow(
+        topic: String,
+        readyDeferred: kotlinx.coroutines.CompletableDeferred<Unit>
+    ): Flow<NtfyMessage> = callbackFlow {
         val wsUrl = buildWsUrl(topic, server)
         val connectionStartTime = System.currentTimeMillis()
 
@@ -195,11 +252,17 @@ class NtfySignalingClient(
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "WebSocket connected to topic: $topic")
+                // Mark subscription as ready - WebSocket is now connected
+                readyDeferred.complete(Unit)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val message = parseNtfyMessage(text)
                 if (message != null) {
+                    // Also treat "open" event as a ready signal (in case we didn't get onOpen)
+                    if (message.event == "open" && !readyDeferred.isCompleted) {
+                        readyDeferred.complete(Unit)
+                    }
                     if (message.event == "message") {
                         Log.d(TAG, "Received message on topic: $topic")
                     }
@@ -210,6 +273,10 @@ class NtfySignalingClient(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 val duration = System.currentTimeMillis() - connectionStartTime
                 Log.e(TAG, "WebSocket failed after ${duration}ms: ${t.message}", t)
+                // Mark subscription as failed if not yet ready
+                if (!readyDeferred.isCompleted) {
+                    readyDeferred.completeExceptionally(IOException("WebSocket failed: ${t.message}", t))
+                }
                 close(IOException("WebSocket failed: ${t.message}", t))
             }
 
@@ -217,6 +284,9 @@ class NtfySignalingClient(
                 val duration = System.currentTimeMillis() - connectionStartTime
                 if (code != 1000) {
                     Log.w(TAG, "WebSocket closed unexpectedly after ${duration}ms: code=$code, reason=$reason")
+                    if (!readyDeferred.isCompleted) {
+                        readyDeferred.completeExceptionally(IOException("WebSocket closed: $reason"))
+                    }
                     close(IOException("WebSocket closed: $reason"))
                 } else {
                     Log.i(TAG, "WebSocket closed normally after ${duration}ms")
@@ -240,6 +310,7 @@ class NtfySignalingClient(
     override fun unsubscribe() {
         currentWebSocket?.close(1000, "Client unsubscribe")
         currentWebSocket = null
+        currentSubscription = null
     }
 
     /**
@@ -265,6 +336,48 @@ class NtfySignalingClient(
             }
         }
     }
+
+    /**
+     * Publish a message with retry on failure.
+     *
+     * Uses exponential backoff between retries.
+     *
+     * @param topic The topic to publish to
+     * @param message The message content
+     * @param maxRetries Maximum number of retry attempts
+     * @param baseDelayMs Base delay for exponential backoff
+     * @throws PublishFailedException if all retries fail
+     */
+    override suspend fun publishWithRetry(
+        topic: String,
+        message: String,
+        maxRetries: Int,
+        baseDelayMs: Long
+    ) {
+        var lastException: Exception? = null
+
+        repeat(maxRetries) { attempt ->
+            try {
+                publish(topic, message)
+                Log.d(TAG, "Published successfully on attempt ${attempt + 1}")
+                return  // Success
+            } catch (e: CancellationException) {
+                throw e  // Don't retry on cancellation
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < maxRetries - 1) {
+                    val delayMs = minOf(baseDelayMs * (1 shl attempt), MAX_BACKOFF_MS)
+                    Log.w(TAG, "Publish failed on attempt ${attempt + 1}, retrying in ${delayMs}ms: ${e.message}")
+                    delay(delayMs)
+                }
+            }
+        }
+
+        throw PublishFailedException(
+            "Failed to publish after $maxRetries attempts",
+            lastException
+        )
+    }
 }
 
 /**
@@ -277,38 +390,107 @@ class MockNtfyClient : NtfyClientInterface {
     private var _isSubscribed = false
     private var messageChannel = Channel<NtfyMessage>(Channel.UNLIMITED)
     private val publishedMessages = mutableListOf<String>()
+    private var currentSubscription: NtfySubscription? = null
+
+    /**
+     * Configurable delay before marking subscription as ready.
+     * Set this before calling subscribe() to test timing behavior.
+     */
+    var subscribeReadyDelayMs: Long = 0L
+
+    /**
+     * Number of times to fail publish before succeeding.
+     * Set to > 0 to test retry behavior.
+     */
+    var failPublishTimes: Int = 0
+    private var publishAttempts = 0
 
     val isSubscribed: Boolean get() = _isSubscribed
 
-    override suspend fun subscribe(topic: String): Flow<NtfyMessage> = callbackFlow {
+    override fun subscribe(topic: String): NtfySubscription {
+        val readyDeferred = kotlinx.coroutines.CompletableDeferred<Unit>()
+
         // Create fresh channel for this subscription
         messageChannel = Channel(Channel.UNLIMITED)
-        _isSubscribed = true
 
-        try {
-            for (message in messageChannel) {
-                send(message)
+        val messagesFlow = callbackFlow {
+            _isSubscribed = true
+
+            // Simulate connection delay if configured
+            if (subscribeReadyDelayMs > 0) {
+                delay(subscribeReadyDelayMs)
             }
-        } catch (e: CancellationException) {
-            // Normal cancellation
-        } catch (e: Exception) {
-            // Channel closed or other error
-        } finally {
-            _isSubscribed = false
+
+            // Mark as ready after delay
+            readyDeferred.complete(Unit)
+
+            // Send "open" event to signal WebSocket is connected (mimics real behavior)
+            send(NtfyMessage(event = "open", message = ""))
+
+            try {
+                for (message in messageChannel) {
+                    send(message)
+                }
+            } catch (e: CancellationException) {
+                // Normal cancellation
+            } catch (e: Exception) {
+                // Channel closed or other error
+            } finally {
+                _isSubscribed = false
+            }
+
+            awaitClose {
+                _isSubscribed = false
+            }
         }
 
-        awaitClose {
-            _isSubscribed = false
-        }
+        val subscription = NtfySubscription(
+            messages = messagesFlow,
+            readyDeferred = readyDeferred,
+            onClose = { unsubscribe() }
+        )
+
+        currentSubscription = subscription
+        return subscription
     }
 
     override fun unsubscribe() {
         _isSubscribed = false
         messageChannel.close()
+        currentSubscription = null
     }
 
     override suspend fun publish(topic: String, message: String) {
+        publishAttempts++
+        if (publishAttempts <= failPublishTimes) {
+            throw IOException("Simulated publish failure (attempt $publishAttempts)")
+        }
         publishedMessages.add(message)
+    }
+
+    override suspend fun publishWithRetry(
+        topic: String,
+        message: String,
+        maxRetries: Int,
+        baseDelayMs: Long
+    ) {
+        var lastException: Exception? = null
+
+        repeat(maxRetries) { attempt ->
+            try {
+                publish(topic, message)
+                return  // Success
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < maxRetries - 1) {
+                    delay(baseDelayMs * (1 shl attempt))
+                }
+            }
+        }
+
+        throw PublishFailedException("Failed after $maxRetries attempts", lastException)
     }
 
     /**
@@ -335,10 +517,16 @@ class MockNtfyClient : NtfyClientInterface {
     fun getPublishedMessages(): List<String> = publishedMessages.toList()
 
     /**
+     * Get total number of publish attempts (including failures).
+     */
+    fun getPublishAttempts(): Int = publishAttempts
+
+    /**
      * Clear published messages.
      */
     fun clearPublished() {
         publishedMessages.clear()
+        publishAttempts = 0
     }
 
     /**
@@ -355,5 +543,9 @@ class MockNtfyClient : NtfyClientInterface {
         _isSubscribed = false
         publishedMessages.clear()
         messageChannel = Channel(Channel.UNLIMITED)
+        subscribeReadyDelayMs = 0L
+        failPublishTimes = 0
+        publishAttempts = 0
+        currentSubscription = null
     }
 }

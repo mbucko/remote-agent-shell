@@ -160,12 +160,21 @@ class PairingManager @Inject constructor(
                     keyManager.storeDaemonInfo(payload.ip, payload.port, payload.ntfyTopic)
                 }
 
-                // Hand off WebRTC connection to ConnectionManager
+                // Hand off WebRTC connection to ConnectionManager with encryption key
                 // This transfers ownership - ConnectionManager now manages the connection
+                val key = authKey
                 webRTCClient?.let { client ->
-                    connectionManager.connect(client)
+                    if (key != null) {
+                        connectionManager.connect(client, key)
+                    } else {
+                        // Fallback: shouldn't happen, but handle gracefully
+                        android.util.Log.e("PairingManager", "No auth key available for handoff")
+                    }
                     webRTCClient = null  // Clear reference so cleanup() doesn't close it
                 }
+                // Zero auth key after handoff (ConnectionManager has its own copy)
+                authKey?.fill(0)
+                authKey = null
 
                 _state.value = PairingState.Authenticated(result.deviceId)
             }
