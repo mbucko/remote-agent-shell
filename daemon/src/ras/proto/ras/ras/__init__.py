@@ -57,6 +57,13 @@ from ras.proto.ras import (
     TerminalDetached,
     TerminalError,
     OutputSkipped,
+    # Daemon messages
+    Ping,
+    Pong,
+    InitialState,
+    ErrorResponse,
+    RasCommand,
+    RasEvent,
 )
 
 __all__ = [
@@ -109,4 +116,10 @@ __all__ = [
     "TerminalDetached",
     "TerminalError",
     "OutputSkipped",
+    "Ping",
+    "Pong",
+    "InitialState",
+    "ErrorResponse",
+    "RasCommand",
+    "RasEvent",
 ]

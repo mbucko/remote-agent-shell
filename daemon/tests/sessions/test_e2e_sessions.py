@@ -420,7 +420,7 @@ class SessionManager:
             agent=agent,
             created_at=now,
             last_activity_at=now,
-            status=SessionStatus.SESSION_STATUS_ACTIVE,
+            status=SessionStatus.ACTIVE,
         )
 
         self.sessions[session_id] = session
@@ -640,7 +640,7 @@ class SessionManager:
                     agent=s["agent"],
                     created_at=s["created_at"],
                     last_activity_at=s["last_activity_at"],
-                    status=SessionStatus.SESSION_STATUS_ACTIVE,
+                    status=SessionStatus.ACTIVE,
                 )
                 self.sessions[s["id"]] = session
 
@@ -685,7 +685,7 @@ class SessionManager:
                     agent=agent,
                     created_at=now,
                     last_activity_at=now,
-                    status=SessionStatus.SESSION_STATUS_ACTIVE,
+                    status=SessionStatus.ACTIVE,
                 )
                 self.sessions[session_id] = session
 

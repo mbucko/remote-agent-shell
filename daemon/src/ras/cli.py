@@ -35,7 +35,32 @@ def daemon() -> None:
 @click.pass_context
 def start(ctx: click.Context) -> None:
     """Start the daemon."""
-    click.echo("Starting daemon...")
+    import asyncio
+
+    from ras.daemon import Daemon, StartupError
+
+    config = ctx.obj["config"]
+
+    async def _start():
+        daemon = Daemon(config=config)
+
+        try:
+            await daemon.start()
+            click.echo(f"Daemon started on port {config.port}")
+            click.echo("Press Ctrl+C to stop")
+            await daemon.run_forever()
+        except StartupError as e:
+            click.echo(f"Startup error: {e}", err=True)
+            raise SystemExit(1)
+        except KeyboardInterrupt:
+            click.echo("\nShutting down...")
+        finally:
+            await daemon.stop()
+
+    try:
+        asyncio.run(_start())
+    except KeyboardInterrupt:
+        pass
 
 
 @daemon.command()

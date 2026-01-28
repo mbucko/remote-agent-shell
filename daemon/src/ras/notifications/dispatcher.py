@@ -147,9 +147,9 @@ class NotificationDispatcher:
         """
         # Map internal type to proto type
         type_map = {
-            NotificationType.APPROVAL: ProtoNotificationType.NOTIFICATION_TYPE_APPROVAL_NEEDED,
-            NotificationType.COMPLETION: ProtoNotificationType.NOTIFICATION_TYPE_TASK_COMPLETED,
-            NotificationType.ERROR: ProtoNotificationType.NOTIFICATION_TYPE_ERROR_DETECTED,
+            NotificationType.APPROVAL: ProtoNotificationType.APPROVAL_NEEDED,
+            NotificationType.COMPLETION: ProtoNotificationType.TASK_COMPLETED,
+            NotificationType.ERROR: ProtoNotificationType.ERROR_DETECTED,
         }
 
         # Create title based on type

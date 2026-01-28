@@ -52,7 +52,7 @@ class TestSessionMessage:
             agent="claude",
             created_at=1700000000,
             last_activity_at=1700000100,
-            status=SessionStatus.SESSION_STATUS_ACTIVE,
+            status=SessionStatus.ACTIVE,
         )
 
         # Serialize
@@ -81,7 +81,7 @@ class TestSessionMessage:
             agent="",  # Empty agent (adopted session)
             created_at=0,
             last_activity_at=0,
-            status=SessionStatus.SESSION_STATUS_UNKNOWN,
+            status=SessionStatus.UNKNOWN,
         )
 
         data = bytes(session)
@@ -89,7 +89,7 @@ class TestSessionMessage:
 
         assert parsed.id == "xyz789"
         assert parsed.agent == ""
-        assert parsed.status == SessionStatus.SESSION_STATUS_UNKNOWN
+        assert parsed.status == SessionStatus.UNKNOWN
 
     def test_session_status_values(self):
         """All session status values serialize correctly."""
@@ -308,7 +308,7 @@ class TestSessionEvent:
                 agent="claude",
                 created_at=1700000000 + i,
                 last_activity_at=1700000000 + i,
-                status=SessionStatus.SESSION_STATUS_ACTIVE,
+                status=SessionStatus.ACTIVE,
             )
             for i in range(3)
         ]
@@ -334,7 +334,7 @@ class TestSessionEvent:
             agent="aider",
             created_at=1700000000,
             last_activity_at=1700000000,
-            status=SessionStatus.SESSION_STATUS_CREATING,
+            status=SessionStatus.CREATING,
         )
 
         event = SessionEvent(
@@ -345,7 +345,7 @@ class TestSessionEvent:
         parsed = SessionEvent().parse(data)
 
         assert parsed.created.session.id == "newSession123"
-        assert parsed.created.session.status == SessionStatus.SESSION_STATUS_CREATING
+        assert parsed.created.session.status == SessionStatus.CREATING
 
     def test_session_killed_event(self):
         """SessionKilledEvent serializes correctly."""
@@ -590,10 +590,10 @@ class TestCrossPlatformVectors:
                 s = data["session"]
                 # Map string status to enum
                 status_map = {
-                    "SESSION_STATUS_ACTIVE": SessionStatus.SESSION_STATUS_ACTIVE,
-                    "SESSION_STATUS_CREATING": SessionStatus.SESSION_STATUS_CREATING,
-                    "SESSION_STATUS_KILLING": SessionStatus.SESSION_STATUS_KILLING,
-                    "SESSION_STATUS_UNKNOWN": SessionStatus.SESSION_STATUS_UNKNOWN,
+                    "SESSION_STATUS_ACTIVE": SessionStatus.ACTIVE,
+                    "SESSION_STATUS_CREATING": SessionStatus.CREATING,
+                    "SESSION_STATUS_KILLING": SessionStatus.KILLING,
+                    "SESSION_STATUS_UNKNOWN": SessionStatus.UNKNOWN,
                 }
                 session = Session(
                     id=s["id"],
@@ -622,7 +622,7 @@ class TestCrossPlatformVectors:
                         agent=s.get("agent", ""),
                         created_at=s.get("created_at", 0),
                         last_activity_at=s.get("last_activity_at", 0),
-                        status=SessionStatus.SESSION_STATUS_ACTIVE,
+                        status=SessionStatus.ACTIVE,
                     )
                     for s in data.get("sessions", [])
                 ]
@@ -761,7 +761,7 @@ class TestErrorHandling:
         result = Session().parse(b"\xff\xff\xff\xff")
         # Should return an empty/default session
         assert result.id == ""
-        assert result.status == SessionStatus.SESSION_STATUS_UNKNOWN
+        assert result.status == SessionStatus.UNKNOWN
 
     def test_large_message_handling(self):
         """Large messages are handled correctly."""
@@ -776,7 +776,7 @@ class TestErrorHandling:
             agent="test",
             created_at=0,
             last_activity_at=0,
-            status=SessionStatus.SESSION_STATUS_ACTIVE,
+            status=SessionStatus.ACTIVE,
         )
 
         data = bytes(session)
@@ -794,7 +794,7 @@ class TestErrorHandling:
             agent="claude",
             created_at=0,
             last_activity_at=0,
-            status=SessionStatus.SESSION_STATUS_ACTIVE,
+            status=SessionStatus.ACTIVE,
         )
 
         data = bytes(session)

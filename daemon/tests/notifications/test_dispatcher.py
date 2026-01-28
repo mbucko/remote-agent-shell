@@ -93,7 +93,7 @@ class TestBasicDispatch:
         event = TerminalEvent().parse(sent_bytes)
 
         assert event.notification.session_id == "sess-123"
-        assert event.notification.type == ProtoNotificationType.NOTIFICATION_TYPE_ERROR_DETECTED
+        assert event.notification.type == ProtoNotificationType.ERROR_DETECTED
         assert "my-project" in event.notification.title
         assert "Error" in event.notification.title
         assert event.notification.snippet == "Error: something failed"
@@ -107,7 +107,7 @@ class TestBasicDispatch:
 
         sent_bytes = broadcast_mock.call_args[0][0]
         event = TerminalEvent().parse(sent_bytes)
-        assert event.notification.type == ProtoNotificationType.NOTIFICATION_TYPE_APPROVAL_NEEDED
+        assert event.notification.type == ProtoNotificationType.APPROVAL_NEEDED
 
     @pytest.mark.asyncio
     async def test_dispatch_completion_type(self, dispatcher, broadcast_mock):
@@ -117,7 +117,7 @@ class TestBasicDispatch:
 
         sent_bytes = broadcast_mock.call_args[0][0]
         event = TerminalEvent().parse(sent_bytes)
-        assert event.notification.type == ProtoNotificationType.NOTIFICATION_TYPE_TASK_COMPLETED
+        assert event.notification.type == ProtoNotificationType.TASK_COMPLETED
 
     @pytest.mark.asyncio
     async def test_dispatch_error_type(self, dispatcher, broadcast_mock):
@@ -127,7 +127,7 @@ class TestBasicDispatch:
 
         sent_bytes = broadcast_mock.call_args[0][0]
         event = TerminalEvent().parse(sent_bytes)
-        assert event.notification.type == ProtoNotificationType.NOTIFICATION_TYPE_ERROR_DETECTED
+        assert event.notification.type == ProtoNotificationType.ERROR_DETECTED
 
 
 # ============================================================================

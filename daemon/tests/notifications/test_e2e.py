@@ -91,7 +91,7 @@ class TestE2EFlows:
         assert len(broadcast_mock.sent_events) == 1
         event = broadcast_mock.sent_events[0]
         assert event.notification.session_id == "session-abc"
-        assert event.notification.type == ProtoNotificationType.NOTIFICATION_TYPE_APPROVAL_NEEDED
+        assert event.notification.type == ProtoNotificationType.APPROVAL_NEEDED
         assert "my-project" in event.notification.title
         assert "Proceed" in event.notification.snippet or "(y/n)" in event.notification.snippet
 
@@ -123,7 +123,7 @@ class TestE2EFlows:
 
         # Verify
         event = broadcast_mock.sent_events[0]
-        assert event.notification.type == ProtoNotificationType.NOTIFICATION_TYPE_TASK_COMPLETED
+        assert event.notification.type == ProtoNotificationType.TASK_COMPLETED
         assert "build-task" in event.notification.title
 
     @pytest.mark.asyncio
@@ -150,7 +150,7 @@ class TestE2EFlows:
         assert sent is True
 
         event = broadcast_mock.sent_events[0]
-        assert event.notification.type == ProtoNotificationType.NOTIFICATION_TYPE_ERROR_DETECTED
+        assert event.notification.type == ProtoNotificationType.ERROR_DETECTED
         assert "Error" in event.notification.snippet or "module" in event.notification.snippet
 
     @pytest.mark.asyncio

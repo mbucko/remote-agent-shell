@@ -155,7 +155,7 @@ class TestCreateSession:
 
         assert which_event(result) == "created"
         assert result.created.session.agent == "claude"
-        assert result.created.session.status == SessionStatus.SESSION_STATUS_ACTIVE
+        assert result.created.session.status == SessionStatus.ACTIVE
         mock_tmux.create_session.assert_called_once()
 
     @pytest.mark.asyncio

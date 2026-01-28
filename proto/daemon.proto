@@ -1,0 +1,62 @@
+// Daemon envelope messages for RemoteAgentShell
+// Top-level message types for the WebRTC data channel
+
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+
+import "sessions.proto";
+import "terminal.proto";
+import "clipboard.proto";
+
+// ============ Ping/Pong for keepalive ============
+
+message Ping {
+    int64 timestamp = 1;    // Unix timestamp milliseconds
+}
+
+message Pong {
+    int64 timestamp = 1;    // Echo back the same timestamp
+}
+
+// ============ Initial State ============
+
+// Sent to phone immediately after connection established
+message InitialState {
+    repeated Session sessions = 1;
+    repeated Agent agents = 2;
+}
+
+// ============ Error Response ============
+
+message ErrorResponse {
+    string error_code = 1;    // Machine-readable code
+    string message = 2;       // Human-readable message
+}
+
+// ============ Envelope Messages ============
+
+// Phone -> Daemon: All commands wrapped in RasCommand
+message RasCommand {
+    oneof command {
+        SessionCommand session = 1;
+        TerminalCommand terminal = 2;
+        ras.clipboard.ClipboardMessage clipboard = 3;
+        Ping ping = 4;
+    }
+}
+
+// Daemon -> Phone: All events wrapped in RasEvent
+message RasEvent {
+    oneof event {
+        SessionEvent session = 1;
+        TerminalEvent terminal = 2;
+        ras.clipboard.ClipboardMessage clipboard = 3;
+        Pong pong = 4;
+        InitialState initial_state = 5;
+        ErrorResponse error = 6;
+    }
+}

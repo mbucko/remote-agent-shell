@@ -49,6 +49,25 @@ class NotificationsConfig:
 
 
 @dataclass
+class DaemonConfig:
+    """Daemon orchestration configuration."""
+
+    # Timeouts (seconds)
+    connect_timeout: float = 30.0  # Max time for WebRTC connection
+    send_timeout: float = 5.0  # Max time to send a message
+    handler_timeout: float = 10.0  # Max time for handler to complete
+    keepalive_timeout: float = 60.0  # Close connection if idle this long
+    keepalive_interval: float = 30.0  # How often to check for stale connections
+
+    # Storage
+    devices_file: str = "~/.config/ras/devices.json"
+    sessions_file: str = "~/.config/ras/sessions.json"
+
+    # Sessions
+    max_sessions: int = 20
+
+
+@dataclass
 class Config:
     """Daemon configuration."""
 
@@ -62,6 +81,7 @@ class Config:
     ntfy: NtfyConfig = field(default_factory=NtfyConfig)
     ip_monitor: IpMonitorConfig = field(default_factory=IpMonitorConfig)
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
+    daemon: DaemonConfig = field(default_factory=DaemonConfig)
 
 
 def get_config_path(custom_path: Path | None = None) -> Path:
@@ -147,6 +167,23 @@ def load_config(
         patterns=patterns_config,
     )
 
+    # Parse daemon config section
+    daemon_data = data.get("daemon", {})
+    daemon_config = DaemonConfig(
+        connect_timeout=daemon_data.get("connect_timeout", DaemonConfig.connect_timeout),
+        send_timeout=daemon_data.get("send_timeout", DaemonConfig.send_timeout),
+        handler_timeout=daemon_data.get("handler_timeout", DaemonConfig.handler_timeout),
+        keepalive_timeout=daemon_data.get(
+            "keepalive_timeout", DaemonConfig.keepalive_timeout
+        ),
+        keepalive_interval=daemon_data.get(
+            "keepalive_interval", DaemonConfig.keepalive_interval
+        ),
+        devices_file=daemon_data.get("devices_file", DaemonConfig.devices_file),
+        sessions_file=daemon_data.get("sessions_file", DaemonConfig.sessions_file),
+        max_sessions=daemon_data.get("max_sessions", DaemonConfig.max_sessions),
+    )
+
     return Config(
         port=data.get("port", Config.port),
         bind_address=data.get("bind_address", Config.bind_address),
@@ -158,4 +195,5 @@ def load_config(
         ntfy=ntfy_config,
         ip_monitor=ip_monitor_config,
         notifications=notifications_config,
+        daemon=daemon_config,
     )

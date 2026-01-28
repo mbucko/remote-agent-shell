@@ -42,7 +42,7 @@ class SessionData:
     agent: str
     created_at: int
     last_activity_at: int
-    status: SessionStatus = SessionStatus.SESSION_STATUS_ACTIVE
+    status: SessionStatus = SessionStatus.ACTIVE
 
     def to_persisted(self) -> PersistedSession:
         """Convert to persistence format."""
@@ -304,7 +304,7 @@ class SessionManager:
             agent=agent,
             created_at=int(time.time()),
             last_activity_at=int(time.time()),
-            status=SessionStatus.SESSION_STATUS_CREATING,
+            status=SessionStatus.CREATING,
         )
         self._sessions[session_id] = session
 
@@ -317,7 +317,7 @@ class SessionManager:
                 directory=directory,
                 command=agent_info.path,
             )
-            session.status = SessionStatus.SESSION_STATUS_ACTIVE
+            session.status = SessionStatus.ACTIVE
             await self._save()
 
             # Track recent directory
@@ -363,13 +363,13 @@ class SessionManager:
         session = self._sessions[session_id]
 
         # Check if already killing
-        if session.status == SessionStatus.SESSION_STATUS_KILLING:
+        if session.status == SessionStatus.KILLING:
             return self._error_event(
                 "SESSION_NOT_FOUND", "Session is being killed", session_id
             )
 
         # Mark as killing
-        session.status = SessionStatus.SESSION_STATUS_KILLING
+        session.status = SessionStatus.KILLING
 
         try:
             # Kill tmux session (graceful with Ctrl-C then force)
@@ -394,7 +394,7 @@ class SessionManager:
 
         except Exception as e:
             # Restore status on failure
-            session.status = SessionStatus.SESSION_STATUS_ACTIVE
+            session.status = SessionStatus.ACTIVE
             logger.error(f"Failed to kill session: {e}")
             return self._error_event(
                 "KILL_FAILED", f"Failed to kill session: {e}", session_id

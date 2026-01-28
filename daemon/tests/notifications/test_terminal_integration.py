@@ -140,7 +140,7 @@ class TestTerminalManagerIntegration:
         assert event.notification.session_id == "session-1"
         assert (
             event.notification.type
-            == ProtoNotificationType.NOTIFICATION_TYPE_APPROVAL_NEEDED
+            == ProtoNotificationType.APPROVAL_NEEDED
         )
         assert "Test Project" in event.notification.title
 
@@ -398,7 +398,7 @@ class TestPerSessionMatcher:
             e
             for e in broadcast_mock.sent_events
             if e.notification.type
-            == ProtoNotificationType.NOTIFICATION_TYPE_ERROR_DETECTED
+            == ProtoNotificationType.ERROR_DETECTED
         ]
         assert len(error_events) == 0
 
