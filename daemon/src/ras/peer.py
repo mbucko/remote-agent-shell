@@ -143,9 +143,15 @@ class PeerConnection:
         """
         self._create_pc()
 
-        @self._pc.on("datachannel")
-        def on_datachannel(channel):
-            self._setup_channel(channel)
+        # Create negotiated data channel - must match Android's config
+        # Both sides must independently create channel with same id for negotiated=True
+        self._channel = self._pc.createDataChannel(
+            "ras-control",
+            negotiated=True,
+            id=0,
+            ordered=True,
+        )
+        self._setup_channel(self._channel)
 
         offer = _sdp_from_string(offer_sdp)
         await self._pc.setRemoteDescription(offer)
