@@ -38,8 +38,18 @@ def start(ctx: click.Context) -> None:
     import asyncio
 
     from ras.daemon import Daemon, StartupError
+    from ras.daemon_lock import DaemonLock, DaemonAlreadyRunningError
 
     config = ctx.obj["config"]
+    lock_file = Path("~/.config/ras/daemon.lock")
+    lock = DaemonLock(lock_file)
+
+    # Acquire lock before starting
+    try:
+        lock.acquire()
+    except DaemonAlreadyRunningError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
 
     async def _start():
         daemon = Daemon(config=config)
@@ -61,6 +71,8 @@ def start(ctx: click.Context) -> None:
         asyncio.run(_start())
     except KeyboardInterrupt:
         pass
+    finally:
+        lock.release()
 
 
 @daemon.command()
@@ -74,7 +86,24 @@ def stop(ctx: click.Context) -> None:
 @click.pass_context
 def status(ctx: click.Context) -> None:
     """Show daemon status."""
-    click.echo("Daemon status: not running")
+    import os
+
+    from ras.daemon_lock import DaemonLock
+
+    lock_file = Path("~/.config/ras/daemon.lock")
+    lock = DaemonLock(lock_file)
+
+    pid = lock.get_owner_pid()
+    if pid is None:
+        click.echo("Daemon status: not running")
+        return
+
+    # Check if the process is actually running
+    try:
+        os.kill(pid, 0)
+        click.echo(f"Daemon status: running (PID {pid})")
+    except OSError:
+        click.echo("Daemon status: not running (stale lock file)")
 
 
 @main.command()
