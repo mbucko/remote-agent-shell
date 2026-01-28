@@ -138,6 +138,20 @@ uv run ras pair --output qr.png
 6. Mutual authentication handshake over data channel
 7. Device stored for future reconnections
 
+### Network Permissions
+
+The daemon requires incoming network connections for WebRTC (peer-to-peer).
+
+**macOS**: When first running the daemon, macOS will prompt "Do you want to allow incoming network connections?" for your terminal app (Terminal, iTerm, VS Code, etc.). **Click "Allow"** - without this, WebRTC ICE connectivity checks will fail and pairing will timeout.
+
+**Windows**: You may need to allow the daemon through Windows Firewall. A prompt should appear on first run.
+
+**Linux**: If using `ufw` or `iptables`, ensure UDP traffic is allowed for WebRTC:
+```bash
+# UFW example - allow UDP for WebRTC
+sudo ufw allow proto udp from 192.168.0.0/16
+```
+
 ## Security
 
 - **HKDF** (RFC 5869) for key derivation
