@@ -75,6 +75,14 @@ class PeerConnection:
             elif state == "disconnected":
                 self._state = PeerState.DISCONNECTED
 
+        @self._pc.on("iceconnectionstatechange")
+        async def on_ice_connection_state_change():
+            logger.info(f"ICE connection state: {self._pc.iceConnectionState}")
+
+        @self._pc.on("icegatheringstatechange")
+        async def on_ice_gathering_state_change():
+            logger.info(f"ICE gathering state: {self._pc.iceGatheringState}")
+
     def _setup_channel(self, channel) -> None:
         """Set up data channel handlers."""
         self._channel = channel
@@ -108,7 +116,14 @@ class PeerConnection:
         """
         self._create_pc()
 
-        self._channel = self._pc.createDataChannel("ras")
+        # Create negotiated data channel - must match accept_offer() and Android config
+        # Both sides must independently create channel with same id for negotiated=True
+        self._channel = self._pc.createDataChannel(
+            "ras-control",
+            negotiated=True,
+            id=0,
+            ordered=True,
+        )
         self._setup_channel(self._channel)
 
         offer = await self._pc.createOffer()
@@ -140,6 +155,15 @@ class PeerConnection:
             ordered=True,
         )
         self._setup_channel(self._channel)
+
+        # Log remote candidates from offer
+        candidate_count = 0
+        for line in offer_sdp.splitlines():
+            if 'candidate' in line.lower():
+                logger.info(f"Remote ICE candidate: {line}")
+                candidate_count += 1
+        if candidate_count == 0:
+            logger.warning("No ICE candidates in remote offer! (trickle ICE?)")
 
         offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
         await self._pc.setRemoteDescription(offer)

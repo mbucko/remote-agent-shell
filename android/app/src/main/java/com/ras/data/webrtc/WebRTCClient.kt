@@ -48,6 +48,7 @@ class WebRTCClient(
 
     private val dataChannelOpened = CompletableDeferred<Boolean>()
     private val messageChannel = Channel<ByteArray>(Channel.UNLIMITED)
+    private var iceGatheringComplete = CompletableDeferred<Unit>()
 
     // Heartbeat tracking
     @Volatile
@@ -62,9 +63,15 @@ class WebRTCClient(
 
     /**
      * Create an SDP offer for initiating a connection.
+     *
+     * This function waits for ICE gathering to complete before returning,
+     * ensuring all ICE candidates are included in the SDP offer.
      */
     suspend fun createOffer(): String {
         checkNotClosed()
+
+        // Reset ICE gathering signal for this offer
+        iceGatheringComplete = CompletableDeferred()
 
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
@@ -88,31 +95,45 @@ class WebRTCClient(
             dataChannel?.registerObserver(createDataChannelObserver())
         }
 
-        val offerDeferred = CompletableDeferred<SessionDescription>()
+        val localDescSet = CompletableDeferred<Unit>()
 
         peerConnection?.createOffer(object : SdpObserver {
             override fun onCreateSuccess(sdp: SessionDescription) {
                 peerConnection?.setLocalDescription(object : SdpObserver {
                     override fun onCreateSuccess(sdp: SessionDescription?) {}
                     override fun onSetSuccess() {
-                        offerDeferred.complete(sdp)
+                        localDescSet.complete(Unit)
                     }
                     override fun onCreateFailure(error: String?) {
-                        offerDeferred.completeExceptionally(Exception(error))
+                        localDescSet.completeExceptionally(Exception(error))
                     }
                     override fun onSetFailure(error: String?) {
-                        offerDeferred.completeExceptionally(Exception(error))
+                        localDescSet.completeExceptionally(Exception(error))
                     }
                 }, sdp)
             }
             override fun onSetSuccess() {}
             override fun onCreateFailure(error: String?) {
-                offerDeferred.completeExceptionally(Exception(error))
+                localDescSet.completeExceptionally(Exception(error))
             }
             override fun onSetFailure(error: String?) {}
         }, MediaConstraints())
 
-        return offerDeferred.await().description
+        // Wait for local description to be set
+        localDescSet.await()
+
+        // Wait for ICE gathering to complete (timeout after 10 seconds)
+        Log.d(TAG, "Waiting for ICE gathering to complete...")
+        withTimeoutOrNull(10_000L) {
+            iceGatheringComplete.await()
+        } ?: Log.w(TAG, "ICE gathering timeout, proceeding with available candidates")
+
+        // Return the local description WITH gathered ICE candidates
+        val localDesc = peerConnection?.localDescription
+            ?: throw IllegalStateException("Local description not available")
+
+        Log.d(TAG, "ICE gathering complete, returning offer with candidates")
+        return localDesc.description
     }
 
     /**
@@ -300,8 +321,15 @@ class WebRTCClient(
             }
 
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
-            override fun onIceCandidate(candidate: IceCandidate?) {}
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
+                Log.d(TAG, "ICE gathering state: $state")
+                if (state == PeerConnection.IceGatheringState.COMPLETE) {
+                    iceGatheringComplete.complete(Unit)
+                }
+            }
+            override fun onIceCandidate(candidate: IceCandidate?) {
+                Log.d(TAG, "ICE candidate: ${candidate?.sdp}")
+            }
             override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
             override fun onAddStream(stream: org.webrtc.MediaStream?) {}
             override fun onRemoveStream(stream: org.webrtc.MediaStream?) {}
