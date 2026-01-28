@@ -36,18 +36,46 @@
 
     <!-- Settings Screen -->
     <string name="settings_title">Settings</string>
+    <string name="settings_reset">Reset</string>
+
+    <!-- Settings - Sessions -->
+    <string name="settings_sessions">Sessions</string>
+    <string name="settings_default_agent">Default agent</string>
+    <string name="settings_always_ask">Always ask</string>
+    <string name="settings_loading">Loading…</string>
+    <string name="settings_retry">Retry</string>
+    <string name="settings_no_agents">No agents installed</string>
+
+    <!-- Settings - Terminal -->
+    <string name="settings_terminal">Terminal</string>
+    <string name="settings_quick_buttons">Quick action buttons</string>
+    <string name="settings_quick_buttons_hint">Tap to toggle, drag to reorder</string>
+    <string name="settings_enabled">Enabled</string>
+    <string name="settings_disabled">Disabled</string>
+
+    <!-- Settings - Notifications -->
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notify_approvals">Approval prompts</string>
+    <string name="settings_notify_approvals_desc">When agent needs input</string>
+    <string name="settings_notify_completed">Task completion</string>
+    <string name="settings_notify_completed_desc">When agent finishes</string>
+    <string name="settings_notify_errors">Errors</string>
+    <string name="settings_notify_errors_desc">When errors are detected</string>
+
+    <!-- Settings - Connection -->
     <string name="settings_connection">Connection</string>
     <string name="settings_connected">Connected</string>
     <string name="settings_disconnected">Disconnected</string>
     <string name="settings_disconnect">Disconnect</string>
-    <string name="settings_notifications">Notifications</string>
-    <string name="settings_ntfy_server">ntfy Server</string>
-    <string name="settings_notify_approvals">Approval requests</string>
-    <string name="settings_notify_completed">Task completed</string>
-    <string name="settings_notify_errors">Errors</string>
+    <string name="settings_daemon_version">Daemon version</string>
+    <string name="settings_ip_address">IP address</string>
+
+    <!-- Settings - About -->
     <string name="settings_about">About</string>
     <string name="settings_version">Version %1$s</string>
+    <string name="settings_version_label">Version</string>
     <string name="settings_github">View on GitHub</string>
+    <string name="settings_feedback">Send feedback</string>
 
     <!-- Connection States -->
     <string name="connection_disconnected">Disconnected</string>
