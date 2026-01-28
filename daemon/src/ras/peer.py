@@ -229,9 +229,15 @@ class PeerConnection:
         self._message_callback = callback
 
     async def close(self) -> None:
-        """Close the peer connection."""
+        """Close the peer connection.
+
+        This method is idempotent - calling it multiple times is safe.
+        """
+        if self._state == PeerState.CLOSED:
+            return  # Already closed
         if self._pc:
             await self._pc.close()
+            self._pc = None
         self._state = PeerState.CLOSED
         logger.info("Peer connection closed")
 
