@@ -12,6 +12,7 @@ import asyncio
 import hmac as hmac_module
 import logging
 import secrets
+import socket
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -39,6 +40,26 @@ if TYPE_CHECKING:
     from ras.device_store import JsonDeviceStore, PairedDevice
 
 logger = logging.getLogger(__name__)
+
+
+def get_local_ip() -> str:
+    """Get the local IP address of this machine.
+
+    Uses a UDP socket trick to find the preferred local IP that would be used
+    to reach external addresses.
+
+    Returns:
+        Local IP address (e.g., '192.168.1.100'), or '127.0.0.1' if detection fails.
+    """
+    try:
+        # Create a UDP socket and "connect" to an external address
+        # This doesn't send any packets, but determines the local IP
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            # Use Google DNS as the target (doesn't actually connect)
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
 
 
 # =============================================================================
@@ -763,6 +784,11 @@ class UnifiedServer:
             self._port = self._site._server.sockets[0].getsockname()[1]
         else:
             self._port = port
+
+        # Auto-detect local IP if not explicitly set
+        if self.public_ip == "0.0.0.0":
+            self.public_ip = get_local_ip()
+            logger.info(f"Auto-detected local IP: {self.public_ip}")
 
         logger.info(f"Unified server started on {host}:{self._port}")
         return self._runner
