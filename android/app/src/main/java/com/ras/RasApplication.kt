@@ -2,6 +2,7 @@ package com.ras
 
 import android.app.Application
 import android.util.Log
+import com.ras.notifications.NotificationChannels
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 
@@ -10,6 +11,9 @@ class RasApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Create notification channels
+        NotificationChannels.createChannels(this)
 
         // Set up global uncaught exception handler
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->

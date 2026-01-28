@@ -16,6 +16,7 @@ import com.ras.proto.TerminalOutput
 import com.ras.proto.OutputSkipped
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import com.google.protobuf.ByteString
+import com.ras.notifications.NotificationHandler
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -62,6 +63,7 @@ class TerminalE2ETest {
 
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var connectionManager: ConnectionManager
+    private lateinit var notificationHandler: NotificationHandler
     private lateinit var terminalEventsFlow: MutableSharedFlow<ProtoTerminalEvent>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
     private lateinit var repository: TerminalRepository
@@ -86,7 +88,9 @@ class TerminalE2ETest {
             }
         }
 
-        repository = TerminalRepository(connectionManager, testDispatcher)
+        notificationHandler = mockk(relaxed = true)
+
+        repository = TerminalRepository(connectionManager, notificationHandler, testDispatcher)
     }
 
     private fun slot() = slot<TerminalCommand>()

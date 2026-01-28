@@ -2,6 +2,7 @@ package com.ras.data.terminal
 
 import com.ras.data.sessions.SessionIdValidator
 import com.ras.proto.KeyType
+import com.ras.proto.NotificationType
 
 /**
  * Terminal attachment state.
@@ -208,6 +209,18 @@ sealed class TerminalEvent {
         val sessionId: String?,
         val code: String,
         val message: String
+    ) : TerminalEvent()
+
+    /**
+     * Notification received from daemon.
+     */
+    data class Notification(
+        val sessionId: String,
+        val type: NotificationType,
+        val title: String,
+        val body: String,
+        val snippet: String,
+        val timestamp: Long
     ) : TerminalEvent()
 }
 

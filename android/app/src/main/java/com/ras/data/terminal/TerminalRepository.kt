@@ -3,12 +3,14 @@ package com.ras.data.terminal
 import android.util.Log
 import com.ras.data.connection.ConnectionManager
 import com.ras.di.IoDispatcher
+import com.ras.notifications.NotificationHandler
 import com.ras.proto.AttachTerminal
 import com.ras.proto.DetachTerminal
 import com.ras.proto.KeyType
 import com.ras.proto.SpecialKey
 import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalInput
+import com.ras.proto.TerminalNotification
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import com.google.protobuf.ByteString
 import kotlinx.coroutines.CoroutineDispatcher
@@ -39,6 +41,7 @@ import javax.inject.Singleton
 @Singleton
 class TerminalRepository @Inject constructor(
     private val connectionManager: ConnectionManager,
+    private val notificationHandler: NotificationHandler,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     companion object {
@@ -83,6 +86,7 @@ class TerminalRepository @Inject constructor(
             event.hasOutput() -> handleOutput(event.output)
             event.hasError() -> handleError(event.error)
             event.hasSkipped() -> handleSkipped(event.skipped)
+            event.hasNotification() -> handleNotification(event.notification)
         }
     }
 
@@ -193,6 +197,25 @@ class TerminalRepository @Inject constructor(
                 fromSequence = skipped.fromSequence,
                 toSequence = skipped.toSequence,
                 bytesSkipped = skipped.bytesSkipped
+            )
+        )
+    }
+
+    private suspend fun handleNotification(notification: TerminalNotification) {
+        Log.d(TAG, "Notification received: session=${notification.sessionId}, type=${notification.type}")
+
+        // Show system notification
+        notificationHandler.showNotification(notification)
+
+        // Emit event for any listeners (e.g., in-app handling)
+        _events.emit(
+            TerminalEvent.Notification(
+                sessionId = notification.sessionId,
+                type = notification.type,
+                title = notification.title,
+                body = notification.body,
+                snippet = notification.snippet,
+                timestamp = notification.timestamp
             )
         )
     }
