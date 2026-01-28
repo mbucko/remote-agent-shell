@@ -8,6 +8,7 @@ Tests cover:
 """
 
 import asyncio
+import json
 import os
 import time
 from typing import Optional
@@ -56,6 +57,11 @@ def create_encrypted_offer(
     """Create an encrypted OFFER message."""
     msg = create_test_offer(**kwargs)
     return crypto.encrypt(bytes(msg))
+
+
+def json_wrap_sdp(sdp: str, sdp_type: str = "answer") -> str:
+    """Wrap raw SDP in JSON format for PeerConnection compatibility."""
+    return json.dumps({"type": sdp_type, "sdp": sdp})
 
 
 class TestNtfySignalingHandlerInit:
@@ -109,7 +115,7 @@ class TestNtfySignalingHandlerHandleMessage:
 
         # Mock the peer creation
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\na=answer\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\na=answer\r\n"))
         handler._create_peer = Mock(return_value=mock_peer)
 
         result = await handler.handle_message(encrypted)
@@ -126,7 +132,7 @@ class TestNtfySignalingHandlerHandleMessage:
         encrypted = create_encrypted_offer(crypto)
 
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\na=answer\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\na=answer\r\n"))
         handler._create_peer = Mock(return_value=mock_peer)
 
         result = await handler.handle_message(encrypted)
@@ -191,7 +197,7 @@ class TestNtfySignalingHandlerHandleMessage:
         encrypted = create_encrypted_offer(crypto, nonce=nonce)
 
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         handler._create_peer = Mock(return_value=mock_peer)
 
         # First should succeed
@@ -274,7 +280,7 @@ class TestNtfySignalingHandlerAnswerCreation:
         encrypted = create_encrypted_offer(crypto, session_id="test-session-123")
 
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         handler._create_peer = Mock(return_value=mock_peer)
 
         result = await handler.handle_message(encrypted)
@@ -289,7 +295,7 @@ class TestNtfySignalingHandlerAnswerCreation:
         encrypted = create_encrypted_offer(crypto)
 
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         handler._create_peer = Mock(return_value=mock_peer)
 
         before = int(time.time())
@@ -304,7 +310,7 @@ class TestNtfySignalingHandlerAnswerCreation:
     async def test_answer_has_unique_nonce(self, handler, crypto):
         """Each answer has unique nonce."""
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         handler._create_peer = Mock(return_value=mock_peer)
 
         # Get two answers
@@ -386,7 +392,7 @@ class TestNtfySignalingHandlerDeviceName:
         )
 
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         handler._create_peer = Mock(return_value=mock_peer)
 
         result = await handler.handle_message(encrypted)
@@ -402,7 +408,7 @@ class TestNtfySignalingHandlerDeviceName:
         )
 
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         handler._create_peer = Mock(return_value=mock_peer)
 
         result = await handler.handle_message(encrypted)

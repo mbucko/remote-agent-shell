@@ -8,6 +8,7 @@ Tests cover:
 """
 
 import asyncio
+import json
 import os
 import time
 from pathlib import Path
@@ -66,6 +67,11 @@ def create_encrypted_offer(
     signaling_key = derive_signaling_key(master_secret)
     crypto = NtfySignalingCrypto(signaling_key)
     return crypto.encrypt(bytes(msg))
+
+
+def json_wrap_sdp(sdp: str, sdp_type: str = "answer") -> str:
+    """Wrap raw SDP in JSON format for PeerConnection compatibility."""
+    return json.dumps({"type": sdp_type, "sdp": sdp})
 
 
 @pytest.fixture
@@ -189,7 +195,7 @@ class TestNtfyOfferProcessing:
 
         # Mock peer creation to avoid actual WebRTC
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
@@ -273,7 +279,7 @@ class TestNtfyAnswerCreation:
 
         # Mock peer
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\na=answer\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\na=answer\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
@@ -321,7 +327,7 @@ class TestNtfyAnswerCreation:
 
         # Mock peer
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
@@ -433,7 +439,7 @@ class TestNtfyClockSkewBoundary:
 
         # Mock peer
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
@@ -502,7 +508,7 @@ class TestNtfyClockSkewBoundary:
 
         # Mock peer
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
@@ -585,7 +591,7 @@ class TestNtfyLargeSdp:
 
         # Mock peer
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\na=answer\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\na=answer\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
@@ -632,7 +638,7 @@ class TestNtfyUnicodeDeviceName:
 
         # Mock peer
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
@@ -724,7 +730,7 @@ class TestNtfyDuplicateMessage:
 
         # Mock peer
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
@@ -853,7 +859,7 @@ class TestNtfySecurityRequirements:
 
         # Mock peer
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
+        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
         mock_peer.on_message = Mock()
         mock_peer.close = AsyncMock()
         pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)

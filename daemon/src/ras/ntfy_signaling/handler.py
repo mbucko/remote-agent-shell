@@ -18,6 +18,7 @@ Usage:
         pass
 """
 
+import json
 import logging
 import os
 import time
@@ -128,10 +129,17 @@ class NtfySignalingHandler:
         device_name = sanitize_device_name(msg.device_name)
 
         # Create WebRTC peer and accept offer
+        # Note: PeerConnection.accept_offer expects JSON-wrapped SDP,
+        # but ntfy signaling uses raw SDP in the protobuf message
         try:
             logger.info("Creating WebRTC peer connection...")
             peer = self._create_peer()
-            answer_sdp = await peer.accept_offer(msg.sdp)
+            # Wrap raw SDP in JSON format for PeerConnection
+            offer_json = json.dumps({"type": "offer", "sdp": msg.sdp})
+            answer_json = await peer.accept_offer(offer_json)
+            # Extract raw SDP from JSON answer for the protobuf response
+            answer_data = json.loads(answer_json)
+            answer_sdp = answer_data["sdp"]
             logger.info("WebRTC peer created, answer SDP generated")
         except Exception as e:
             logger.warning(f"WebRTC peer creation failed: {e}")
