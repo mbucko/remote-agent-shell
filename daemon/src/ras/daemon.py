@@ -12,6 +12,7 @@ import betterproto
 
 from ras.config import Config
 from ras.connection_manager import ConnectionManager
+from ras.crypto import BytesCodec
 from ras.device_store import JsonDeviceStore, PairedDevice
 from ras.ip_provider import IpProvider, LocalNetworkIpProvider
 from ras.message_dispatcher import MessageDispatcher
@@ -365,12 +366,12 @@ class Daemon:
             auth_key: Auth key for message encryption.
         """
         # Create codec for encrypted communication
-        # For now, pass auth_key as codec (will be used for encryption)
+        codec = BytesCodec(auth_key)
         await self.on_new_connection(
             device_id=device_id,
             device_name=device_name,
             peer=peer,
-            codec=auth_key,  # TODO: Create proper MessageCodec
+            codec=codec,
         )
 
     async def _on_connection_lost(self, device_id: str) -> None:

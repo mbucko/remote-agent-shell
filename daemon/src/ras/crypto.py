@@ -29,6 +29,7 @@ from ras.errors import CryptoError
 __all__ = [
     "CryptoError",
     "KeyBundle",
+    "BytesCodec",
     "generate_secret",
     "generate_master_secret",  # Alias for generate_secret
     "derive_keys",
@@ -208,6 +209,51 @@ def verify_hmac(key: bytes, data: bytes, expected: bytes) -> bool:
     """
     computed = compute_hmac(key, data)
     return hmac.compare_digest(computed, expected)
+
+
+class BytesCodec:
+    """Simple codec for encrypting/decrypting raw bytes.
+
+    This codec matches the CodecProtocol interface expected by ConnectionManager.
+    It wraps the encrypt/decrypt functions from this module.
+
+    Usage:
+        codec = BytesCodec(auth_key)
+        encrypted = codec.encode(data)
+        decrypted = codec.decode(encrypted)
+    """
+
+    def __init__(self, key: bytes) -> None:
+        """Initialize codec with encryption key.
+
+        Args:
+            key: 32-byte encryption key.
+        """
+        if len(key) != KEY_LENGTH:
+            raise ValueError(f"Key must be {KEY_LENGTH} bytes, got {len(key)}")
+        self._key = key
+
+    def encode(self, data: bytes) -> bytes:
+        """Encrypt data.
+
+        Args:
+            data: Plaintext bytes to encrypt.
+
+        Returns:
+            Encrypted bytes (nonce + ciphertext + tag).
+        """
+        return encrypt(self._key, data)
+
+    def decode(self, data: bytes) -> bytes:
+        """Decrypt data.
+
+        Args:
+            data: Encrypted bytes to decrypt.
+
+        Returns:
+            Decrypted plaintext bytes.
+        """
+        return decrypt(self._key, data)
 
 
 # Alias for compatibility with pairing code
