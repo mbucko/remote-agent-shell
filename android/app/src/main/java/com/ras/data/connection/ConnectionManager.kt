@@ -9,13 +9,16 @@ import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -28,6 +31,10 @@ import javax.inject.Singleton
  * - TerminalEvent -> terminalEvents flow
  *
  * Provides unified interface for sending commands.
+ *
+ * Thread Safety:
+ * - This class is thread-safe for concurrent access.
+ * - Connection state changes are synchronized.
  */
 @Singleton
 class ConnectionManager @Inject constructor(
@@ -36,15 +43,29 @@ class ConnectionManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "ConnectionManager"
+        private const val MAX_MESSAGE_SIZE = 16 * 1024 * 1024 // 16 MB
+        private const val RECEIVE_TIMEOUT_MS = 60_000L // 60 second timeout for receive
+        private const val HEARTBEAT_CHECK_INTERVAL_MS = 30_000L // Check health every 30s
+        private const val MAX_IDLE_MS = 90_000L // Consider unhealthy after 90s idle
     }
 
     val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
+    private val connectionLock = Any()
+
+    @Volatile
     private var webRtcClient: WebRTCClient? = null
+
+    private var eventListenerJob: Job? = null
+    private var heartbeatJob: Job? = null
 
     // Connection state
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
+    // Connection health
+    private val _isHealthy = MutableStateFlow(true)
+    val isHealthy: StateFlow<Boolean> = _isHealthy.asStateFlow()
 
     // Session events (emitted when a SessionEvent proto is received)
     private val _sessionEvents = MutableSharedFlow<ProtoSessionEvent>(
@@ -56,7 +77,7 @@ class ConnectionManager @Inject constructor(
     // Terminal events (emitted when a TerminalEvent proto is received)
     private val _terminalEvents = MutableSharedFlow<ProtoTerminalEvent>(
         replay = 0,
-        extraBufferCapacity = 64
+        extraBufferCapacity = 128 // Increased for terminal output bursts
     )
     val terminalEvents: SharedFlow<ProtoTerminalEvent> = _terminalEvents.asSharedFlow()
 
@@ -71,22 +92,37 @@ class ConnectionManager @Inject constructor(
      * Connect using an existing WebRTC client.
      */
     fun connect(client: WebRTCClient) {
-        if (webRtcClient != null) {
-            Log.w(TAG, "Already connected, disconnecting first")
-            disconnect()
-        }
+        synchronized(connectionLock) {
+            if (webRtcClient != null) {
+                Log.w(TAG, "Already connected, disconnecting first")
+                disconnectInternal()
+            }
 
-        webRtcClient = client
-        _isConnected.value = true
-        startEventListener()
-        Log.i(TAG, "Connected to daemon")
+            webRtcClient = client
+            _isConnected.value = true
+            _isHealthy.value = true
+            startEventListener()
+            startHeartbeatMonitor()
+            Log.i(TAG, "Connected to daemon")
+        }
     }
 
     /**
      * Disconnect and clean up resources.
      */
     fun disconnect() {
+        synchronized(connectionLock) {
+            disconnectInternal()
+        }
+    }
+
+    private fun disconnectInternal() {
+        eventListenerJob?.cancel()
+        eventListenerJob = null
+        heartbeatJob?.cancel()
+        heartbeatJob = null
         _isConnected.value = false
+        _isHealthy.value = false
         webRtcClient?.close()
         webRtcClient = null
         Log.i(TAG, "Disconnected from daemon")
@@ -96,30 +132,44 @@ class ConnectionManager @Inject constructor(
      * Send a session command to the daemon.
      *
      * @throws IllegalStateException if not connected
+     * @throws IllegalArgumentException if message too large
      */
     suspend fun sendSessionCommand(command: SessionCommand) {
+        val data = command.toByteArray()
+        validateMessageSize(data, "SessionCommand")
         val client = requireConnected()
-        client.send(command.toByteArray())
+        client.send(data)
     }
 
     /**
      * Send a terminal command to the daemon.
      *
      * @throws IllegalStateException if not connected
+     * @throws IllegalArgumentException if message too large
      */
     suspend fun sendTerminalCommand(command: TerminalCommand) {
+        val data = command.toByteArray()
+        validateMessageSize(data, "TerminalCommand")
         val client = requireConnected()
-        client.send(command.toByteArray())
+        client.send(data)
     }
 
     /**
      * Send raw bytes to the daemon.
      *
      * @throws IllegalStateException if not connected
+     * @throws IllegalArgumentException if message too large
      */
     suspend fun send(data: ByteArray) {
+        validateMessageSize(data, "raw data")
         val client = requireConnected()
         client.send(data)
+    }
+
+    private fun validateMessageSize(data: ByteArray, type: String) {
+        require(data.size <= MAX_MESSAGE_SIZE) {
+            "$type too large: ${data.size} bytes exceeds maximum $MAX_MESSAGE_SIZE"
+        }
     }
 
     private fun requireConnected(): WebRTCClient {
@@ -127,17 +177,58 @@ class ConnectionManager @Inject constructor(
     }
 
     private fun startEventListener() {
-        scope.launch {
+        eventListenerJob?.cancel()
+        eventListenerJob = scope.launch {
             val client = webRtcClient ?: return@launch
             try {
-                while (_isConnected.value) {
-                    val data = client.receive()
-                    routeMessage(data)
+                while (_isConnected.value && isActive) {
+                    try {
+                        val data = client.receive(RECEIVE_TIMEOUT_MS)
+                        routeMessage(data)
+                    } catch (e: IllegalStateException) {
+                        if (e.message?.contains("timeout") == true) {
+                            // Timeout is expected, check connection health
+                            Log.d(TAG, "Receive timeout, checking health...")
+                            if (!client.isHealthy(MAX_IDLE_MS)) {
+                                Log.w(TAG, "Connection appears unhealthy")
+                                _isHealthy.value = false
+                            }
+                        } else {
+                            throw e
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Connection error", e)
-                _isConnected.value = false
-                _connectionErrors.tryEmit(ConnectionError.Disconnected(e.message ?: "Unknown error"))
+                synchronized(connectionLock) {
+                    if (_isConnected.value) {
+                        _isConnected.value = false
+                        _isHealthy.value = false
+                        _connectionErrors.tryEmit(
+                            ConnectionError.Disconnected(e.message ?: "Unknown error")
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startHeartbeatMonitor() {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (_isConnected.value && isActive) {
+                delay(HEARTBEAT_CHECK_INTERVAL_MS)
+                val client = webRtcClient ?: continue
+
+                val healthy = client.isHealthy(MAX_IDLE_MS)
+                if (_isHealthy.value != healthy) {
+                    _isHealthy.value = healthy
+                    if (!healthy) {
+                        Log.w(TAG, "Connection health degraded, idle: ${client.getIdleTimeMs()}ms")
+                    } else {
+                        Log.d(TAG, "Connection health restored")
+                    }
+                }
             }
         }
     }
@@ -149,6 +240,17 @@ class ConnectionManager @Inject constructor(
      * If one succeeds, we emit to the appropriate flow.
      */
     private suspend fun routeMessage(data: ByteArray) {
+        // Validate message size
+        if (data.size > MAX_MESSAGE_SIZE) {
+            Log.e(TAG, "Received oversized message: ${data.size} bytes, dropping")
+            return
+        }
+
+        if (data.isEmpty()) {
+            Log.w(TAG, "Received empty message, ignoring")
+            return
+        }
+
         // Try parsing as SessionEvent first (more common)
         try {
             val sessionEvent = ProtoSessionEvent.parseFrom(data)
@@ -198,7 +300,8 @@ class ConnectionManager @Inject constructor(
             event.hasAttached() ||
             event.hasDetached() ||
             event.hasError() ||
-            event.hasSkipped()
+            event.hasSkipped() ||
+            event.hasNotification() // Added notification handling
     }
 }
 
@@ -208,4 +311,5 @@ class ConnectionManager @Inject constructor(
 sealed class ConnectionError {
     data class Disconnected(val reason: String) : ConnectionError()
     data class SendFailed(val message: String) : ConnectionError()
+    data class Unhealthy(val idleTimeMs: Long) : ConnectionError()
 }

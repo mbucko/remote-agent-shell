@@ -142,8 +142,10 @@ class TerminalRepository @Inject constructor(
         val data = output.data.toByteArray()
         Log.v(TAG, "Output: ${data.size} bytes, seq=${output.sequence}")
 
-        // Update sequence (thread-safe)
-        _state.update { current -> current.copy(lastSequence = output.sequence) }
+        // Update sequence using maxOf to prevent regression from out-of-order packets
+        _state.update { current ->
+            current.copy(lastSequence = maxOf(current.lastSequence, output.sequence))
+        }
 
         // Emit raw output for terminal emulator
         _output.emit(data)
@@ -224,24 +226,47 @@ class TerminalRepository @Inject constructor(
     // Commands (Phone -> Daemon)
     // ==========================================================================
 
+    // Lock for preventing multiple attach() calls
+    private val attachLock = Any()
+
     /**
      * Attach to a terminal session.
      *
      * @param sessionId The session ID to attach to
      * @param fromSequence Resume from this sequence (0 = from buffer start)
      * @throws IllegalArgumentException if sessionId is invalid
+     * @throws IllegalStateException if already attaching or attached
      */
     suspend fun attach(sessionId: String, fromSequence: Long = 0) {
         TerminalInputValidator.requireValidSessionId(sessionId)
 
-        Log.d(TAG, "Attaching to session: $sessionId from seq $fromSequence")
-        _state.update { current ->
-            current.copy(
+        // Synchronize to prevent race conditions with multiple attach() calls
+        synchronized(attachLock) {
+            val current = _state.value
+
+            // Already attached or attaching to the same session - no-op
+            if ((current.isAttached || current.isAttaching) && current.sessionId == sessionId) {
+                val status = if (current.isAttached) "attached" else "attaching"
+                Log.d(TAG, "Already $status to session: $sessionId")
+                return
+            }
+
+            // Already attaching or attached to different session - error
+            if (current.isAttaching || current.isAttached) {
+                val status = if (current.isAttached) "attached" else "attaching"
+                Log.w(TAG, "Already $status to session: ${current.sessionId}")
+                throw IllegalStateException("Already $status to session: ${current.sessionId}")
+            }
+
+            // Mark as attaching
+            _state.value = current.copy(
                 sessionId = sessionId,
                 isAttaching = true,
                 error = null
             )
         }
+
+        Log.d(TAG, "Attaching to session: $sessionId from seq $fromSequence")
 
         val command = TerminalCommand.newBuilder()
             .setAttach(

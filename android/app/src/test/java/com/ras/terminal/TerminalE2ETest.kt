@@ -757,14 +757,22 @@ class TerminalE2ETest {
         testDispatcher.scheduler.advanceUntilIdle()
         assertTrue(repository.state.value.isAttaching)
 
-        // Before it completes, try another attach
+        // Before it completes, try another attach to SAME session - should be no-op
         sentCommands.clear()
-        repository.attach("abc123def456")
+        repository.attach("abc123def456") // Same session - no additional command
         testDispatcher.scheduler.advanceUntilIdle()
 
-        // Second attach command should still be sent (daemon handles dedup)
-        assertEquals(1, sentCommands.size)
+        // No new command sent (duplicate attach to same session is a no-op)
+        assertEquals(0, sentCommands.size)
         assertTrue(repository.state.value.isAttaching)
+
+        // Trying to attach to DIFFERENT session should throw
+        try {
+            repository.attach("different123") // 12 chars - valid session ID format
+            fail("Should throw IllegalStateException when attaching to different session while already attaching")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message?.contains("attaching") == true)
+        }
     }
 
     // ==========================================================================
@@ -954,7 +962,7 @@ class TerminalE2ETest {
     // ==========================================================================
 
     @Test
-    fun `E2E - out of order sequence updates state`() = runTest {
+    fun `E2E - out of order sequence uses maxOf to prevent regression`() = runTest {
         simulateAttached()
 
         // Receive sequence 100
@@ -966,9 +974,13 @@ class TerminalE2ETest {
         terminalEventsFlow.emit(createOutputEvent("abc123def456", "late", sequence = 50))
         testDispatcher.scheduler.advanceUntilIdle()
 
-        // Current behavior: updates to latest received (documents behavior)
-        // Note: Could be improved to track max sequence
-        assertEquals(50L, repository.state.value.lastSequence)
+        // Sequence should NOT regress - maxOf(100, 50) = 100
+        assertEquals(100L, repository.state.value.lastSequence)
+
+        // Higher sequence should still update
+        terminalEventsFlow.emit(createOutputEvent("abc123def456", "newer", sequence = 150))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(150L, repository.state.value.lastSequence)
     }
 
     // ==========================================================================
@@ -976,19 +988,38 @@ class TerminalE2ETest {
     // ==========================================================================
 
     @Test
-    fun `E2E - attach to different session while attached`() = runTest {
+    fun `E2E - attach to different session while attached throws`() = runTest {
         simulateAttached()
         assertTrue(repository.state.value.isAttached)
         assertEquals("abc123def456", repository.state.value.sessionId)
 
-        // Attach to different session (must be 12 chars)
+        // Attempting to attach to different session while already attached should throw
+        try {
+            repository.attach("xyz789uvw012")
+            fail("Should throw IllegalStateException when attaching to different session while already attached")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message?.contains("attached") == true)
+        }
+
+        // State should remain unchanged
+        assertTrue(repository.state.value.isAttached)
+        assertEquals("abc123def456", repository.state.value.sessionId)
+    }
+
+    @Test
+    fun `E2E - re-attach to same session while attached is no-op`() = runTest {
+        simulateAttached()
+        assertTrue(repository.state.value.isAttached)
+        assertEquals("abc123def456", repository.state.value.sessionId)
+
+        // Re-attaching to the same session should be a no-op (not throw)
         sentCommands.clear()
-        repository.attach("xyz789uvw012")
+        repository.attach("abc123def456")
         testDispatcher.scheduler.advanceUntilIdle()
 
-        // Should start attaching to new session
-        assertEquals("xyz789uvw012", sentCommands.last().attach.sessionId)
-        assertTrue(repository.state.value.isAttaching)
+        // No command sent (already attached to this session)
+        assertEquals(0, sentCommands.size)
+        assertTrue(repository.state.value.isAttached)
     }
 
     // ==========================================================================
