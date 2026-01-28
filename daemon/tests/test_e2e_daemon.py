@@ -56,10 +56,13 @@ class MockPeer:
         if self._close_handler:
             self._close_handler()
 
-    def receive(self, data: bytes):
+    async def receive(self, data: bytes):
         """Simulate receiving data."""
         if self._message_handler:
-            self._message_handler(data)
+            result = self._message_handler(data)
+            # Handler may be async (coroutine function)
+            if hasattr(result, '__await__'):
+                await result
 
 
 class MockCodec:
@@ -293,7 +296,7 @@ class TestMessageFlow:
 
         # Send session list request
         cmd = RasCommand(session=SessionCommand(list=ListSessionsCommand()))
-        peer.receive(bytes(cmd))
+        await peer.receive(bytes(cmd))
 
         # Allow async handler to run
         await asyncio.sleep(0.1)
@@ -323,7 +326,7 @@ class TestMessageFlow:
 
         # Send ping
         cmd = RasCommand(ping=Ping(timestamp=1234567890))
-        peer.receive(bytes(cmd))
+        await peer.receive(bytes(cmd))
 
         # Allow async handler to run
         await asyncio.sleep(0.1)
@@ -352,7 +355,7 @@ class TestMessageFlow:
         )
 
         # Send malformed data
-        peer.receive(b"not a valid protobuf")
+        await peer.receive(b"not a valid protobuf")
 
         # Allow async handler to run
         await asyncio.sleep(0.1)
@@ -524,7 +527,7 @@ class TestConcurrency:
         # Send multiple pings rapidly
         for _ in range(5):
             cmd = RasCommand(ping=Ping(timestamp=1234))
-            peer.receive(bytes(cmd))
+            await peer.receive(bytes(cmd))
 
         # Wait for all handlers
         await asyncio.sleep(0.2)
@@ -559,7 +562,7 @@ class TestErrorHandling:
 
         # Send session command that will fail
         cmd = RasCommand(session=SessionCommand(list=ListSessionsCommand()))
-        peer.receive(bytes(cmd))
+        await peer.receive(bytes(cmd))
 
         await asyncio.sleep(0.1)
 
@@ -580,7 +583,7 @@ class TestErrorHandling:
         await daemon.on_new_connection("device1", "Phone", peer, codec)
 
         # Send garbage
-        peer.receive(b"\x00\x01\x02\x03")
+        await peer.receive(b"\x00\x01\x02\x03")
 
         await asyncio.sleep(0.1)
 

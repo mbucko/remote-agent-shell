@@ -179,10 +179,39 @@ class Daemon:
 
     async def _initialize_managers(self) -> None:
         """Initialize managers if not injected."""
-        # Session manager initialization would go here
+        # Session manager initialization
+        if self._session_manager is None:
+            from ras.sessions.manager import SessionManager
+            from ras.sessions.persistence import SessionPersistence
+            from ras.sessions.agents import AgentDetector
+            from ras.sessions.directories import DirectoryBrowser
+            from ras.tmux import TmuxService
+
+            # Create dependencies
+            persistence = SessionPersistence()
+            tmux = TmuxService()
+            agents = AgentDetector(config=self._config.agents if hasattr(self._config, 'agents') else None)
+            directories = DirectoryBrowser(config=self._config.directories if hasattr(self._config, 'directories') else None)
+
+            # Create session manager
+            self._session_manager = SessionManager(
+                persistence=persistence,
+                tmux=tmux,
+                agents=agents,
+                directories=directories,
+                event_emitter=self,  # Daemon implements emit() for broadcasting
+                config={
+                    "directories": self._config.directories if hasattr(self._config, 'directories') else {},
+                    "sessions": self._config.sessions if hasattr(self._config, 'sessions') else {},
+                },
+            )
+
+            # Initialize - loads persisted sessions and reconciles with tmux
+            await self._session_manager.initialize()
+            logger.info(f"Session manager initialized with {len(self._session_manager._sessions)} sessions")
+
         # Terminal manager initialization would go here
         # Clipboard manager initialization would go here
-        pass
 
     async def _start_signaling_server(self) -> None:
         """Start unified HTTP server for pairing and reconnection."""
@@ -349,6 +378,13 @@ class Daemon:
             logger.warning(f"Unexpected ConnectionReady from {device_id}")
 
     # ==================== Event Broadcasting ====================
+
+    async def emit(self, event: SessionEvent) -> None:
+        """Emit session event to all connected phones.
+
+        Implements EventEmitter protocol for SessionManager.
+        """
+        await self._broadcast_session_event(event)
 
     async def _broadcast_session_event(self, event: SessionEvent) -> None:
         """Broadcast session event to all connected phones."""
