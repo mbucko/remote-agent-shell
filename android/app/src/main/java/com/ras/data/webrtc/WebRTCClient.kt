@@ -142,16 +142,25 @@ class WebRTCClient(
     suspend fun setRemoteDescription(sdpAnswer: String) {
         checkNotClosed()
 
+        // Log remote candidates from answer
+        val candidateCount = sdpAnswer.lines().count { it.startsWith("a=candidate:") }
+        Log.d(TAG, "Setting remote description with $candidateCount ICE candidates")
+        sdpAnswer.lines()
+            .filter { it.startsWith("a=candidate:") }
+            .forEach { Log.d(TAG, "Remote candidate: $it") }
+
         val answerDeferred = CompletableDeferred<Unit>()
 
         val sdp = SessionDescription(SessionDescription.Type.ANSWER, sdpAnswer)
         peerConnection?.setRemoteDescription(object : SdpObserver {
             override fun onCreateSuccess(sdp: SessionDescription?) {}
             override fun onSetSuccess() {
+                Log.d(TAG, "Remote description set successfully, ICE should start")
                 answerDeferred.complete(Unit)
             }
             override fun onCreateFailure(error: String?) {}
             override fun onSetFailure(error: String?) {
+                Log.e(TAG, "Failed to set remote description: $error")
                 answerDeferred.completeExceptionally(Exception(error))
             }
         }, sdp)
@@ -312,6 +321,15 @@ class WebRTCClient(
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
                 Log.d(TAG, "ICE connection state: $state")
                 when (state) {
+                    PeerConnection.IceConnectionState.CHECKING -> {
+                        Log.d(TAG, "ICE checking - testing candidate pairs")
+                    }
+                    PeerConnection.IceConnectionState.CONNECTED -> {
+                        Log.i(TAG, "ICE connected! Peer-to-peer connection established")
+                    }
+                    PeerConnection.IceConnectionState.COMPLETED -> {
+                        Log.i(TAG, "ICE completed - all checks done")
+                    }
                     PeerConnection.IceConnectionState.DISCONNECTED,
                     PeerConnection.IceConnectionState.FAILED -> {
                         Log.w(TAG, "ICE connection lost: $state")

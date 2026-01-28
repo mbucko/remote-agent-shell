@@ -42,6 +42,7 @@ class PeerConnection:
         self._pc: RTCPeerConnection | None = None
         self._channel = None
         self._message_callback: Callable[[bytes], Awaitable[None]] | None = None
+        self._close_callback: Callable[[], None] | None = None
         self._connected_event = asyncio.Event()
         self._channel_open_event = asyncio.Event()
 
@@ -105,8 +106,10 @@ class PeerConnection:
                 await self._message_callback(message)
 
         @channel.on("close")
-        def on_close():
+        def on_channel_close():
             logger.info("Data channel closed")
+            if self._close_callback:
+                self._close_callback()
 
     async def create_offer(self) -> str:
         """Create SDP offer for outgoing connection.
@@ -246,6 +249,14 @@ class PeerConnection:
             callback: Async function called with message bytes.
         """
         self._message_callback = callback
+
+    def on_close(self, callback: Callable[[], None]) -> None:
+        """Register callback for connection close.
+
+        Args:
+            callback: Function called when connection closes.
+        """
+        self._close_callback = callback
 
     async def close(self) -> None:
         """Close the peer connection.
