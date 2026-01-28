@@ -7,6 +7,7 @@ import com.ras.crypto.KeyDerivation
 import com.ras.crypto.hexToBytes
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.keystore.KeyManager
+import com.ras.data.webrtc.ConnectionOwnership
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.proto.AuthChallenge
 import com.ras.proto.AuthEnvelope
@@ -570,7 +571,7 @@ class PairingManagerTest {
         coEvery { webRTCClient.createOffer() } returns "test-sdp-offer"
         coEvery { webRTCClient.setRemoteDescription(any()) } just Runs
         coEvery { webRTCClient.waitForDataChannel(any()) } returns false
-        coEvery { webRTCClient.close() } just Runs
+        every { webRTCClient.closeByOwner(any()) } returns true
 
         coEvery { signalingClient.sendSignal(any(), any(), any(), any(), any(), any(), any()) } returns
             SignalingResult.Success("test-sdp-answer")
@@ -582,13 +583,14 @@ class PairingManagerTest {
 
         advanceUntilIdle()
 
-        verify { webRTCClient.close() }
+        // Verify closeByOwner is called with PairingManager ownership
+        verify { webRTCClient.closeByOwner(ConnectionOwnership.PairingManager) }
     }
 
     @Test
     fun `webRTC client is closed on reset`() = runTest {
         coEvery { webRTCClient.createOffer() } returns "test-sdp-offer"
-        coEvery { webRTCClient.close() } just Runs
+        every { webRTCClient.closeByOwner(any()) } returns true
 
         // Make signaling hang so we can test reset during operation
         coEvery { signalingClient.sendSignal(any(), any(), any(), any(), any(), any(), any()) } coAnswers {
@@ -607,7 +609,8 @@ class PairingManagerTest {
         // Reset while waiting for signaling
         pairingManager.reset()
 
-        verify { webRTCClient.close() }
+        // Verify closeByOwner is called with PairingManager ownership
+        verify { webRTCClient.closeByOwner(ConnectionOwnership.PairingManager) }
     }
 
     // ============================================================================

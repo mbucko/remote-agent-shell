@@ -4,6 +4,7 @@ import android.content.Context
 import com.ras.crypto.KeyDerivation
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.keystore.KeyManager
+import com.ras.data.webrtc.ConnectionOwnership
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.signaling.NtfyClientInterface
 import com.ras.signaling.NtfySignalingClient
@@ -43,6 +44,10 @@ class PairingManager @Inject constructor(
     private var authKey: ByteArray? = null
     private var webRTCClient: WebRTCClient? = null
 
+    // Connection lifecycle state machine
+    @Volatile
+    private var connectionState: PairingConnectionState = PairingConnectionState.Closed
+
     /**
      * Start pairing with scanned QR payload.
      */
@@ -63,8 +68,10 @@ class PairingManager @Inject constructor(
         _state.value = PairingState.TryingDirect
 
         // Create WebRTC client and generate offer
+        connectionState = PairingConnectionState.Creating
         val client = webRTCClientFactory.create()
         webRTCClient = client
+        connectionState = PairingConnectionState.Signaling
 
         val sdpOffer = try {
             client.createOffer()
@@ -120,6 +127,8 @@ class PairingManager @Inject constructor(
     private suspend fun performConnection(sdpAnswer: String) {
         val client = webRTCClient ?: return
 
+        connectionState = PairingConnectionState.Connecting
+
         try {
             // Set remote description
             client.setRemoteDescription(sdpAnswer)
@@ -134,6 +143,7 @@ class PairingManager @Inject constructor(
             }
 
             _state.value = PairingState.Authenticating
+            connectionState = PairingConnectionState.Authenticating
             performAuthentication()
         } catch (e: Exception) {
             _state.value = PairingState.Failed(PairingState.FailureReason.CONNECTION_FAILED)
@@ -161,16 +171,20 @@ class PairingManager @Inject constructor(
                 }
 
                 // Hand off WebRTC connection to ConnectionManager with encryption key
-                // This transfers ownership - ConnectionManager now manages the connection
+                // Use ownership transfer to prevent cleanup() from closing it
                 val key = authKey
                 webRTCClient?.let { client ->
                     if (key != null) {
+                        // Transfer ownership BEFORE passing to ConnectionManager
+                        // This ensures cleanup() won't close it even if called concurrently
+                        client.transferOwnership(ConnectionOwnership.ConnectionManager)
+                        connectionState = PairingConnectionState.HandedOff("ConnectionManager")
                         connectionManager.connect(client, key)
                     } else {
                         // Fallback: shouldn't happen, but handle gracefully
                         android.util.Log.e("PairingManager", "No auth key available for handoff")
                     }
-                    webRTCClient = null  // Clear reference so cleanup() doesn't close it
+                    webRTCClient = null  // Clear reference (ownership already transferred)
                 }
                 // Zero auth key after handoff (ConnectionManager has its own copy)
                 authKey?.fill(0)
@@ -190,8 +204,12 @@ class PairingManager @Inject constructor(
     }
 
     private fun cleanup() {
-        webRTCClient?.close()
+        // Only close if we still own the connection (not handed off)
+        if (connectionState.shouldCloseOnCleanup()) {
+            webRTCClient?.closeByOwner(ConnectionOwnership.PairingManager)
+        }
         webRTCClient = null
+        connectionState = PairingConnectionState.Closed
 
         // Zero sensitive data
         authKey?.fill(0)

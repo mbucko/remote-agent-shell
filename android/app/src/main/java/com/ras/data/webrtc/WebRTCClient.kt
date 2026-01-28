@@ -22,10 +22,16 @@ import javax.inject.Inject
  * - This class is thread-safe. WebRTC callbacks occur on different threads.
  * - State fields are @Volatile for visibility across threads.
  * - Critical sections are synchronized.
+ *
+ * Ownership:
+ * - Tracks who currently owns the connection (PairingManager or ConnectionManager)
+ * - Only the current owner can close the connection
+ * - Ownership must be explicitly transferred via transferOwnership()
  */
 class WebRTCClient(
     private val context: Context,
-    private val peerConnectionFactory: PeerConnectionFactory
+    private val peerConnectionFactory: PeerConnectionFactory,
+    initialOwner: ConnectionOwnership = ConnectionOwnership.PairingManager
 ) {
     companion object {
         private const val TAG = "WebRTCClient"
@@ -45,6 +51,10 @@ class WebRTCClient(
 
     @Volatile
     private var isClosed = false
+
+    // Ownership tracking to prevent race conditions during handoff
+    @Volatile
+    private var owner: ConnectionOwnership = initialOwner
 
     private val dataChannelOpened = CompletableDeferred<Boolean>()
     private val messageChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -278,10 +288,72 @@ class WebRTCClient(
     }
 
     /**
+     * Get the current owner of this connection.
+     */
+    fun getOwner(): ConnectionOwnership = owner
+
+    /**
+     * Transfer ownership of this connection to a new owner.
+     *
+     * @param newOwner The new owner to transfer to
+     * @return true if transfer succeeded, false if connection is disposed
+     */
+    fun transferOwnership(newOwner: ConnectionOwnership): Boolean {
+        synchronized(lock) {
+            if (owner == ConnectionOwnership.Disposed) {
+                Log.w(TAG, "transferOwnership() called but connection is disposed")
+                return false
+            }
+            if (isClosed) {
+                Log.w(TAG, "transferOwnership() called but connection is closed")
+                return false
+            }
+            val previousOwner = owner
+            owner = newOwner
+            Log.d(TAG, "Ownership transferred from $previousOwner to $newOwner")
+            return true
+        }
+    }
+
+    /**
+     * Close the connection, but only if the caller is the current owner.
+     * This prevents race conditions where cleanup code tries to close a connection
+     * that has already been handed off to another owner.
+     *
+     * @param caller The owner attempting to close
+     * @return true if the connection was closed, false if caller is not owner
+     */
+    fun closeByOwner(caller: ConnectionOwnership): Boolean {
+        synchronized(lock) {
+            if (owner != caller) {
+                Log.w(TAG, "closeByOwner() called by $caller but owner is $owner - ignoring")
+                return false
+            }
+            owner = ConnectionOwnership.Disposed
+        }
+        // Do actual close outside synchronized to avoid holding lock during cleanup
+        doClose()
+        return true
+    }
+
+    /**
      * Close the connection and release resources.
      * Safe to call multiple times.
+     *
+     * Note: Prefer closeByOwner() when ownership tracking is in use.
+     * This method is kept for backward compatibility.
      */
     fun close() {
+        synchronized(lock) {
+            owner = ConnectionOwnership.Disposed
+        }
+        doClose()
+    }
+
+    /**
+     * Internal close implementation.
+     */
+    private fun doClose() {
         synchronized(lock) {
             if (isClosed) return
             isClosed = true

@@ -7,6 +7,7 @@ import com.ras.crypto.KeyDerivation
 import com.ras.crypto.hexToBytes
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.keystore.KeyManager
+import com.ras.data.webrtc.ConnectionOwnership
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.proto.AuthChallenge
 import com.ras.proto.AuthEnvelope
@@ -265,8 +266,8 @@ class ConnectionHandoffTest {
         // On failure, ConnectionManager should NOT receive connection
         coVerify(exactly = 0) { connectionManager.connect(any(), any()) }
 
-        // PairingManager should have cleaned up (closed the client)
-        verify { webRTCClient.close() }
+        // PairingManager should have cleaned up via ownership-aware close
+        verify { webRTCClient.closeByOwner(ConnectionOwnership.PairingManager) }
     }
 
     // ============================================================================
