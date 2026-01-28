@@ -180,14 +180,14 @@ class TestHandleSignal:
 
         with patch("ras.pairing.pairing_manager.PeerConnection") as mock_pc_class:
             mock_pc = MagicMock()
-            mock_pc.accept_offer = AsyncMock(return_value='{"type": "answer", "sdp": "test"}')
+            mock_pc.accept_offer = AsyncMock(return_value="test")
             mock_pc.wait_connected = AsyncMock()
             mock_pc.on_message = MagicMock()
             mock_pc_class.return_value = mock_pc
 
             await manager.handle_signal(
                 session_id=session.session_id,
-                sdp_offer='{"type": "offer", "sdp": "test"}',
+                sdp_offer="test",
                 device_id="test-device",
                 device_name="Test Phone",
             )
@@ -204,14 +204,14 @@ class TestHandleSignal:
 
         with patch("ras.pairing.pairing_manager.PeerConnection") as mock_pc_class:
             mock_pc = MagicMock()
-            mock_pc.accept_offer = AsyncMock(return_value='{"type": "answer", "sdp": "test"}')
+            mock_pc.accept_offer = AsyncMock(return_value="test")
             mock_pc.wait_connected = AsyncMock()
             mock_pc.on_message = MagicMock()
             mock_pc_class.return_value = mock_pc
 
             await manager.handle_signal(
                 session_id=session.session_id,
-                sdp_offer='{"type": "offer", "sdp": "test"}',
+                sdp_offer="test",
                 device_id="device",
                 device_name="name",
             )
@@ -228,7 +228,7 @@ class TestHandleSignal:
         with patch("ras.pairing.pairing_manager.PeerConnection") as mock_pc_class:
             mock_pc = MagicMock()
             mock_pc.accept_offer = AsyncMock(
-                return_value='{"type": "answer", "sdp": "v=0\\r\\n"}'
+                return_value="v=0\\r\\n"
             )
             mock_pc.wait_connected = AsyncMock()
             mock_pc.on_message = MagicMock()
@@ -236,12 +236,12 @@ class TestHandleSignal:
 
             result = await manager.handle_signal(
                 session_id=session.session_id,
-                sdp_offer='{"type": "offer", "sdp": "test"}',
+                sdp_offer="test",
                 device_id="device",
                 device_name="name",
             )
 
-        assert result == '{"type": "answer", "sdp": "v=0\\r\\n"}'
+        assert result == "v=0\\r\\n"
 
 
 class TestOnPairingComplete:

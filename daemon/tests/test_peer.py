@@ -91,8 +91,8 @@ class TestPeerConnection:
 
         peer = PeerConnection(pc_factory=lambda cfg: mock_pc)
 
-        # Fake offer SDP (simplified)
-        fake_offer = '{"type": "offer", "sdp": "v=0\\r\\n"}'
+        # Fake offer SDP (raw format)
+        fake_offer = "v=0\r\no=- 12345 1 IN IP4 127.0.0.1\r\n"
         answer = await peer.accept_offer(fake_offer)
 
         assert answer

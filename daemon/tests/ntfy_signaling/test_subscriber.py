@@ -9,7 +9,6 @@ Tests cover:
 """
 
 import asyncio
-import json
 import os
 import time
 from typing import Optional
@@ -53,11 +52,6 @@ def create_encrypted_offer(crypto: NtfySignalingCrypto, **kwargs) -> str:
     """Create an encrypted OFFER message."""
     msg = create_test_offer(**kwargs)
     return crypto.encrypt(bytes(msg))
-
-
-def json_wrap_sdp(sdp: str, sdp_type: str = "answer") -> str:
-    """Wrap raw SDP in JSON format for PeerConnection compatibility."""
-    return json.dumps({"type": sdp_type, "sdp": sdp})
 
 
 class TestNtfySignalingSubscriberNtfyJsonParsing:
@@ -219,7 +213,7 @@ class TestNtfySignalingSubscriberMessageProcessing:
         )
         # Mock peer creation in handler
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
+        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
         sub._handler._create_peer = Mock(return_value=mock_peer)
         return sub
 
@@ -419,7 +413,7 @@ class TestNtfySignalingSubscriberPeer:
     async def test_get_peer_returns_peer_after_offer(self, subscriber, crypto):
         """get_peer returns peer after successful offer."""
         mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value=json_wrap_sdp("v=0\r\nm=application 9\r\n"))
+        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
         subscriber._handler._create_peer = Mock(return_value=mock_peer)
         subscriber._publish = AsyncMock(return_value=True)
 

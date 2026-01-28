@@ -1,0 +1,58 @@
+{
+  "description": "SDP format test vectors for cross-platform compatibility",
+  "format": "raw SDP (NOT JSON-wrapped)",
+  "requirements": {
+    "must_start_with": "v=",
+    "line_separator": "\\r\\n",
+    "required_lines": ["v=", "o=", "s=", "m="]
+  },
+  "valid_vectors": [
+    {
+      "id": "minimal_sdp",
+      "description": "Minimal valid SDP offer",
+      "sdp": "v=0\r\no=- 12345 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=ice-ufrag:abcd\r\na=ice-pwd:secret\r\na=setup:actpass\r\na=mid:0\r\na=sctp-port:5000\r\n"
+    },
+    {
+      "id": "offer_with_ice_candidates",
+      "description": "SDP offer with ICE candidates included",
+      "sdp": "v=0\r\no=- 12345 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 192.168.1.100\r\na=ice-ufrag:abcd\r\na=ice-pwd:secret\r\na=candidate:1 1 UDP 2130706431 192.168.1.100 54321 typ host\r\na=candidate:2 1 UDP 1694498815 203.0.113.50 54321 typ srflx raddr 192.168.1.100 rport 54321\r\na=setup:actpass\r\na=mid:0\r\na=sctp-port:5000\r\n"
+    },
+    {
+      "id": "answer_sdp",
+      "description": "SDP answer format",
+      "sdp": "v=0\r\no=- 67890 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 10.0.0.50\r\na=ice-ufrag:efgh\r\na=ice-pwd:password\r\na=candidate:1 1 UDP 2130706431 10.0.0.50 12345 typ host\r\na=setup:active\r\na=mid:0\r\na=sctp-port:5000\r\n"
+    }
+  ],
+  "invalid_vectors": [
+    {
+      "id": "json_wrapped",
+      "description": "JSON-wrapped SDP (old format, no longer accepted)",
+      "sdp": "{\"type\":\"offer\",\"sdp\":\"v=0\\r\\n\"}",
+      "expected_error": "INVALID_REQUEST"
+    },
+    {
+      "id": "missing_version",
+      "description": "SDP without version line",
+      "sdp": "o=- 12345 1 IN IP4 127.0.0.1\r\ns=-\r\nm=application 9\r\n",
+      "expected_error": "INVALID_REQUEST"
+    },
+    {
+      "id": "empty_string",
+      "description": "Empty SDP string",
+      "sdp": "",
+      "expected_error": "INVALID_REQUEST"
+    },
+    {
+      "id": "random_garbage",
+      "description": "Random non-SDP data",
+      "sdp": "not a valid SDP at all",
+      "expected_error": "INVALID_REQUEST"
+    }
+  ],
+  "notes": [
+    "All platforms must use raw SDP strings, never JSON-wrapped",
+    "SDP must start with 'v=' (version line)",
+    "Lines are separated by CRLF (\\r\\n)",
+    "The sdp_offer and sdp_answer fields in protobuf contain raw SDP only"
+  ]
+}

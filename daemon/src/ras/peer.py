@@ -1,7 +1,6 @@
 """WebRTC peer connection wrapper."""
 
 import asyncio
-import json
 import logging
 from typing import Awaitable, Callable
 
@@ -16,17 +15,6 @@ class PeerConnectionError(Exception):
     """Peer connection error."""
 
     pass
-
-
-def _sdp_to_string(desc: RTCSessionDescription) -> str:
-    """Serialize SDP to JSON string."""
-    return json.dumps({"type": desc.type, "sdp": desc.sdp})
-
-
-def _sdp_from_string(s: str) -> RTCSessionDescription:
-    """Deserialize SDP from JSON string."""
-    d = json.loads(s)
-    return RTCSessionDescription(sdp=d["sdp"], type=d["type"])
 
 
 class PeerConnection:
@@ -116,7 +104,7 @@ class PeerConnection:
         """Create SDP offer for outgoing connection.
 
         Returns:
-            SDP offer as JSON string.
+            Raw SDP offer string (starts with "v=0").
         """
         self._create_pc()
 
@@ -130,16 +118,16 @@ class PeerConnection:
         await self._wait_ice_gathering()
 
         self._state = PeerState.CONNECTING
-        return _sdp_to_string(self._pc.localDescription)
+        return self._pc.localDescription.sdp
 
     async def accept_offer(self, offer_sdp: str) -> str:
         """Accept SDP offer and return answer.
 
         Args:
-            offer_sdp: SDP offer as JSON string.
+            offer_sdp: Raw SDP offer string (starts with "v=0").
 
         Returns:
-            SDP answer as JSON string.
+            Raw SDP answer string (starts with "v=0").
         """
         self._create_pc()
 
@@ -153,7 +141,7 @@ class PeerConnection:
         )
         self._setup_channel(self._channel)
 
-        offer = _sdp_from_string(offer_sdp)
+        offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
         await self._pc.setRemoteDescription(offer)
 
         answer = await self._pc.createAnswer()
@@ -163,15 +151,16 @@ class PeerConnection:
         await self._wait_ice_gathering()
 
         self._state = PeerState.CONNECTING
-        return _sdp_to_string(self._pc.localDescription)
+        return self._pc.localDescription.sdp
 
-    async def set_remote_description(self, sdp: str) -> None:
-        """Set remote SDP (answer).
+    async def set_remote_description(self, sdp: str, sdp_type: str = "answer") -> None:
+        """Set remote SDP description.
 
         Args:
-            sdp: SDP answer as JSON string.
+            sdp: Raw SDP string (starts with "v=0").
+            sdp_type: SDP type ("offer" or "answer"). Defaults to "answer".
         """
-        desc = _sdp_from_string(sdp)
+        desc = RTCSessionDescription(sdp=sdp, type=sdp_type)
         await self._pc.setRemoteDescription(desc)
 
     async def _wait_ice_gathering(self, timeout: float = 10.0) -> None:

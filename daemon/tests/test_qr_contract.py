@@ -385,7 +385,7 @@ class TestApiToQrIntegration:
                     timestamp = int(time.time())
 
                     body = bytes(SignalRequest(
-                        sdp_offer='{"type":"offer","sdp":"v=0"}',
+                        sdp_offer="v=0",
                         device_id="test-phone",
                         device_name="Test Device",
                     ))
@@ -401,7 +401,7 @@ class TestApiToQrIntegration:
                     from unittest.mock import patch, AsyncMock, MagicMock
 
                     mock_peer = AsyncMock()
-                    mock_peer.accept_offer = AsyncMock(return_value='{"type":"answer"}')
+                    mock_peer.accept_offer = AsyncMock(return_value="v=0")
                     mock_peer.wait_connected = AsyncMock()
                     mock_peer.close = AsyncMock()
                     mock_peer.on_message = MagicMock()

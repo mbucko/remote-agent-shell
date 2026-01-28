@@ -25,7 +25,10 @@ message NtfySignalMessage {
   // Session ID from QR code (must match pending session)
   string session_id = 2;
 
-  // SDP content (WebRTC offer or answer, includes ICE candidates)
+  // SDP content in raw format (NOT JSON-wrapped).
+  // WebRTC offer or answer with full ICE candidates included.
+  // Must start with "v=" (SDP version line).
+  // Example: "v=0\r\no=- 12345 1 IN IP4 127.0.0.1\r\ns=-\r\n..."
   string sdp = 3;
 
   // Device info (required in OFFER, optional in ANSWER)

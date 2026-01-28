@@ -48,7 +48,7 @@ def config(tmp_path: Path) -> Config:
 def mock_peer():
     """Create mock WebRTC peer connection."""
     peer = AsyncMock()
-    peer.accept_offer = AsyncMock(return_value='{"type":"answer","sdp":"v=0"}')
+    peer.accept_offer = AsyncMock(return_value="v=0")
     peer.wait_connected = AsyncMock()
     peer.send = AsyncMock()
     peer.close = AsyncMock()
@@ -151,7 +151,7 @@ class TestPairingHappyPath:
                 with patch("ras.peer.PeerConnection", return_value=mock_peer):
                     timestamp = int(time.time())
                     body = bytes(SignalRequest(
-                        sdp_offer='{"type":"offer","sdp":"v=0"}',
+                        sdp_offer="v=0",
                         device_id="test-phone-123",
                         device_name="Test Phone",
                     ))
@@ -499,7 +499,7 @@ class TestReconnectionHappyPath:
             auth_key = derive_key(test_secret, "auth")
             timestamp = int(time.time())
             body = bytes(SignalRequest(
-                sdp_offer='{"type":"offer","sdp":"v=0"}',
+                sdp_offer="v=0",
                 device_id="paired-device-123",
                 device_name="My Phone",
             ))
@@ -707,7 +707,7 @@ class TestConcurrentOperations:
                 auth_key = derive_key(test_secret, "auth")
                 timestamp = int(time.time())
                 body = bytes(SignalRequest(
-                    sdp_offer='{"type":"offer","sdp":"v=0"}',
+                    sdp_offer="v=0",
                     device_id="existing-device",
                     device_name="Existing Phone",
                 ))
@@ -756,14 +756,14 @@ class TestConcurrentOperations:
                 # First connection
                 timestamp1 = int(time.time())
                 body1 = bytes(SignalRequest(
-                    sdp_offer='{"type":"offer","sdp":"v=0"}',
+                    sdp_offer="v=0",
                     device_id="my-device",
                     device_name="My Phone",
                 ))
                 sig1 = compute_signaling_hmac(auth_key, "my-device", timestamp1, body1)
 
                 mock_peer1 = AsyncMock()
-                mock_peer1.accept_offer = AsyncMock(return_value='{"type":"answer","sdp":"v=0"}')
+                mock_peer1.accept_offer = AsyncMock(return_value="v=0")
                 mock_peer1.wait_connected = AsyncMock()
                 mock_peer1.close = AsyncMock()
                 mock_peer1.on_message = MagicMock()
@@ -786,14 +786,14 @@ class TestConcurrentOperations:
                 # Second connection (should close first)
                 timestamp2 = int(time.time())
                 body2 = bytes(SignalRequest(
-                    sdp_offer='{"type":"offer","sdp":"v=0"}',
+                    sdp_offer="v=0",
                     device_id="my-device",
                     device_name="My Phone",
                 ))
                 sig2 = compute_signaling_hmac(auth_key, "my-device", timestamp2, body2)
 
                 mock_peer2 = AsyncMock()
-                mock_peer2.accept_offer = AsyncMock(return_value='{"type":"answer","sdp":"v=0"}')
+                mock_peer2.accept_offer = AsyncMock(return_value="v=0")
                 mock_peer2.wait_connected = AsyncMock()
                 mock_peer2.close = AsyncMock()
                 mock_peer2.on_message = MagicMock()

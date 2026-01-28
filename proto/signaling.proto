@@ -13,7 +13,10 @@ option swift_prefix = "RAS";
 // Header: X-RAS-Signature: <hmac_hex>
 // Header: X-RAS-Timestamp: <unix_timestamp>
 message SignalRequest {
-  // WebRTC SDP offer (full ICE candidates included)
+  // WebRTC SDP offer in raw format (NOT JSON-wrapped).
+  // Must start with "v=" (SDP version line).
+  // Example: "v=0\r\no=- 12345 1 IN IP4 127.0.0.1\r\ns=-\r\n..."
+  // Full ICE candidates should be included.
   string sdp_offer = 1;
 
   // Device name (e.g., "Pixel 8")
@@ -24,7 +27,10 @@ message SignalRequest {
 }
 
 message SignalResponse {
-  // WebRTC SDP answer (full ICE candidates included)
+  // WebRTC SDP answer in raw format (NOT JSON-wrapped).
+  // Must start with "v=" (SDP version line).
+  // Example: "v=0\r\no=- 12345 1 IN IP4 127.0.0.1\r\ns=-\r\n..."
+  // Full ICE candidates should be included.
   string sdp_answer = 1;
 }
 

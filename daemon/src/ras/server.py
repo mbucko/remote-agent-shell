@@ -362,6 +362,10 @@ class UnifiedServer:
         except Exception:
             return self._error_response(SignalErrorErrorCode.INVALID_REQUEST)
 
+        # Validate SDP format (must start with version line)
+        if not signal_request.sdp_offer or not signal_request.sdp_offer.startswith("v="):
+            return self._error_response(SignalErrorErrorCode.INVALID_REQUEST)
+
         # Process signaling
         try:
             session.state = "signaling"
@@ -531,6 +535,10 @@ class UnifiedServer:
         try:
             signal_request = SignalRequest().parse(body)
         except Exception:
+            return self._error_response(SignalErrorErrorCode.INVALID_REQUEST)
+
+        # Validate SDP format (must start with version line)
+        if not signal_request.sdp_offer or not signal_request.sdp_offer.startswith("v="):
             return self._error_response(SignalErrorErrorCode.INVALID_REQUEST)
 
         # Create WebRTC peer

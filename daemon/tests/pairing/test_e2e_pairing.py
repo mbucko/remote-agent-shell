@@ -57,7 +57,7 @@ class MockAndroidClient:
         self.auth_key = derive_key(master_secret, "auth")
         self.device_id = "mock-device-123"
         self.device_name = "Mock Android Phone"
-        self.sdp_offer = '{"type": "offer", "sdp": "v=0\\r\\n"}'
+        self.sdp_offer = "v=0\\r\\n"
 
     def create_signaling_request(self, session_id: str) -> tuple[bytes, dict]:
         """Create an authenticated signaling request.
@@ -202,7 +202,7 @@ class TestEndToEndSignalingFlow:
         manager = MagicMock()
         manager.get_session = MagicMock(return_value=session)
         manager.handle_signal = AsyncMock(
-            return_value='{"type": "answer", "sdp": "v=0\\r\\n"}'
+            return_value="v=0\\r\\n"
         )
         return manager
 
@@ -759,7 +759,7 @@ class TestEndToEndPairingManager:
         with patch("ras.pairing.pairing_manager.PeerConnection") as mock_pc_class:
             mock_pc = MagicMock()
             mock_pc.accept_offer = AsyncMock(
-                return_value='{"type": "answer", "sdp": "v=0"}'
+                return_value="v=0"
             )
             mock_pc.wait_connected = AsyncMock()
             mock_pc.on_message = MagicMock()
@@ -767,7 +767,7 @@ class TestEndToEndPairingManager:
 
             await manager.handle_signal(
                 session_id=session.session_id,
-                sdp_offer='{"type": "offer", "sdp": "v=0"}',
+                sdp_offer="v=0",
                 device_id="test-device",
                 device_name="Test Phone",
             )
