@@ -1,6 +1,7 @@
 """Tests for message dispatcher module."""
 
 import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -44,6 +45,7 @@ class TestMessageDispatcher:
     @pytest.mark.asyncio
     async def test_dispatch_to_unregistered(self, dispatcher, caplog):
         """Dispatch to unknown type logs warning."""
+        caplog.set_level(logging.WARNING, logger="ras.message_dispatcher")
         await dispatcher.dispatch(
             device_id="device1",
             message_type="unknown",
@@ -56,6 +58,7 @@ class TestMessageDispatcher:
     @pytest.mark.asyncio
     async def test_handler_exception(self, dispatcher, caplog):
         """Handler exception is caught and logged."""
+        caplog.set_level(logging.ERROR, logger="ras.message_dispatcher")
         handler = AsyncMock(side_effect=ValueError("handler error"))
         dispatcher.register("session", handler)
 
@@ -71,6 +74,7 @@ class TestMessageDispatcher:
     @pytest.mark.asyncio
     async def test_handler_timeout(self, caplog):
         """Slow handler is timed out."""
+        caplog.set_level(logging.ERROR, logger="ras.message_dispatcher")
         dispatcher = MessageDispatcher(handler_timeout=0.1)
 
         async def slow_handler(device_id, message):
