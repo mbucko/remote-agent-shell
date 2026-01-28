@@ -70,7 +70,14 @@ class RateLimiter:
 
 @dataclass
 class PairingSession:
-    """A pairing session waiting for phone to connect."""
+    """A pairing session waiting for phone to connect.
+
+    Ownership Transfer Pattern:
+    - This session owns `peer` until auth completes successfully
+    - On success, `peer` is handed to `on_device_connected` callback
+    - `peer_transferred` tracks whether ownership was transferred
+    - After transfer, cleanup should NOT close the peer
+    """
 
     session_id: str
     master_secret: bytes
@@ -82,6 +89,7 @@ class PairingSession:
     device_id: Optional[str] = None
     device_name: Optional[str] = None
     peer: Optional[PeerConnection] = None
+    peer_transferred: bool = False  # True if peer ownership was handed off
     _auth_queue: Optional[asyncio.Queue] = field(default=None, repr=False)
     _ntfy_subscriber: Optional[NtfySignalingSubscriber] = field(default=None, repr=False)
 
@@ -453,10 +461,11 @@ class UnifiedServer:
                         session.auth_key,
                     )
 
-                # Hand off complete - null out peer so cleanup doesn't close it
+                # Hand off complete - mark as transferred and null out peer
                 # IMPORTANT: Must happen BEFORE setting state to "completed"
                 # because CLI polls for state and sends DELETE when complete,
                 # which triggers _cleanup_session that would close the peer
+                session.peer_transferred = True
                 session.peer = None
 
                 # Stop ntfy subscriber (no longer needed)
@@ -655,14 +664,18 @@ class UnifiedServer:
 
         Args:
             session: Session to clean up.
+
+        Note:
+            If peer_transferred is True, the peer was handed off to another
+            owner (via on_device_connected callback) and should NOT be closed.
         """
         # Close ntfy subscriber
         if session._ntfy_subscriber:
             await session._ntfy_subscriber.close()
             session._ntfy_subscriber = None
 
-        # Close peer
-        if session.peer:
+        # Close peer only if ownership was NOT transferred
+        if session.peer and not session.peer_transferred:
             await session.peer.close()
             session.peer = None
 
