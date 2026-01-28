@@ -60,4 +60,5 @@ def reset_logging() -> None:
     global _logger
     if _logger is not None:
         _logger.handlers.clear()
+        _logger.propagate = True  # Restore propagation for pytest caplog
         _logger = None
