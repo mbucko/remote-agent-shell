@@ -147,6 +147,31 @@ class NtfySignalingCryptoTest {
         crypto.decrypt(ByteArray(27))
     }
 
+    @Test(expected = DecryptionException::class)
+    fun `decrypt message too large throws - DoS protection`() {
+        val key = ByteArray(32)
+        val crypto = NtfySignalingCrypto(key)
+
+        // Exceeds 64KB limit
+        val tooLarge = ByteArray(65 * 1024)  // 65 KB
+        crypto.decrypt(tooLarge)
+    }
+
+    @Test
+    fun `decrypt message at 64KB boundary succeeds`() {
+        val key = ByteArray(32) { it.toByte() }
+        val crypto = NtfySignalingCrypto(key)
+
+        // Create a message just under 64KB (plaintext that encrypts to ~64KB)
+        // 64KB = 65536 bytes, minus 12 IV and 16 tag = 65508 bytes max plaintext
+        val largePlaintext = ByteArray(65000)  // Large but under limit
+        val encrypted = crypto.encrypt(largePlaintext)
+
+        // Should decrypt successfully
+        val decrypted = crypto.decrypt(encrypted)
+        assertArrayEquals(largePlaintext, decrypted)
+    }
+
     // ==================== Base64 Encryption Tests ====================
 
     @Test

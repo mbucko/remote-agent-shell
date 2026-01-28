@@ -33,6 +33,7 @@ class NtfySignalingCrypto(private val key: ByteArray) {
         private const val TAG_SIZE_BITS = 128
         private const val KEY_SIZE = 32
         const val MIN_ENCRYPTED_SIZE = IV_SIZE + TAG_SIZE_BITS / 8  // 12 + 16 = 28 bytes
+        const val MAX_MESSAGE_SIZE = 64 * 1024  // 64 KB - DoS protection
 
         private val secureRandom = SecureRandom()
 
@@ -95,6 +96,9 @@ class NtfySignalingCrypto(private val key: ByteArray) {
     fun decrypt(encrypted: ByteArray): ByteArray {
         if (encrypted.size < MIN_ENCRYPTED_SIZE) {
             throw DecryptionException("Message too short: ${encrypted.size} < $MIN_ENCRYPTED_SIZE")
+        }
+        if (encrypted.size > MAX_MESSAGE_SIZE) {
+            throw DecryptionException("Message too large: ${encrypted.size} > $MAX_MESSAGE_SIZE")
         }
 
         val iv = encrypted.sliceArray(0 until IV_SIZE)
