@@ -372,7 +372,7 @@ class Daemon:
         """
         if device_id in self._pending_ready:
             self._pending_ready.discard(device_id)
-            logger.debug(f"Received ConnectionReady from {device_id}")
+            logger.info(f"Received ConnectionReady from {device_id}")
             await self._send_initial_state(device_id)
         else:
             logger.warning(f"Unexpected ConnectionReady from {device_id}")
@@ -528,4 +528,4 @@ class Daemon:
         event = RasEvent(initial_state=initial)
         await conn.send(bytes(event))
 
-        logger.debug(f"Sent initial state to {device_id}")
+        logger.info(f"Sent initial state to {device_id}: {len(sessions)} sessions, {len(agents)} agents")

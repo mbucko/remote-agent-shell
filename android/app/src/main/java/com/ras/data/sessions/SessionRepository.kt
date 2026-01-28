@@ -1,6 +1,7 @@
 package com.ras.data.sessions
 
-import com.ras.data.webrtc.WebRTCClient
+import android.util.Log
+import com.ras.data.connection.ConnectionManager
 import com.ras.di.IoDispatcher
 import com.ras.proto.Agent
 import com.ras.proto.CreateSessionCommand
@@ -9,6 +10,7 @@ import com.ras.proto.GetAgentsCommand
 import com.ras.proto.GetDirectoriesCommand
 import com.ras.proto.KillSessionCommand
 import com.ras.proto.ListSessionsCommand
+import com.ras.proto.RasCommand
 import com.ras.proto.RefreshAgentsCommand
 import com.ras.proto.RenameSessionCommand
 import com.ras.proto.Session
@@ -28,18 +30,18 @@ import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val TAG = "SessionRepository"
+
 /**
  * Repository for session management.
- * Handles communication with daemon via WebRTC and maintains session state.
+ * Subscribes to ConnectionManager for receiving session events.
  */
 @Singleton
 class SessionRepository @Inject constructor(
-    private val webRtcClientFactory: WebRTCClient.Factory,
+    private val connectionManager: ConnectionManager,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
     private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
-
-    private var webRtcClient: WebRTCClient? = null
 
     // Session state
     private val _sessions = MutableStateFlow<List<SessionInfo>>(emptyList())
@@ -53,45 +55,53 @@ class SessionRepository @Inject constructor(
     private val _events = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<SessionEvent> = _events.asSharedFlow()
 
-    // Connection state
-    private val _isConnected = MutableStateFlow(false)
-    val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+    // Connection state - derived from ConnectionManager
+    val isConnected: StateFlow<Boolean> = connectionManager.isConnected
 
-    /**
-     * Connect to the WebRTC client for receiving events.
-     */
-    fun connect(client: WebRTCClient) {
-        webRtcClient = client
-        _isConnected.value = true
-        startEventListener()
+    init {
+        // Subscribe to ConnectionManager's session events
+        subscribeToSessionEvents()
+        // Subscribe to InitialState for startup data
+        subscribeToInitialState()
     }
 
     /**
-     * Disconnect and clean up.
+     * Subscribe to session events from ConnectionManager.
      */
-    fun disconnect() {
-        webRtcClient = null
-        _isConnected.value = false
-    }
-
-    private fun startEventListener() {
+    private fun subscribeToSessionEvents() {
         scope.launch {
-            val client = webRtcClient ?: return@launch
-            try {
-                while (_isConnected.value) {
-                    val data = client.receive()
-                    processEvent(data)
-                }
-            } catch (e: Exception) {
-                // Channel closed or connection lost
-                _isConnected.value = false
+            connectionManager.sessionEvents.collect { event ->
+                processEvent(event)
             }
         }
     }
 
-    private fun processEvent(data: ByteArray) {
+    /**
+     * Subscribe to InitialState from ConnectionManager.
+     * InitialState is sent once when connection is established.
+     */
+    private fun subscribeToInitialState() {
+        scope.launch {
+            connectionManager.initialState.collect { initialState ->
+                Log.i(TAG, "Received InitialState: ${initialState.sessionsCount} sessions, ${initialState.agentsCount} agents")
+
+                // Update sessions
+                if (initialState.sessionsCount > 0) {
+                    _sessions.value = initialState.sessionsList.map { it.toDomain() }
+                }
+
+                // Update agents
+                if (initialState.agentsCount > 0) {
+                    val agents = initialState.agentsList.map { it.toDomain() }
+                    _agents.value = agents
+                    _events.tryEmit(SessionEvent.AgentsLoaded(agents))
+                }
+            }
+        }
+    }
+
+    private fun processEvent(event: ProtoSessionEvent) {
         try {
-            val event = ProtoSessionEvent.parseFrom(data)
             // Each handler is wrapped to prevent one failure from stopping event processing
             when {
                 event.hasList() -> runCatching { handleSessionList(event.list) }
@@ -104,7 +114,7 @@ class SessionRepository @Inject constructor(
                 event.hasDirectories() -> runCatching { handleDirectoriesList(event.directories) }
             }
         } catch (e: Exception) {
-            // Invalid protobuf, ignore
+            Log.e(TAG, "Error processing session event", e)
         }
     }
 
@@ -291,13 +301,19 @@ class SessionRepository @Inject constructor(
 
     /**
      * Send a command to the daemon.
+     * Commands are wrapped in RasCommand for proper routing.
      *
      * @throws IllegalStateException if not connected
      */
     private suspend fun sendCommand(command: SessionCommand) {
-        val client = webRtcClient
-            ?: throw IllegalStateException("Not connected to daemon")
-        client.send(command.toByteArray())
+        if (!connectionManager.isConnected.value) {
+            throw IllegalStateException("Not connected to daemon")
+        }
+        // Wrap in RasCommand for proper message envelope
+        val rasCommand = RasCommand.newBuilder()
+            .setSession(command)
+            .build()
+        connectionManager.send(rasCommand.toByteArray())
     }
 }
 
