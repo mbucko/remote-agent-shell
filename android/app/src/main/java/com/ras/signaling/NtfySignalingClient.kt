@@ -90,6 +90,7 @@ class NtfySignalingClient(
             .readTimeout(0, TimeUnit.MILLISECONDS)  // No read timeout for WebSocket
             .writeTimeout(30, TimeUnit.SECONDS)
             .connectTimeout(30, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)  // Keep WebSocket alive through cellular NAT
             .build()
 
         /**
