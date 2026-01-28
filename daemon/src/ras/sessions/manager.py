@@ -5,10 +5,13 @@ import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Protocol
 
+import betterproto
+
 from ras.proto.ras.ras import (
     AgentsListEvent,
     DirectoriesListEvent,
     Session,
+    SessionCommand,
     SessionCreatedEvent,
     SessionErrorEvent,
     SessionEvent,
@@ -516,6 +519,47 @@ class SessionManager:
             last_activity_at=session.last_activity_at,
             status=session.status,
         )
+
+    async def handle_command(
+        self, command: SessionCommand, device_id: str = ""
+    ) -> SessionEvent | None:
+        """Handle incoming session command.
+
+        Dispatches to appropriate handler based on command type.
+
+        Args:
+            command: The session command to handle.
+            device_id: Device identifier for rate limiting.
+
+        Returns:
+            SessionEvent response or None.
+        """
+        field_name, field_value = betterproto.which_one_of(command, "command")
+
+        if field_name == "list":
+            return await self.list_sessions()
+        elif field_name == "create":
+            return await self.create_session(
+                directory=field_value.directory,
+                agent=field_value.agent,
+                phone_id=device_id,
+            )
+        elif field_name == "kill":
+            return await self.kill_session(field_value.session_id)
+        elif field_name == "rename":
+            return await self.rename_session(
+                session_id=field_value.session_id,
+                new_name=field_value.new_name,
+            )
+        elif field_name == "get_agents":
+            return await self.get_agents()
+        elif field_name == "get_directories":
+            return await self.get_directories(parent=field_value.parent)
+        elif field_name == "refresh_agents":
+            return await self.refresh_agents()
+        else:
+            logger.warning(f"Unknown session command type: {field_name}")
+            return None
 
     def _error_event(
         self,
