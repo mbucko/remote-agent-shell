@@ -2,7 +2,6 @@ package com.ras.signaling
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -69,7 +68,7 @@ class NtfySignalingClientTest {
         val topic = "ras-abc123def456"
         val url = NtfySignalingClient.buildWsUrl(topic)
 
-        assertEquals("wss://ntfy.sh/ras-abc123def456/ws?since=30s", url)
+        assertEquals("wss://ntfy.sh/ras-abc123def456/ws", url)
     }
 
     @Test
@@ -77,7 +76,7 @@ class NtfySignalingClientTest {
         val topic = "ras-abc123"
         val url = NtfySignalingClient.buildWsUrl(topic, "https://custom.server.com")
 
-        assertEquals("wss://custom.server.com/ras-abc123/ws?since=30s", url)
+        assertEquals("wss://custom.server.com/ras-abc123/ws", url)
     }
 
     @Test
@@ -96,43 +95,35 @@ class NtfySignalingClientTest {
 
         assertFalse(mockClient.isSubscribed)
 
-        val subscription = mockClient.subscribe("test-topic")
-        val job = launch {
-            subscription.messages.first { it.event == "message" }
-        }
+        val flow = mockClient.subscribe("test-topic")
 
-        // Give time for subscription
-        advanceUntilIdle()
+        // After subscribe returns, should be connected
         assertTrue(mockClient.isSubscribed)
 
-        // Deliver a message to complete the first()
+        // Deliver a message to allow collection
         mockClient.deliverMessage("done")
-
-        job.cancel()
+        flow.first { it.event == "message" }
     }
 
     @Test
     fun `mock client delivers messages`() = runTest {
         val mockClient = MockNtfyClient()
 
-        val subscription = mockClient.subscribe("test-topic")
-        val receivedMessage = async {
-            // Skip the "open" event and get the first actual message
-            subscription.messages.first { it.event == "message" }
-        }
-
-        advanceUntilIdle()
+        val flow = mockClient.subscribe("test-topic")
 
         // Deliver a message
         mockClient.deliverMessage("test message")
 
-        val message = receivedMessage.await()
+        val message = flow.first { it.event == "message" }
         assertEquals("test message", message.message)
     }
 
     @Test
     fun `mock client tracks published messages`() = runTest {
         val mockClient = MockNtfyClient()
+
+        // Need to subscribe first for publish to work
+        mockClient.subscribe("test-topic")
 
         mockClient.publish("test-topic", "message 1")
         mockClient.publish("test-topic", "message 2")
@@ -147,6 +138,7 @@ class NtfySignalingClientTest {
     fun `mock client can clear published messages`() = runTest {
         val mockClient = MockNtfyClient()
 
+        mockClient.subscribe("test-topic")
         mockClient.publish("test-topic", "message")
         assertEquals(1, mockClient.getPublishedMessages().size)
 
@@ -158,75 +150,11 @@ class NtfySignalingClientTest {
     fun `mock client unsubscribe clears subscription state`() = runTest {
         val mockClient = MockNtfyClient()
 
-        val subscription = mockClient.subscribe("test-topic")
-        val job = launch {
-            subscription.messages.collect { }
-        }
-        advanceUntilIdle()
-
+        mockClient.subscribe("test-topic")
         assertTrue(mockClient.isSubscribed)
 
         mockClient.unsubscribe()
         assertFalse(mockClient.isSubscribed)
-
-        job.cancel()
-    }
-
-    // ==================== NtfySubscription Tests ====================
-
-    @Test
-    fun `subscription awaitReady completes when WebSocket connects`() = runTest {
-        val mockClient = MockNtfyClient()
-
-        val subscription = mockClient.subscribe("test-topic")
-
-        // Start collecting to trigger connection
-        val job = launch {
-            subscription.messages.collect { }
-        }
-
-        // Wait for ready
-        subscription.awaitReady(5000)
-        assertTrue(subscription.isReady)
-
-        job.cancel()
-    }
-
-    @Test
-    fun `subscription awaitReady respects configured delay`() = runTest {
-        val mockClient = MockNtfyClient()
-        mockClient.subscribeReadyDelayMs = 100
-
-        val subscription = mockClient.subscribe("test-topic")
-
-        // Start collecting to trigger connection
-        val job = launch {
-            subscription.messages.collect { }
-        }
-
-        // Wait for ready
-        subscription.awaitReady(5000)
-        assertTrue(subscription.isReady)
-
-        job.cancel()
-    }
-
-    @Test
-    fun `subscription close cleans up resources`() = runTest {
-        val mockClient = MockNtfyClient()
-
-        val subscription = mockClient.subscribe("test-topic")
-        val job = launch {
-            subscription.messages.collect { }
-        }
-        advanceUntilIdle()
-        assertTrue(mockClient.isSubscribed)
-
-        subscription.close()
-        advanceUntilIdle()
-        assertFalse(mockClient.isSubscribed)
-
-        job.cancel()
     }
 
     // ==================== Message Parsing Tests ====================
@@ -342,7 +270,7 @@ class NtfySignalingClientMainSafetyTest {
 }
 
 /**
- * Tests for WebSocket reliability features (ping/pong, reconnection).
+ * Tests for reliability features (ping/pong, reconnection, retry).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -387,9 +315,10 @@ class NtfySignalingClientReliabilityTest {
         val mock = MockNtfyClient()
         var actualMessagesReceived = 0
 
-        val subscription = mock.subscribe("topic")
+        val flow = mock.subscribe("topic")
+
         val job = launch {
-            subscription.messages.collect { msg ->
+            flow.collect { msg ->
                 if (msg.event == "message") {
                     actualMessagesReceived++
                 }
@@ -419,11 +348,7 @@ class NtfySignalingClientReliabilityTest {
         val mock = MockNtfyClient()
 
         // Subscribe and publish
-        val subscription = mock.subscribe("topic")
-        val job = launch {
-            subscription.messages.collect { }
-        }
-        advanceUntilIdle()
+        mock.subscribe("topic")
         mock.publish("topic", "message")
 
         // Disconnect
@@ -435,8 +360,6 @@ class NtfySignalingClientReliabilityTest {
 
         assertFalse(mock.isSubscribed)
         assertEquals(0, mock.getPublishedMessages().size)
-
-        job.cancel()
     }
 
     // ==================== Publish Retry Tests ====================
@@ -444,6 +367,7 @@ class NtfySignalingClientReliabilityTest {
     @Test
     fun `publishWithRetry succeeds on first attempt`() = runTest {
         val mock = MockNtfyClient()
+        mock.subscribe("topic")
 
         mock.publishWithRetry("topic", "message")
 
@@ -454,6 +378,7 @@ class NtfySignalingClientReliabilityTest {
     @Test
     fun `publishWithRetry retries on failure`() = runTest {
         val mock = MockNtfyClient()
+        mock.subscribe("topic")
         mock.failPublishTimes = 2  // Fail first 2 attempts
 
         mock.publishWithRetry("topic", "message", maxRetries = 3)
@@ -465,6 +390,7 @@ class NtfySignalingClientReliabilityTest {
     @Test
     fun `publishWithRetry throws after max retries`() = runTest {
         val mock = MockNtfyClient()
+        mock.subscribe("topic")
         mock.failPublishTimes = 5  // Always fail
 
         var exceptionThrown = false

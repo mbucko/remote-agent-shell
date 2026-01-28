@@ -8,7 +8,6 @@ import com.ras.proto.NtfySignalMessage
 import com.google.protobuf.ByteString
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.security.SecureRandom
@@ -45,7 +44,7 @@ sealed class PairingSignalerResult {
  * Flow:
  * 1. Try direct HTTP POST to daemon
  * 2. If timeout (default 3s) or failure: fall back to ntfy relay
- * 3. Subscribe to ntfy topic
+ * 3. Subscribe to ntfy topic (blocks until connected)
  * 4. Publish encrypted OFFER message
  * 5. Wait for encrypted ANSWER message
  * 6. Return SDP answer
@@ -58,7 +57,6 @@ class PairingSignaler(
     companion object {
         const val DEFAULT_DIRECT_TIMEOUT_MS = 3000L
         const val DEFAULT_NTFY_TIMEOUT_MS = 30000L
-        const val SUBSCRIBE_READY_TIMEOUT_MS = 5000L
         const val NONCE_SIZE = 16
 
         private val secureRandom = SecureRandom()
@@ -162,6 +160,9 @@ class PairingSignaler(
 
     /**
      * Try ntfy signaling relay.
+     *
+     * The subscribe() call blocks until WebSocket is connected, guaranteeing
+     * that any messages published after it returns will be received.
      */
     private suspend fun tryNtfySignaling(
         sessionId: String,
@@ -185,15 +186,15 @@ class PairingSignaler(
         val topic = NtfySignalingClient.computeTopic(masterSecret)
         Log.d(TAG, "Ntfy topic: $topic")
 
-        // Subscribe first, before creating the offer
-        // This ensures we're listening before we publish
-        val subscription = ntfyClient.subscribe(topic)
-        Log.d(TAG, "Created subscription")
-
         try {
             return withTimeout(timeoutMs) {
-                // Create and encrypt OFFER message while subscription connects
-                Log.d(TAG, "Creating encrypted offer message")
+                // Subscribe first - this BLOCKS until WebSocket is connected
+                // After this returns, we are guaranteed to receive any messages published
+                Log.d(TAG, "Subscribing to ntfy topic (waiting for connection)...")
+                val messageFlow = ntfyClient.subscribe(topic)
+                Log.d(TAG, "Subscribed and connected to ntfy")
+
+                // Create and encrypt OFFER message
                 val offerMsg = NtfySignalMessage.newBuilder()
                     .setType(NtfySignalMessage.MessageType.OFFER)
                     .setSessionId(sessionId)
@@ -205,41 +206,15 @@ class PairingSignaler(
                     .build()
 
                 val encryptedOffer = crypto.encryptToBase64(offerMsg.toByteArray())
-                Log.d(TAG, "Offer encrypted")
 
-                // Collect messages - this starts the WebSocket connection
-                // We use a launch to start collecting, then wait for ready before publishing
-                var publishCompleted = false
-                subscription.messages.collect { ntfyMessage ->
-                    // On first iteration (when subscription is ready), publish the offer
-                    if (!publishCompleted) {
-                        // Give WebSocket a moment to be fully ready if we got here via buffered messages
-                        if (subscription.isReady) {
-                            Log.d(TAG, "Subscription ready, publishing with retry")
-                            try {
-                                ntfyClient.publishWithRetry(topic, encryptedOffer)
-                                Log.d(TAG, "Offer published, waiting for answer")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to publish offer: ${e.message}")
-                                throw e
-                            }
-                            publishCompleted = true
-                        }
-                    }
+                // Publish offer with retry - safe because we're already subscribed
+                Log.d(TAG, "Publishing offer with retry")
+                ntfyClient.publishWithRetry(topic, encryptedOffer)
+                Log.d(TAG, "Offer published, waiting for answer")
 
+                // Wait for valid answer
+                messageFlow.collect { ntfyMessage ->
                     if (ntfyMessage.event != "message" || ntfyMessage.message.isEmpty()) {
-                        // For "open" event, trigger publish if not done yet
-                        if (ntfyMessage.event == "open" && !publishCompleted) {
-                            Log.d(TAG, "Received 'open' event, publishing with retry")
-                            try {
-                                ntfyClient.publishWithRetry(topic, encryptedOffer)
-                                Log.d(TAG, "Offer published, waiting for answer")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to publish offer: ${e.message}")
-                                throw e
-                            }
-                            publishCompleted = true
-                        }
                         return@collect
                     }
 
@@ -257,7 +232,7 @@ class PairingSignaler(
         } catch (e: AnswerReceivedException) {
             Log.d(TAG, "Received answer via ntfy")
             // Clean up
-            subscription.close()
+            ntfyClient.unsubscribe()
             crypto.zeroKey()
             validator.clearNonceCache()
 
@@ -269,7 +244,7 @@ class PairingSignaler(
         } catch (e: TimeoutCancellationException) {
             Log.w(TAG, "Ntfy signaling timed out")
             // Clean up
-            subscription.close()
+            ntfyClient.unsubscribe()
             crypto.zeroKey()
             validator.clearNonceCache()
 
@@ -277,14 +252,14 @@ class PairingSignaler(
         } catch (e: CancellationException) {
             Log.d(TAG, "Ntfy signaling cancelled")
             // Clean up and rethrow
-            subscription.close()
+            ntfyClient.unsubscribe()
             crypto.zeroKey()
             validator.clearNonceCache()
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Ntfy signaling failed: ${e.message}", e)
             // Clean up
-            subscription.close()
+            ntfyClient.unsubscribe()
             crypto.zeroKey()
             validator.clearNonceCache()
 

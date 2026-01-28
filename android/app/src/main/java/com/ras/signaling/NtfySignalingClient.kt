@@ -3,15 +3,16 @@ package com.ras.signaling
 import android.util.Log
 import com.ras.crypto.KeyDerivation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -38,16 +39,18 @@ data class NtfyMessage(
  */
 interface NtfyClientInterface {
     /**
-     * Subscribe to a topic and receive an NtfySubscription.
+     * Subscribe to a topic and receive messages as a Flow.
      *
-     * The subscription provides:
-     * - awaitReady() to wait for WebSocket connection
-     * - messages flow to receive messages
-     * - close() to clean up
+     * IMPORTANT: This function suspends until the WebSocket is connected.
+     * This guarantees that any messages published after this function returns
+     * will be received by the Flow.
      *
      * Main-safe: can be called from any dispatcher.
+     *
+     * @return Hot Flow of messages (WebSocket already connected)
+     * @throws IOException if connection fails or times out
      */
-    fun subscribe(topic: String): NtfySubscription
+    suspend fun subscribe(topic: String): Flow<NtfyMessage>
 
     /**
      * Unsubscribe from the current topic.
@@ -106,13 +109,14 @@ class PublishFailedException(
  * val client = NtfySignalingClient()
  * val topic = NtfySignalingClient.computeTopic(masterSecret)
  *
- * // Subscribe to receive messages
- * client.subscribe(topic).collect { message ->
- *     // Process message
- * }
+ * // Subscribe - blocks until connected
+ * val messages = client.subscribe(topic)
  *
- * // Publish a message (safe to call from main thread)
+ * // Now safe to publish - we're connected
  * client.publish(topic, encryptedMessage)
+ *
+ * // Collect messages
+ * messages.collect { message -> ... }
  * ```
  */
 class NtfySignalingClient(
@@ -128,6 +132,7 @@ class NtfySignalingClient(
         const val DEFAULT_MAX_RECONNECT_ATTEMPTS = 3
         private const val INITIAL_BACKOFF_MS = 1000L
         private const val MAX_BACKOFF_MS = 10000L
+        private const val CONNECTION_TIMEOUT_MS = 10_000L
 
         private fun defaultHttpClient() = OkHttpClient.Builder()
             .readTimeout(0, TimeUnit.MILLISECONDS)  // No read timeout for WebSocket
@@ -149,16 +154,15 @@ class NtfySignalingClient(
         /**
          * Build WebSocket URL for a topic.
          *
-         * Includes ?since=30s to retrieve recent messages. This is needed because
-         * the WebSocket may not connect before messages are published (cold Flow).
-         * The daemon's answer could arrive before we're subscribed, so we need to
-         * fetch recent messages to catch it.
+         * No longer needs ?since= because subscribe() now waits for connection
+         * before returning, guaranteeing messages published after subscribe()
+         * returns will be received.
          */
         fun buildWsUrl(topic: String, server: String = DEFAULT_SERVER): String {
             val wsServer = server
                 .replace("https://", "wss://")
                 .replace("http://", "ws://")
-            return "$wsServer/$topic/ws?since=30s"
+            return "$wsServer/$topic/ws"
         }
 
         /**
@@ -189,57 +193,52 @@ class NtfySignalingClient(
     }
 
     private var currentWebSocket: WebSocket? = null
-    private var currentSubscription: NtfySubscription? = null
 
     /**
-     * Subscribe to a topic and receive an NtfySubscription.
+     * Subscribe to a topic and receive messages as a Flow.
      *
-     * The subscription provides:
-     * - awaitReady() to wait for WebSocket connection
-     * - messages flow to receive messages
-     * - close() to clean up
+     * IMPORTANT: This function suspends until the WebSocket is connected.
+     * This guarantees that any messages published after this function returns
+     * will be received by the Flow.
      *
      * Features:
-     * - Automatic reconnection on failure (up to maxReconnectAttempts)
-     * - Exponential backoff between retries
-     * - Connection state logging
+     * - Blocks until WebSocket connection is established
+     * - Returns a hot Flow (WebSocket already connected)
+     * - Automatic retry with exponential backoff
+     * - Connection state logging with duration tracking
+     *
+     * @param topic The ntfy topic to subscribe to
+     * @return Hot Flow of messages (WebSocket already connected)
+     * @throws IOException if connection fails or times out
      */
-    override fun subscribe(topic: String): NtfySubscription {
-        val readyDeferred = kotlinx.coroutines.CompletableDeferred<Unit>()
+    override suspend fun subscribe(topic: String): Flow<NtfyMessage> {
+        var lastException: IOException? = null
 
-        val messagesFlow = createWebSocketFlow(topic, readyDeferred)
-            .retryWhen { cause, attempt ->
-                if (attempt < maxReconnectAttempts && cause is IOException) {
-                    val backoffMs = minOf(INITIAL_BACKOFF_MS * (1 shl attempt.toInt()), MAX_BACKOFF_MS)
+        repeat(maxReconnectAttempts) { attempt ->
+            try {
+                return connectAndSubscribe(topic)
+            } catch (e: IOException) {
+                lastException = e
+                if (attempt < maxReconnectAttempts - 1) {
+                    val backoffMs = minOf(INITIAL_BACKOFF_MS * (1 shl attempt), MAX_BACKOFF_MS)
                     Log.w(TAG, "WebSocket connection failed, retrying in ${backoffMs}ms (attempt ${attempt + 1}/$maxReconnectAttempts)")
                     delay(backoffMs)
-                    true
-                } else {
-                    Log.e(TAG, "WebSocket connection failed after $attempt attempts, giving up", cause)
-                    false
                 }
             }
+        }
 
-        val subscription = NtfySubscription(
-            messages = messagesFlow,
-            readyDeferred = readyDeferred,
-            onClose = { unsubscribe() }
-        )
-
-        currentSubscription = subscription
-        return subscription
+        Log.e(TAG, "WebSocket connection failed after $maxReconnectAttempts attempts, giving up", lastException)
+        throw lastException ?: IOException("Connection failed")
     }
 
     /**
-     * Create the underlying WebSocket flow.
-     *
-     * @param topic The topic to subscribe to
-     * @param readyDeferred Deferred to complete when WebSocket connects
+     * Connect to WebSocket and return a hot Flow.
+     * Suspends until connection is established.
      */
-    private fun createWebSocketFlow(
-        topic: String,
-        readyDeferred: kotlinx.coroutines.CompletableDeferred<Unit>
-    ): Flow<NtfyMessage> = callbackFlow {
+    private suspend fun connectAndSubscribe(topic: String): Flow<NtfyMessage> {
+        val connectedSignal = CompletableDeferred<Unit>()
+        val messageChannel = Channel<NtfyMessage>(Channel.UNLIMITED)
+
         val wsUrl = buildWsUrl(topic, server)
         val connectionStartTime = System.currentTimeMillis()
 
@@ -251,57 +250,61 @@ class NtfySignalingClient(
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.i(TAG, "WebSocket connected to topic: $topic")
-                // Mark subscription as ready - WebSocket is now connected
-                readyDeferred.complete(Unit)
+                val duration = System.currentTimeMillis() - connectionStartTime
+                Log.i(TAG, "WebSocket connected to topic: $topic (${duration}ms)")
+                connectedSignal.complete(Unit)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val message = parseNtfyMessage(text)
                 if (message != null) {
-                    // Also treat "open" event as a ready signal (in case we didn't get onOpen)
-                    if (message.event == "open" && !readyDeferred.isCompleted) {
-                        readyDeferred.complete(Unit)
-                    }
                     if (message.event == "message") {
                         Log.d(TAG, "Received message on topic: $topic")
                     }
-                    trySend(message)
+                    messageChannel.trySend(message)
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 val duration = System.currentTimeMillis() - connectionStartTime
                 Log.e(TAG, "WebSocket failed after ${duration}ms: ${t.message}", t)
-                // Mark subscription as failed if not yet ready
-                if (!readyDeferred.isCompleted) {
-                    readyDeferred.completeExceptionally(IOException("WebSocket failed: ${t.message}", t))
-                }
-                close(IOException("WebSocket failed: ${t.message}", t))
+                val exception = IOException("WebSocket failed: ${t.message}", t)
+                connectedSignal.completeExceptionally(exception)
+                messageChannel.close(exception)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 val duration = System.currentTimeMillis() - connectionStartTime
                 if (code != 1000) {
                     Log.w(TAG, "WebSocket closed unexpectedly after ${duration}ms: code=$code, reason=$reason")
-                    if (!readyDeferred.isCompleted) {
-                        readyDeferred.completeExceptionally(IOException("WebSocket closed: $reason"))
-                    }
-                    close(IOException("WebSocket closed: $reason"))
+                    messageChannel.close(IOException("WebSocket closed: $reason"))
                 } else {
                     Log.i(TAG, "WebSocket closed normally after ${duration}ms")
-                    close()
+                    messageChannel.close()
                 }
             }
         }
 
         currentWebSocket = httpClient.newWebSocket(request, listener)
 
-        awaitClose {
-            Log.d(TAG, "Closing WebSocket connection")
-            currentWebSocket?.close(1000, "Client disconnect")
+        // CRITICAL: Wait for connection before returning
+        try {
+            withTimeout(CONNECTION_TIMEOUT_MS) {
+                connectedSignal.await()
+            }
+        } catch (e: Exception) {
+            currentWebSocket?.close(1000, "Connection timeout")
             currentWebSocket = null
+            throw IOException("WebSocket connection timeout", e)
         }
+
+        // Return hot Flow - WebSocket is already connected
+        return messageChannel.receiveAsFlow()
+            .onCompletion {
+                Log.d(TAG, "Closing WebSocket connection")
+                currentWebSocket?.close(1000, "Flow completed")
+                currentWebSocket = null
+            }
     }
 
     /**
@@ -310,7 +313,6 @@ class NtfySignalingClient(
     override fun unsubscribe() {
         currentWebSocket?.close(1000, "Client unsubscribe")
         currentWebSocket = null
-        currentSubscription = null
     }
 
     /**
@@ -381,22 +383,30 @@ class NtfySignalingClient(
 }
 
 /**
- * Mock ntfy client for testing.
+ * Realistic mock ntfy client for testing.
  *
- * Allows controlled delivery of messages and tracking of published messages.
+ * Simulates real ntfy behavior:
+ * - subscribe() suspends until "connected" (simulating real WebSocket)
+ * - Messages are only delivered to CONNECTED subscribers
+ * - Messages published before subscription completes are lost (unless using message history)
+ * - Connection has simulated latency
+ *
+ * @param connectionDelayMs Simulated connection delay (0 = instant)
+ * @param simulateMessageHistory If true, delivers messages from last 30s on connect (like ?since=30s)
  */
-class MockNtfyClient : NtfyClientInterface {
-    @Volatile
-    private var _isSubscribed = false
-    private var messageChannel = Channel<NtfyMessage>(Channel.UNLIMITED)
-    private val publishedMessages = mutableListOf<String>()
-    private var currentSubscription: NtfySubscription? = null
+class MockNtfyClient(
+    private val connectionDelayMs: Long = 0L,
+    private val simulateMessageHistory: Boolean = false
+) : NtfyClientInterface {
 
-    /**
-     * Configurable delay before marking subscription as ready.
-     * Set this before calling subscribe() to test timing behavior.
-     */
-    var subscribeReadyDelayMs: Long = 0L
+    @Volatile
+    private var _isConnected = false
+
+    @Volatile
+    private var _subscribeTime: Long = 0L
+
+    private var messageChannel = Channel<NtfyMessage>(Channel.UNLIMITED)
+    private val publishedMessages = mutableListOf<TimestampedMessage>()
 
     /**
      * Number of times to fail publish before succeeding.
@@ -405,67 +415,71 @@ class MockNtfyClient : NtfyClientInterface {
     var failPublishTimes: Int = 0
     private var publishAttempts = 0
 
-    val isSubscribed: Boolean get() = _isSubscribed
+    data class TimestampedMessage(
+        val timestamp: Long,
+        val message: String
+    )
 
-    override fun subscribe(topic: String): NtfySubscription {
-        val readyDeferred = kotlinx.coroutines.CompletableDeferred<Unit>()
+    val isConnected: Boolean get() = _isConnected
 
-        // Create fresh channel for this subscription
-        messageChannel = Channel(Channel.UNLIMITED)
+    // Backwards compatibility alias
+    val isSubscribed: Boolean get() = _isConnected
 
-        val messagesFlow = callbackFlow {
-            _isSubscribed = true
-
-            // Simulate connection delay if configured
-            if (subscribeReadyDelayMs > 0) {
-                delay(subscribeReadyDelayMs)
-            }
-
-            // Mark as ready after delay
-            readyDeferred.complete(Unit)
-
-            // Send "open" event to signal WebSocket is connected (mimics real behavior)
-            send(NtfyMessage(event = "open", message = ""))
-
-            try {
-                for (message in messageChannel) {
-                    send(message)
-                }
-            } catch (e: CancellationException) {
-                // Normal cancellation
-            } catch (e: Exception) {
-                // Channel closed or other error
-            } finally {
-                _isSubscribed = false
-            }
-
-            awaitClose {
-                _isSubscribed = false
-            }
+    /**
+     * Subscribe to a topic.
+     *
+     * IMPORTANT: Like the real implementation, this suspends until "connected".
+     * This guarantees messages published after subscribe() returns will be received.
+     */
+    override suspend fun subscribe(topic: String): Flow<NtfyMessage> {
+        // Simulate connection delay (like real WebSocket handshake)
+        if (connectionDelayMs > 0) {
+            delay(connectionDelayMs)
         }
 
-        val subscription = NtfySubscription(
-            messages = messagesFlow,
-            readyDeferred = readyDeferred,
-            onClose = { unsubscribe() }
-        )
+        // Mark as connected
+        _subscribeTime = System.currentTimeMillis()
+        _isConnected = true
+        messageChannel = Channel(Channel.UNLIMITED)
 
-        currentSubscription = subscription
-        return subscription
+        // If simulating message history (?since=), deliver past messages
+        if (simulateMessageHistory) {
+            val cutoffTime = _subscribeTime - 30_000  // 30 second history
+            publishedMessages
+                .filter { it.timestamp >= cutoffTime }
+                .forEach { messageChannel.trySend(NtfyMessage(event = "message", message = it.message)) }
+        }
+
+        return messageChannel.receiveAsFlow()
+            .onCompletion { _isConnected = false }
     }
 
     override fun unsubscribe() {
-        _isSubscribed = false
+        _isConnected = false
         messageChannel.close()
-        currentSubscription = null
     }
 
+    /**
+     * Publish a message to a topic.
+     *
+     * CRITICAL: Only delivers if subscriber is ALREADY connected.
+     * This matches real ntfy behavior - messages published before
+     * WebSocket connects are "broadcast to nobody" and lost.
+     */
     override suspend fun publish(topic: String, message: String) {
         publishAttempts++
         if (publishAttempts <= failPublishTimes) {
             throw IOException("Simulated publish failure (attempt $publishAttempts)")
         }
-        publishedMessages.add(message)
+
+        val now = System.currentTimeMillis()
+        publishedMessages.add(TimestampedMessage(now, message))
+
+        // Only deliver if subscriber is ALREADY connected
+        if (_isConnected && now >= _subscribeTime) {
+            messageChannel.trySend(NtfyMessage(event = "message", message = message))
+        }
+        // If not connected, message is "broadcast to nobody" - lost!
     }
 
     override suspend fun publishWithRetry(
@@ -494,27 +508,37 @@ class MockNtfyClient : NtfyClientInterface {
     }
 
     /**
-     * Deliver a message to subscribers.
+     * Deliver a message to subscribers (simulates external message from daemon).
+     * Only delivered if currently connected.
      */
     fun deliverMessage(message: String) {
-        if (_isSubscribed) {
+        if (_isConnected) {
             messageChannel.trySend(NtfyMessage(event = "message", message = message))
         }
     }
 
     /**
      * Deliver a raw NtfyMessage to subscribers.
+     * Only delivered if currently connected.
      */
     fun deliverNtfyMessage(message: NtfyMessage) {
-        if (_isSubscribed) {
+        if (_isConnected) {
             messageChannel.trySend(message)
         }
     }
 
     /**
-     * Get all published messages.
+     * Simulate an external message arriving (e.g., from daemon).
+     * Alias for deliverMessage for clarity in tests.
      */
-    fun getPublishedMessages(): List<String> = publishedMessages.toList()
+    fun simulateIncomingMessage(message: String) {
+        deliverMessage(message)
+    }
+
+    /**
+     * Get all published messages (for test assertions).
+     */
+    fun getPublishedMessages(): List<String> = publishedMessages.map { it.message }
 
     /**
      * Get total number of publish attempts (including failures).
@@ -533,19 +557,19 @@ class MockNtfyClient : NtfyClientInterface {
      * Simulate a WebSocket disconnect.
      */
     fun simulateDisconnect() {
+        _isConnected = false
         messageChannel.close()
     }
 
     /**
-     * Reset for reuse.
+     * Reset for reuse between tests.
      */
     fun reset() {
-        _isSubscribed = false
+        _isConnected = false
+        _subscribeTime = 0L
         publishedMessages.clear()
         messageChannel = Channel(Channel.UNLIMITED)
-        subscribeReadyDelayMs = 0L
         failPublishTimes = 0
         publishAttempts = 0
-        currentSubscription = null
     }
 }
