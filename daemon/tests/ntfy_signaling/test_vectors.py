@@ -82,6 +82,73 @@ class TestEncryptionVectors:
         assert result == b""
 
 
+class TestSerializationVectors:
+    """Test protobuf serialization against pre-computed vectors."""
+
+    def test_offer_message_serialization(self, vectors):
+        """Test OFFER message serialization matches expected bytes."""
+        from ras.proto.ras.ras import NtfySignalMessage, NtfySignalMessageMessageType
+
+        v = next(x for x in vectors["serialization_vectors"] if x["id"] == "offer_message_1")
+        fields = v["fields"]
+
+        msg = NtfySignalMessage(
+            type=NtfySignalMessageMessageType.OFFER,
+            session_id=fields["session_id"],
+            sdp=fields["sdp"],
+            device_id=fields["device_id"],
+            device_name=fields["device_name"],
+            timestamp=fields["timestamp"],
+            nonce=bytes.fromhex(fields["nonce_hex"]),
+        )
+
+        serialized = bytes(msg)
+        expected = bytes.fromhex(v["expected_protobuf_hex"])
+
+        assert serialized == expected
+
+    def test_answer_message_serialization(self, vectors):
+        """Test ANSWER message serialization matches expected bytes."""
+        from ras.proto.ras.ras import NtfySignalMessage, NtfySignalMessageMessageType
+
+        v = next(x for x in vectors["serialization_vectors"] if x["id"] == "answer_message_1")
+        fields = v["fields"]
+
+        msg = NtfySignalMessage(
+            type=NtfySignalMessageMessageType.ANSWER,
+            session_id=fields["session_id"],
+            sdp=fields["sdp"],
+            device_id=fields["device_id"],
+            device_name=fields["device_name"],
+            timestamp=fields["timestamp"],
+            nonce=bytes.fromhex(fields["nonce_hex"]),
+        )
+
+        serialized = bytes(msg)
+        expected = bytes.fromhex(v["expected_protobuf_hex"])
+
+        assert serialized == expected
+
+    def test_offer_deserialization_roundtrip(self, vectors):
+        """Test OFFER can be serialized and deserialized."""
+        from ras.proto.ras.ras import NtfySignalMessage, NtfySignalMessageMessageType
+
+        v = next(x for x in vectors["serialization_vectors"] if x["id"] == "offer_message_1")
+        expected_bytes = bytes.fromhex(v["expected_protobuf_hex"])
+
+        # Deserialize
+        msg = NtfySignalMessage().parse(expected_bytes)
+
+        # Verify fields
+        assert msg.type == NtfySignalMessageMessageType.OFFER
+        assert msg.session_id == v["fields"]["session_id"]
+        assert msg.sdp == v["fields"]["sdp"]
+        assert msg.device_id == v["fields"]["device_id"]
+        assert msg.device_name == v["fields"]["device_name"]
+        assert msg.timestamp == v["fields"]["timestamp"]
+        assert msg.nonce == bytes.fromhex(v["fields"]["nonce_hex"])
+
+
 class TestCrossLanguageCompatibility:
     """Tests to verify compatibility with Android/iOS implementations."""
 

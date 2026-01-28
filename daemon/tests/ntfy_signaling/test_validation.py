@@ -323,6 +323,13 @@ class TestNtfySignalMessageValidatorOffer:
         assert not result.is_valid
         assert result.error == ValidationError.MISSING_DEVICE_NAME
 
+    def test_device_id_control_chars_rejected(self, validator):
+        """OFFER with control characters in device_id rejected."""
+        msg = create_valid_offer(device_id="device\x00id")
+        result = validator.validate(msg)
+        assert not result.is_valid
+        assert result.error == ValidationError.MISSING_DEVICE_ID
+
 
 class TestNtfySignalMessageValidatorAnswer:
     """Tests for validating ANSWER messages (phone side)."""

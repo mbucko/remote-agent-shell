@@ -1,8 +1,9 @@
 {
-  "description": "Signaling key derivation and encryption test vectors for ntfy relay",
+  "description": "Signaling key derivation, encryption, and serialization test vectors for ntfy relay",
   "algorithm": {
     "key_derivation": "HKDF-SHA256 with info='signaling'",
-    "encryption": "AES-256-GCM (12-byte IV, 16-byte tag)"
+    "encryption": "AES-256-GCM (12-byte IV, 16-byte tag)",
+    "serialization": "Protocol Buffers (betterproto)"
   },
   "key_derivation_vectors": [
     {
@@ -40,6 +41,163 @@
       "plaintext_utf8": "",
       "expected_ciphertext_base64": "ESIzRFVmd4iZqrvMQu21/ncKihS/2X8/ABTl2A==",
       "note": "Empty plaintext should encrypt to IV + 16-byte auth tag"
+    }
+  ],
+  "serialization_vectors": [
+    {
+      "id": "offer_message_1",
+      "description": "Standard OFFER message serialization",
+      "fields": {
+        "type": "OFFER",
+        "session_id": "abc123def456ghij",
+        "sdp": "v=0\r\nm=application 9\r\n",
+        "device_id": "pixel-8-abc123",
+        "device_name": "Pixel 8",
+        "timestamp": 1706400000,
+        "nonce_hex": "00112233445566778899aabbccddeeff"
+      },
+      "expected_protobuf_hex": "12106162633132336465663435366768696a1a16763d300d0a6d3d6170706c69636174696f6e20390d0a220e706978656c2d382d6162633132332a07506978656c20383080b2d6ad063a1000112233445566778899aabbccddeeff"
+    },
+    {
+      "id": "answer_message_1",
+      "description": "Standard ANSWER message serialization",
+      "fields": {
+        "type": "ANSWER",
+        "session_id": "abc123def456ghij",
+        "sdp": "v=0\r\nm=application 9\r\n",
+        "device_id": "",
+        "device_name": "",
+        "timestamp": 1706400001,
+        "nonce_hex": "ffeeddccbbaa99887766554433221100"
+      },
+      "expected_protobuf_hex": "080112106162633132336465663435366768696a1a16763d300d0a6d3d6170706c69636174696f6e20390d0a3081b2d6ad063a10ffeeddccbbaa99887766554433221100"
+    }
+  ],
+  "validation_error_cases": [
+    {
+      "id": "timestamp_too_old",
+      "description": "Timestamp more than 30 seconds in past",
+      "timestamp_offset_seconds": -60,
+      "expected_error": "INVALID_TIMESTAMP"
+    },
+    {
+      "id": "timestamp_too_new",
+      "description": "Timestamp more than 30 seconds in future",
+      "timestamp_offset_seconds": 60,
+      "expected_error": "INVALID_TIMESTAMP"
+    },
+    {
+      "id": "nonce_replay",
+      "description": "Same nonce used twice",
+      "expected_error": "NONCE_REPLAY"
+    },
+    {
+      "id": "nonce_wrong_length_short",
+      "description": "Nonce is 15 bytes (too short)",
+      "nonce_hex": "000102030405060708090a0b0c0d0e",
+      "expected_error": "INVALID_NONCE"
+    },
+    {
+      "id": "nonce_wrong_length_long",
+      "description": "Nonce is 17 bytes (too long)",
+      "nonce_hex": "000102030405060708090a0b0c0d0e0f10",
+      "expected_error": "INVALID_NONCE"
+    },
+    {
+      "id": "empty_sdp",
+      "description": "SDP is empty string",
+      "sdp": "",
+      "expected_error": "INVALID_SDP"
+    },
+    {
+      "id": "sdp_missing_version",
+      "description": "SDP doesn't start with v=0",
+      "sdp": "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+      "expected_error": "INVALID_SDP"
+    },
+    {
+      "id": "sdp_missing_media",
+      "description": "SDP has version but no m= line",
+      "sdp": "v=0\r\no=- 123 2 IN IP4 127.0.0.1\r\n",
+      "expected_error": "INVALID_SDP"
+    },
+    {
+      "id": "wrong_message_type_daemon",
+      "description": "Daemon receives ANSWER when expecting OFFER",
+      "receiver": "daemon",
+      "message_type": "ANSWER",
+      "expected_error": "WRONG_MESSAGE_TYPE"
+    },
+    {
+      "id": "wrong_message_type_phone",
+      "description": "Phone receives OFFER when expecting ANSWER",
+      "receiver": "phone",
+      "message_type": "OFFER",
+      "expected_error": "WRONG_MESSAGE_TYPE"
+    },
+    {
+      "id": "session_id_mismatch",
+      "description": "Session ID doesn't match pending session",
+      "pending_session_id": "correct-session",
+      "message_session_id": "wrong-session",
+      "expected_error": "INVALID_SESSION"
+    },
+    {
+      "id": "session_id_too_long",
+      "description": "Session ID exceeds 64 characters",
+      "session_id_length": 65,
+      "expected_error": "INVALID_SESSION_ID_FORMAT"
+    },
+    {
+      "id": "session_id_invalid_chars",
+      "description": "Session ID contains invalid characters",
+      "session_id": "test!@#$%",
+      "expected_error": "INVALID_SESSION_ID_FORMAT"
+    },
+    {
+      "id": "offer_missing_device_id",
+      "description": "OFFER without device_id",
+      "device_id": "",
+      "expected_error": "MISSING_DEVICE_ID"
+    },
+    {
+      "id": "offer_missing_device_name",
+      "description": "OFFER without device_name",
+      "device_name": "",
+      "expected_error": "MISSING_DEVICE_NAME"
+    },
+    {
+      "id": "device_id_control_chars",
+      "description": "device_id contains control characters",
+      "device_id": "device\u0000id",
+      "expected_error": "MISSING_DEVICE_ID"
+    }
+  ],
+  "device_name_sanitization_vectors": [
+    {
+      "id": "normal_name",
+      "input": "My Phone",
+      "expected": "My Phone"
+    },
+    {
+      "id": "whitespace_trim",
+      "input": "  My Phone  ",
+      "expected": "My Phone"
+    },
+    {
+      "id": "control_chars",
+      "input": "Phone\u0000\u0001\u0002Test",
+      "expected": "Phone Test"
+    },
+    {
+      "id": "unicode_preserved",
+      "input": "📱 Téléphone 日本語",
+      "expected": "📱 Téléphone 日本語"
+    },
+    {
+      "id": "truncation",
+      "input_length": 100,
+      "expected_length": 64
     }
   ]
 }

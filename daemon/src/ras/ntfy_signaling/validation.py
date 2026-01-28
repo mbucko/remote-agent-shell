@@ -352,6 +352,14 @@ class NtfySignalMessageValidator:
                 error_detail=f"device_id exceeds {MAX_DEVICE_ID_LENGTH} chars",
             )
 
+        # Check for control characters in device_id
+        if any(ord(c) < 0x20 or ord(c) == 0x7F for c in msg.device_id):
+            return ValidationResult(
+                is_valid=False,
+                error=ValidationError.MISSING_DEVICE_ID,
+                error_detail="device_id contains control characters",
+            )
+
         if not msg.device_name:
             return ValidationResult(
                 is_valid=False,
