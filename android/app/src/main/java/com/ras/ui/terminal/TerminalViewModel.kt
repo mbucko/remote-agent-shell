@@ -3,65 +3,294 @@ package com.ras.ui.terminal
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
+import com.ras.data.terminal.KeyMapper
+import com.ras.data.terminal.QuickButton
+import com.ras.data.terminal.TerminalEvent
+import com.ras.data.terminal.TerminalRepository
+import com.ras.data.terminal.TerminalScreenState
+import com.ras.data.terminal.TerminalState
+import com.ras.data.terminal.TerminalUiEvent
+import com.ras.proto.KeyType
+import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
 import com.ras.util.ClipboardHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * ViewModel for the Terminal screen.
+ *
+ * Manages:
+ * - Terminal attachment lifecycle
+ * - Input handling (text, special keys, raw mode)
+ * - Quick button configuration
+ * - UI state
+ */
 @HiltViewModel
 class TerminalViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    // Dependencies will be injected in Phase 10c
+    private val repository: TerminalRepository,
+    private val buttonSettings: QuickButtonSettings
 ) : ViewModel() {
 
     private val sessionId: String = savedStateHandle.get<String>(NavArgs.SESSION_ID)
         ?: throw IllegalArgumentException("sessionId is required")
 
+    // Terminal state from repository
+    val terminalState: StateFlow<TerminalState> = repository.state
+
+    // Terminal output for rendering
+    val terminalOutput: SharedFlow<ByteArray> = repository.output
+
+    // Connection state
+    val isConnected: StateFlow<Boolean> = repository.isConnected
+
+    // Screen state (derived from terminal state)
+    private val _screenState = MutableStateFlow<TerminalScreenState>(TerminalScreenState.Attaching)
+    val screenState: StateFlow<TerminalScreenState> = _screenState.asStateFlow()
+
+    // Session name for display
     private val _sessionName = MutableStateFlow("Session")
     val sessionName: StateFlow<String> = _sessionName.asStateFlow()
 
-    private val _terminalOutput = MutableStateFlow("")
-    val terminalOutput: StateFlow<String> = _terminalOutput.asStateFlow()
+    // Quick buttons
+    private val _quickButtons = MutableStateFlow(buttonSettings.getButtons())
+    val quickButtons: StateFlow<List<QuickButton>> = _quickButtons.asStateFlow()
 
-    private val _isRawMode = MutableStateFlow(false)
-    val isRawMode: StateFlow<Boolean> = _isRawMode.asStateFlow()
-
+    // Input text (for line-buffered mode)
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
+    // Paste truncation warning
     private val _pasteTruncated = MutableStateFlow(false)
     val pasteTruncated: StateFlow<Boolean> = _pasteTruncated.asStateFlow()
 
+    // Button editor visibility
+    private val _showButtonEditor = MutableStateFlow(false)
+    val showButtonEditor: StateFlow<Boolean> = _showButtonEditor.asStateFlow()
+
+    // One-time UI events
+    private val _uiEvents = MutableSharedFlow<TerminalUiEvent>(extraBufferCapacity = 64)
+    val uiEvents: SharedFlow<TerminalUiEvent> = _uiEvents.asSharedFlow()
+
     init {
-        attachToSession()
+        observeTerminalState()
+        observeTerminalEvents()
+        attach()
     }
 
-    private fun attachToSession() {
+    private fun observeTerminalState() {
+        repository.state
+            .onEach { state ->
+                updateScreenState(state)
+                // Update session name when attached
+                if (state.sessionId != null) {
+                    _sessionName.value = state.sessionId
+                }
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private fun updateScreenState(state: TerminalState) {
+        _screenState.value = when {
+            state.isAttaching -> TerminalScreenState.Attaching
+
+            state.error != null -> TerminalScreenState.Error(
+                code = state.error.code,
+                message = state.error.message
+            )
+
+            state.isAttached -> TerminalScreenState.Connected(
+                sessionId = state.sessionId ?: "",
+                cols = state.cols,
+                rows = state.rows,
+                isRawMode = state.isRawMode
+            )
+
+            else -> TerminalScreenState.Disconnected(
+                reason = "Not connected",
+                canReconnect = true
+            )
+        }
+    }
+
+    private fun observeTerminalEvents() {
+        repository.events
+            .onEach { event -> handleTerminalEvent(event) }
+            .launchIn(viewModelScope)
+    }
+
+    private fun handleTerminalEvent(event: TerminalEvent) {
+        when (event) {
+            is TerminalEvent.Error -> {
+                viewModelScope.launch {
+                    _uiEvents.emit(TerminalUiEvent.ShowError(event.message))
+                }
+            }
+            is TerminalEvent.OutputSkipped -> {
+                viewModelScope.launch {
+                    _uiEvents.emit(TerminalUiEvent.ShowOutputSkipped(event.bytesSkipped))
+                }
+            }
+            is TerminalEvent.Detached -> {
+                if (event.reason != "user_request") {
+                    viewModelScope.launch {
+                        _uiEvents.emit(TerminalUiEvent.ShowError("Disconnected: ${event.reason}"))
+                    }
+                }
+            }
+            else -> { /* Handled via state */ }
+        }
+    }
+
+    // ==========================================================================
+    // Lifecycle
+    // ==========================================================================
+
+    private fun attach() {
         viewModelScope.launch {
-            // TODO: Attach to session via repository in Phase 10c
-            _sessionName.value = "my-project"
+            try {
+                repository.attach(sessionId)
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to attach: ${e.message}"))
+            }
         }
     }
 
     /**
-     * Send raw bytes to the terminal.
-     * TODO: Implement in Phase 10c
+     * Called when screen resumes - reattach if needed.
      */
-    private fun sendBytes(data: ByteArray) {
-        // Will be implemented in Phase 10c
+    fun onResume() {
+        val state = terminalState.value
+        if (state.sessionId != null && !state.isAttached && !state.isAttaching) {
+            viewModelScope.launch {
+                try {
+                    repository.attach(sessionId, state.lastSequence)
+                } catch (e: Exception) {
+                    _uiEvents.emit(TerminalUiEvent.ShowError("Failed to reconnect: ${e.message}"))
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        viewModelScope.launch {
+            repository.detach()
+        }
+    }
+
+    // ==========================================================================
+    // Input Actions
+    // ==========================================================================
+
+    /**
+     * Update the input text field.
+     */
+    fun onInputTextChanged(text: String) {
+        _inputText.value = text
+    }
+
+    /**
+     * Send the current input text and clear the field.
+     */
+    fun onSendClicked() {
+        val text = _inputText.value
+        if (text.isEmpty()) return
+
+        viewModelScope.launch {
+            try {
+                repository.sendLine(text)
+                _inputText.value = ""
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
+            }
+        }
     }
 
     /**
      * Send input to the terminal.
-     * TODO: Implement in Phase 10c
      */
     fun sendInput(input: String) {
-        // Will be implemented in Phase 10c
+        if (input.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                repository.sendInput(input)
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
+            }
+        }
+    }
+
+    /**
+     * Handle quick button click.
+     */
+    fun onQuickButtonClicked(button: QuickButton) {
+        viewModelScope.launch {
+            try {
+                when {
+                    button.keyType != null -> repository.sendSpecialKey(button.keyType)
+                    button.character != null -> repository.sendInput(button.character)
+                }
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
+            }
+        }
+    }
+
+    /**
+     * Toggle raw mode.
+     */
+    fun onRawModeToggle() {
+        repository.toggleRawMode()
+    }
+
+    /**
+     * Handle raw key press (in raw mode).
+     *
+     * @return true if the key was handled
+     */
+    fun onRawKeyPress(keyCode: Int, isCtrlPressed: Boolean): Boolean {
+        if (!terminalState.value.isRawMode) return false
+
+        val bytes = KeyMapper.keyEventToBytes(keyCode, isCtrlPressed)
+        if (bytes != null) {
+            viewModelScope.launch {
+                try {
+                    repository.sendInput(bytes)
+                } catch (e: Exception) {
+                    _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send key: ${e.message}"))
+                }
+            }
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Handle raw character input (in raw mode).
+     */
+    fun onRawCharacterInput(char: Char) {
+        if (!terminalState.value.isRawMode) return
+
+        viewModelScope.launch {
+            try {
+                repository.sendInput(char.toString())
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
+            }
+        }
     }
 
     /**
@@ -85,13 +314,17 @@ class TerminalViewModel @Inject constructor(
                 _pasteTruncated.value = true
             }
 
-            if (_isRawMode.value) {
+            val state = terminalState.value
+            if (state.isRawMode) {
                 // Raw mode: encode, validate, and send directly
                 val bytes = ClipboardHelper.prepareForTerminal(text) ?: return@launch
-                sendBytes(bytes)
+                try {
+                    repository.sendInput(bytes)
+                } catch (e: Exception) {
+                    _uiEvents.emit(TerminalUiEvent.ShowError("Failed to paste: ${e.message}"))
+                }
             } else {
                 // Normal mode: append to input field
-                // For input field, we just append the text (truncation only matters on send)
                 _inputText.update { it + text }
             }
         }
@@ -105,40 +338,79 @@ class TerminalViewModel @Inject constructor(
     }
 
     /**
-     * Update input text field.
-     */
-    fun onInputTextChanged(text: String) {
-        _inputText.value = text
-    }
-
-    /**
-     * Toggle between raw mode and normal mode.
-     */
-    fun onRawModeToggle() {
-        _isRawMode.update { !it }
-    }
-
-    /**
-     * Send approval response.
-     * TODO: Implement in Phase 10c
+     * Send approval response (Y).
      */
     fun approve() {
-        sendInput("y")
+        viewModelScope.launch {
+            try {
+                repository.sendInput("y")
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
+            }
+        }
     }
 
     /**
-     * Send rejection response.
-     * TODO: Implement in Phase 10c
+     * Send rejection response (N).
      */
     fun reject() {
-        sendInput("n")
+        viewModelScope.launch {
+            try {
+                repository.sendInput("n")
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
+            }
+        }
     }
 
     /**
-     * Send cancel (Escape).
-     * TODO: Implement in Phase 10c
+     * Send cancel (Ctrl+C).
      */
     fun cancel() {
-        // Send Escape key
+        viewModelScope.launch {
+            try {
+                repository.sendSpecialKey(KeyType.KEY_CTRL_C)
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
+            }
+        }
+    }
+
+    // ==========================================================================
+    // Quick Button Editor
+    // ==========================================================================
+
+    fun openButtonEditor() {
+        _showButtonEditor.value = true
+    }
+
+    fun closeButtonEditor() {
+        _showButtonEditor.value = false
+    }
+
+    fun updateQuickButtons(buttons: List<QuickButton>) {
+        buttonSettings.saveButtons(buttons)
+        _quickButtons.value = buttons
+        _showButtonEditor.value = false
+    }
+
+    fun resetQuickButtonsToDefault() {
+        updateQuickButtons(DEFAULT_QUICK_BUTTONS)
+    }
+
+    // ==========================================================================
+    // Error Handling
+    // ==========================================================================
+
+    fun clearError() {
+        repository.clearError()
+    }
+
+    fun dismissOutputSkipped() {
+        repository.clearOutputSkipped()
+    }
+
+    fun reconnect() {
+        attach()
     }
 }

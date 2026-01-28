@@ -45,7 +45,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -147,11 +146,7 @@ fun SessionsScreen(
                 }
 
                 is SessionsScreenState.Loaded -> {
-                    PullToRefreshBox(
-                        isRefreshing = state.isRefreshing,
-                        onRefresh = { viewModel.refreshSessions() },
-                        modifier = Modifier.fillMaxSize()
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                         if (state.sessions.isEmpty()) {
                             EmptySessionsContent(
                                 modifier = Modifier.align(Alignment.Center)
@@ -162,6 +157,14 @@ fun SessionsScreen(
                                 onSessionClick = onSessionClick,
                                 onKillClick = { viewModel.showKillDialog(it) },
                                 onRenameClick = { viewModel.showRenameDialog(it) }
+                            )
+                        }
+                        // Show loading indicator when refreshing
+                        if (state.isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(16.dp)
                             )
                         }
                     }

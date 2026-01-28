@@ -80,6 +80,12 @@ class SessionsViewModel @Inject constructor(
                     is SessionEvent.SessionActivity -> {
                         // Activity updates are reflected in the session list automatically
                     }
+                    is SessionEvent.AgentsLoaded -> {
+                        // Agents loaded - used by create session screen
+                    }
+                    is SessionEvent.DirectoriesLoaded -> {
+                        // Directories loaded - used by create session screen
+                    }
                 }
             }
         }
