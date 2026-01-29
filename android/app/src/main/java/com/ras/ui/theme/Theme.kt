@@ -14,11 +14,11 @@ private val DarkColorScheme = darkColorScheme(
     primary = Primary,
     onPrimary = OnPrimary,
     primaryContainer = PrimaryVariant,
-    onPrimaryContainer = OnPrimary,
+    onPrimaryContainer = OnSurface,
     secondary = Secondary,
     onSecondary = OnSecondary,
-    secondaryContainer = SecondaryVariant,
-    onSecondaryContainer = OnSecondary,
+    secondaryContainer = SurfaceVariant,
+    onSecondaryContainer = OnSurface,
     tertiary = Secondary,
     onTertiary = OnSecondary,
     background = Background,
@@ -26,7 +26,7 @@ private val DarkColorScheme = darkColorScheme(
     surface = Surface,
     onSurface = OnSurface,
     surfaceVariant = SurfaceVariant,
-    onSurfaceVariant = OnSurface,
+    onSurfaceVariant = OnSurfaceVariant,
     error = Error,
     onError = OnError
 )
@@ -53,7 +53,7 @@ fun RASTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = AppTypography,
         content = content
     )
 }

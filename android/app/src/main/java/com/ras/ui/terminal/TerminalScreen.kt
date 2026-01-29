@@ -1,6 +1,7 @@
 package com.ras.ui.terminal
 
 import android.content.Context
+import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -34,16 +38,23 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -130,10 +141,15 @@ fun TerminalScreen(
                             else stringResource(R.string.terminal_raw_mode)
                         )
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -202,14 +218,19 @@ fun TerminalScreen(
             val isRawMode = (screenState as? TerminalScreenState.Connected)?.isRawMode == true
 
             if (isRawMode) {
-                // Raw mode indicator
-                RawModeIndicator(modifier = Modifier.fillMaxWidth())
+                // Raw mode input with keyboard support
+                RawModeInput(
+                    onKeyPress = { keyCode, isCtrl -> viewModel.onRawKeyPress(keyCode, isCtrl) },
+                    onCharacter = { viewModel.onRawCharacterInput(it) },
+                    modifier = Modifier.fillMaxWidth()
+                )
             } else {
                 // Line-buffered input
                 InputBar(
                     text = inputText,
                     onTextChange = { viewModel.onInputTextChanged(it) },
                     onSend = { viewModel.onSendClicked() },
+                    onEnter = { viewModel.onEnterPressed() },
                     onPaste = {
                         ClipboardHelper.extractText(context)?.let { text ->
                             viewModel.onPaste(text)
@@ -333,17 +354,68 @@ private fun OutputSkippedBanner(
     }
 }
 
+/**
+ * Raw mode input that shows a keyboard and sends keypresses directly.
+ */
 @Composable
-private fun RawModeIndicator(modifier: Modifier = Modifier) {
+private fun RawModeInput(
+    onKeyPress: (keyCode: Int, isCtrlPressed: Boolean) -> Boolean,
+    onCharacter: (Char) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val inputText = remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.surfaceVariant
     ) {
-        Text(
-            text = stringResource(R.string.terminal_raw_mode_active),
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(16.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.terminal_raw_mode_active),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+
+            OutlinedTextField(
+                value = inputText.value,
+                onValueChange = { newValue ->
+                    // Send each new character
+                    if (newValue.length > inputText.value.length) {
+                        val newChar = newValue.last()
+                        onCharacter(newChar)
+                    }
+                    // Clear input after sending to keep it fresh
+                    inputText.value = ""
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester)
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                            val keyCode = keyEvent.nativeKeyEvent.keyCode
+                            val isCtrl = keyEvent.nativeKeyEvent.isCtrlPressed
+                            onKeyPress(keyCode, isCtrl)
+                        } else {
+                            false
+                        }
+                    },
+                placeholder = { Text("Type here...") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
+            )
+        }
     }
 }
 

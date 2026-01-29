@@ -18,6 +18,7 @@
     <string name="terminal_cancel">Cancel</string>
     <string name="terminal_input_hint">Enter command...</string>
     <string name="terminal_send">Send</string>
+    <string name="terminal_enter">Enter</string>
     <string name="terminal_paste">Paste</string>
     <string name="terminal_add_button">Add button</string>
     <string name="terminal_raw_mode">Raw Mode</string>

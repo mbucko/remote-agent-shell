@@ -234,6 +234,19 @@ class TerminalViewModel @Inject constructor(
     }
 
     /**
+     * Send just Enter key (newline) to the terminal.
+     */
+    fun onEnterPressed() {
+        viewModelScope.launch {
+            try {
+                repository.sendInput("\r")
+            } catch (e: Exception) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send enter: ${e.message}"))
+            }
+        }
+    }
+
+    /**
      * Send input to the terminal.
      */
     fun sendInput(input: String) {
