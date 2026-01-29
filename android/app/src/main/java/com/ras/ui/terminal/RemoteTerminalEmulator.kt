@@ -37,8 +37,8 @@ class RemoteTerminalEmulator(
             // back via WebRTC. Currently unused as we handle input separately.
         }
 
-        override fun titleChanged(oldTitle: String, newTitle: String) {
-            onTitleChanged?.invoke(newTitle)
+        override fun titleChanged(oldTitle: String?, newTitle: String?) {
+            newTitle?.let { onTitleChanged?.invoke(it) }
         }
 
         override fun onCopyTextToClipboard(text: String) {

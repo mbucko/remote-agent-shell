@@ -214,6 +214,14 @@ private fun getTerminalColor(colorIndex: Int, isBackground: Boolean): Int {
         colorIndex == TextStyle.COLOR_INDEX_BACKGROUND -> TerminalColors.backgroundInt
         colorIndex == TextStyle.COLOR_INDEX_CURSOR -> TerminalColors.cursorInt
 
+        // Negative values are true colors (RGB encoded)
+        colorIndex < 0 -> {
+            // True color: extract RGB from the encoded value
+            // Termux encodes true colors as negative values
+            val rgb = colorIndex and 0x00FFFFFF
+            rgb or 0xFF000000.toInt()
+        }
+
         // Standard 16 colors (0-15)
         colorIndex < 16 -> STANDARD_COLORS[colorIndex]
 
@@ -233,7 +241,7 @@ private fun getTerminalColor(colorIndex: Int, isBackground: Boolean): Int {
         }
 
         // True color (encoded in upper bits)
-        else -> colorIndex
+        else -> colorIndex or 0xFF000000.toInt()
     }
 }
 
