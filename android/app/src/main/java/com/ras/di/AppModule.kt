@@ -27,6 +27,10 @@ annotation class IoDispatcher
 @Retention(AnnotationRetention.BINARY)
 annotation class DefaultDispatcher
 
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class AttachTimeoutMs
+
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 @Module
@@ -56,4 +60,8 @@ object AppModule {
     fun provideConnectionConfig(): ConnectionConfig {
         return ConnectionConfig()
     }
+
+    @Provides
+    @AttachTimeoutMs
+    fun provideAttachTimeoutMs(): Long = 10_000L  // 10 seconds for production
 }

@@ -2,6 +2,7 @@ package com.ras.data.terminal
 
 import android.util.Log
 import com.ras.data.connection.ConnectionManager
+import com.ras.di.AttachTimeoutMs
 import com.ras.di.IoDispatcher
 import com.ras.notifications.NotificationHandler
 import com.ras.proto.AttachTerminal
@@ -16,6 +17,7 @@ import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import com.google.protobuf.ByteString
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -48,11 +50,12 @@ import javax.inject.Singleton
 class TerminalRepository @Inject constructor(
     private val connectionManager: ConnectionManager,
     private val notificationHandler: NotificationHandler,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+    @AttachTimeoutMs private val attachTimeoutMs: Long
 ) {
     companion object {
         private const val TAG = "TerminalRepository"
-        private const val ATTACH_TIMEOUT_MS = 10_000L // 10 seconds
+        const val DEFAULT_ATTACH_TIMEOUT_MS = 10_000L // 10 seconds
     }
 
     // Exception handler to prevent silent failures in coroutines
@@ -335,7 +338,7 @@ class TerminalRepository @Inject constructor(
 
                 // Await response with timeout
                 // withTimeout is the proper coroutine-based timeout mechanism
-                withTimeout(ATTACH_TIMEOUT_MS) {
+                withTimeout(attachTimeoutMs) {
                     deferred.await()
                 }
                 Log.d(TAG, "Attach completed successfully for session: $sessionId")
@@ -508,5 +511,13 @@ class TerminalRepository @Inject constructor(
      */
     fun reset() {
         _state.update { TerminalState() }
+    }
+
+    /**
+     * Close the repository and cancel all background work.
+     * Call this in tests to properly clean up.
+     */
+    fun close() {
+        scope.cancel()
     }
 }
