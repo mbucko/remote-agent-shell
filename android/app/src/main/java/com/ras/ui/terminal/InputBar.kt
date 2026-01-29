@@ -50,18 +50,19 @@ fun InputBar(
 ) {
     Surface(
         modifier = modifier,
-        tonalElevation = 4.dp
+        tonalElevation = 2.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
+                .padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Paste button
+            // Paste button (smaller)
             IconButton(
                 onClick = onPaste,
-                enabled = enabled
+                enabled = enabled,
+                modifier = Modifier.height(36.dp).width(36.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.ContentPaste,
@@ -69,11 +70,11 @@ fun InputBar(
                 )
             }
 
-            // Text field
+            // Text field (compact)
             OutlinedTextField(
                 value = text,
                 onValueChange = onTextChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).height(44.dp),
                 placeholder = { Text(stringResource(R.string.terminal_input_hint)) },
                 singleLine = true,
                 enabled = enabled,
@@ -85,15 +86,13 @@ fun InputBar(
                 )
             )
 
-            Spacer(modifier = Modifier.width(4.dp))
-
-            // Enter button (sends newline to host)
+            // Enter button (compact)
             Button(
                 onClick = onEnter,
                 enabled = enabled,
                 shape = RoundedCornerShape(4.dp),
-                contentPadding = ButtonDefaults.ContentPadding,
-                modifier = Modifier.height(40.dp)
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                modifier = Modifier.height(36.dp)
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardReturn,
@@ -101,12 +100,11 @@ fun InputBar(
                 )
             }
 
-            Spacer(modifier = Modifier.width(4.dp))
-
-            // Send button (sends text + newline)
+            // Send button (smaller)
             IconButton(
                 onClick = onSend,
-                enabled = enabled && text.isNotEmpty()
+                enabled = enabled && text.isNotEmpty(),
+                modifier = Modifier.height(36.dp).width(36.dp)
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Send,

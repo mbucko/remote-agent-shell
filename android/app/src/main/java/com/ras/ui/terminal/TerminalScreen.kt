@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
@@ -41,8 +42,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -66,6 +70,7 @@ import com.ras.ui.theme.StatusError
 import com.ras.ui.theme.TerminalBackground
 import com.ras.util.ClipboardHelper
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,6 +89,10 @@ fun TerminalScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+
+    // Font size for terminal (adjustable via pinch zoom)
+    var fontSize by remember { mutableFloatStateOf(14f) }
 
     // Resume attachment when screen appears
     LaunchedEffect(Unit) {
@@ -152,6 +161,7 @@ fun TerminalScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .imePadding()
         ) {
             // Terminal output area
             Box(
@@ -170,7 +180,12 @@ fun TerminalScreen(
                     is TerminalScreenState.Connected -> {
                         TerminalRenderer(
                             emulator = viewModel.terminalEmulator,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            fontSize = fontSize,
+                            onFontSizeChanged = { newSize -> fontSize = newSize },
+                            onSizeChanged = { cols, rows ->
+                                viewModel.onTerminalSizeChanged(cols, rows)
+                            }
                         )
                     }
 
@@ -206,7 +221,11 @@ fun TerminalScreen(
             QuickButtonBar(
                 buttons = quickButtons,
                 onButtonClick = { viewModel.onQuickButtonClicked(it) },
-                onAddClick = { viewModel.openButtonEditor() },
+                onAddClick = {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Button editor coming soon. Configure in Settings.")
+                    }
+                },
                 modifier = Modifier.fillMaxWidth()
             )
 

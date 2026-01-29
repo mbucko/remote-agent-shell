@@ -4,8 +4,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -45,14 +45,14 @@ fun QuickButtonBar(
 ) {
     Surface(
         modifier = modifier,
-        tonalElevation = 2.dp
+        tonalElevation = 1.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             buttons.forEach { button ->
@@ -62,10 +62,11 @@ fun QuickButtonBar(
                 )
             }
 
-            Spacer(modifier = Modifier.width(4.dp))
-
-            // Add button
-            IconButton(onClick = onAddClick) {
+            // Add button (compact)
+            IconButton(
+                onClick = onAddClick,
+                modifier = Modifier.height(32.dp).width(32.dp)
+            ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = stringResource(R.string.terminal_add_button)
@@ -85,7 +86,7 @@ private fun QuickActionButton(
         onClick = onClick,
         modifier = modifier,
         shape = RoundedCornerShape(4.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -93,7 +94,7 @@ private fun QuickActionButton(
     ) {
         Text(
             text = button.label,
-            style = MaterialTheme.typography.labelLarge
+            style = MaterialTheme.typography.labelMedium
         )
     }
 }

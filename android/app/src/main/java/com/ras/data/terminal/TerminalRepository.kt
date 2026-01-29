@@ -13,6 +13,7 @@ import com.ras.proto.TerminalAttached
 import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalInput
 import com.ras.proto.TerminalNotification
+import com.ras.proto.TerminalResize
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import com.google.protobuf.ByteString
 import kotlinx.coroutines.CompletableDeferred
@@ -464,6 +465,34 @@ class TerminalRepository @Inject constructor(
      */
     suspend fun sendLine(line: String) {
         sendInput("$line\r")
+    }
+
+    /**
+     * Resize the terminal.
+     *
+     * @param cols Number of columns
+     * @param rows Number of rows
+     * @throws IllegalStateException if not attached
+     */
+    suspend fun resize(cols: Int, rows: Int) {
+        val sessionId = requireAttached()
+
+        val command = TerminalCommand.newBuilder()
+            .setInput(
+                TerminalInput.newBuilder()
+                    .setSessionId(sessionId)
+                    .setResize(
+                        TerminalResize.newBuilder()
+                            .setCols(cols)
+                            .setRows(rows)
+                            .build()
+                    )
+                    .build()
+            )
+            .build()
+
+        connectionManager.sendTerminalCommand(command)
+        Log.d(TAG, "Sent resize request: ${cols}x${rows}")
     }
 
     private fun requireAttached(): String {

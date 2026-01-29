@@ -3,6 +3,7 @@ package com.ras.ui.terminal
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ras.data.sessions.SessionRepository
 import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
 import com.ras.data.terminal.KeyMapper
 import com.ras.data.terminal.QuickButton
@@ -44,6 +45,7 @@ import javax.inject.Inject
 class TerminalViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: TerminalRepository,
+    private val sessionRepository: SessionRepository,
     private val buttonSettings: QuickButtonSettings
 ) : ViewModel() {
 
@@ -97,10 +99,29 @@ class TerminalViewModel @Inject constructor(
     val uiEvents: SharedFlow<TerminalUiEvent> = _uiEvents.asSharedFlow()
 
     init {
+        loadSessionName()
         observeTerminalState()
         observeTerminalEvents()
         observeTerminalOutput()
         attach()
+    }
+
+    private fun loadSessionName() {
+        // Look up session info to get display name
+        val session = sessionRepository.sessions.value.find { it.id == sessionId }
+        if (session != null) {
+            _sessionName.value = session.displayText
+        } else {
+            // Fallback to session ID, but observe for updates
+            _sessionName.value = sessionId
+            sessionRepository.sessions
+                .onEach { sessions ->
+                    sessions.find { it.id == sessionId }?.let {
+                        _sessionName.value = it.displayText
+                    }
+                }
+                .launchIn(viewModelScope)
+        }
     }
 
     private fun observeTerminalOutput() {
@@ -117,10 +138,6 @@ class TerminalViewModel @Inject constructor(
         repository.state
             .onEach { state ->
                 updateScreenState(state)
-                // Update session name when attached
-                if (state.sessionId != null) {
-                    _sessionName.value = state.sessionId
-                }
             }
             .launchIn(viewModelScope)
     }
@@ -301,6 +318,38 @@ class TerminalViewModel @Inject constructor(
      */
     fun onRawModeToggle() {
         repository.toggleRawMode()
+    }
+
+    // Current terminal dimensions
+    private var currentCols = 80
+    private var currentRows = 24
+
+    /**
+     * Resize the terminal to match phone screen dimensions.
+     *
+     * @param cols Number of columns
+     * @param rows Number of rows
+     */
+    fun onTerminalSizeChanged(cols: Int, rows: Int) {
+        if (cols == currentCols && rows == currentRows) return
+        if (cols < 10 || rows < 5) return // Ignore invalid sizes
+
+        currentCols = cols
+        currentRows = rows
+
+        // Resize local emulator
+        terminalEmulator.resize(cols, rows)
+
+        // Send resize to daemon (only if attached)
+        if (terminalState.value.isAttached) {
+            viewModelScope.launch {
+                try {
+                    repository.resize(cols, rows)
+                } catch (e: Exception) {
+                    android.util.Log.w("TerminalViewModel", "Failed to resize: ${e.message}")
+                }
+            }
+        }
     }
 
     /**

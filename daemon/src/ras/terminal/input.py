@@ -34,6 +34,18 @@ class TmuxExecutor(Protocol):
         """
         ...
 
+    async def resize_session(
+        self, session_id: str, rows: int, cols: int
+    ) -> None:
+        """Resize a tmux session window.
+
+        Args:
+            session_id: The tmux session name.
+            rows: Number of rows.
+            cols: Number of columns.
+        """
+        ...
+
 
 class InputHandler:
     """Handles terminal input from phone.
@@ -84,8 +96,7 @@ class InputHandler:
         elif field_name == "special":
             return await self._handle_special(tmux_name, input_msg.special)
         elif field_name == "resize":
-            # Resize not implemented for fixed 80x24
-            return None
+            return await self._handle_resize(tmux_name, input_msg.resize)
 
         return None
 
@@ -134,6 +145,36 @@ class InputHandler:
             return None
         except Exception as e:
             logger.error(f"Failed to send special key: {e}")
+            return "PIPE_ERROR"
+
+    async def _handle_resize(
+        self, tmux_name: str, resize: "TerminalResize"
+    ) -> str | None:
+        """Handle terminal resize request.
+
+        Args:
+            tmux_name: The tmux session name.
+            resize: The resize message with cols and rows.
+
+        Returns:
+            Error code if failed, None on success.
+        """
+        from ras.proto.ras import TerminalResize
+
+        cols = resize.cols
+        rows = resize.rows
+
+        # Validate dimensions
+        if cols < 10 or cols > 500 or rows < 5 or rows > 200:
+            logger.warning(f"Invalid resize dimensions: {cols}x{rows}")
+            return None  # Ignore invalid dimensions
+
+        try:
+            await self._tmux.resize_session(tmux_name, rows, cols)
+            logger.info(f"Resized {tmux_name} to {cols}x{rows}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to resize session: {e}")
             return "PIPE_ERROR"
 
     def _is_rate_limited(self, session_id: str) -> bool:
