@@ -214,8 +214,8 @@ class TerminalManager:
         )
         self._send_event(connection_id, event)
 
-        # Send buffered output if requested
-        if attach.from_sequence > 0:
+        # Send buffered output from requested sequence
+        if attach.from_sequence >= 0:
             chunks, missing_from = buffer.get_from_sequence(attach.from_sequence)
 
             if missing_from is not None:
