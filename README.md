@@ -181,7 +181,7 @@ sudo ufw allow proto udp from 192.168.0.0/16
 - QR code scanning and pairing
 - WebRTC client with auto-reconnect
 - Session list and management UI
-- Terminal emulator (Termux library)
+- Terminal emulator with full ANSI escape sequence support (Termux terminal-emulator, Apache 2.0)
 - Clipboard paste support
 - Push notification handling
 - Deep link navigation

@@ -133,6 +133,10 @@ dependencies {
     // WebView
     implementation("androidx.webkit:webkit:1.10.0")
 
+    // Termux terminal emulator (Apache 2.0 license)
+    implementation("com.github.termux.termux-app:terminal-view:v0.119.0-beta.3")
+    implementation("com.github.termux.termux-app:terminal-emulator:v0.119.0-beta.3")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 

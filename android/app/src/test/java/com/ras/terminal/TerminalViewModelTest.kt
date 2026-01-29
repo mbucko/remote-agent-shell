@@ -758,34 +758,34 @@ class TerminalViewModelTest {
     }
 
     @Test
-    fun `terminalOutput accumulates output from repository`() = runTest {
+    fun `terminal emulator receives output from repository`() = runTest {
         val viewModel = createViewModel()
+        val initialVersion = viewModel.terminalEmulator.screenVersion
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Emit output after ViewModel init (simulates daemon sending output after attach)
-        outputFlow.emit("first ".toByteArray())
-        testDispatcher.scheduler.advanceUntilIdle()
-        outputFlow.emit("second".toByteArray())
+        outputFlow.emit("Hello World".toByteArray())
         testDispatcher.scheduler.advanceUntilIdle()
 
-        // Output should be accumulated as String (not individual emissions)
-        assertEquals("first second", viewModel.terminalOutput.value)
+        // Screen version should increment indicating emulator processed output
+        assertTrue(viewModel.terminalEmulator.screenVersion > initialVersion)
     }
 
     @Test
-    fun `terminalOutput StateFlow provides current value to late subscribers`() = runTest {
+    fun `terminal emulator accumulates multiple outputs`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        // Emit output
-        outputFlow.emit("accumulated content".toByteArray())
+        // Emit multiple outputs
+        outputFlow.emit("first ".toByteArray())
+        testDispatcher.scheduler.advanceUntilIdle()
+        val versionAfterFirst = viewModel.terminalEmulator.screenVersion
+
+        outputFlow.emit("second".toByteArray())
         testDispatcher.scheduler.advanceUntilIdle()
 
-        // A late subscriber (like UI starting to compose) sees accumulated value
-        // This is the key benefit of StateFlow vs SharedFlow
-        viewModel.terminalOutput.test {
-            assertEquals("accumulated content", awaitItem())
-        }
+        // Screen version should increment with each output
+        assertTrue(viewModel.terminalEmulator.screenVersion > versionAfterFirst)
     }
 
     @Test

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -53,11 +52,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ras.R
@@ -68,7 +65,6 @@ import com.ras.ui.theme.StatusConnected
 import com.ras.ui.theme.StatusError
 import com.ras.ui.theme.TerminalBackground
 import com.ras.util.ClipboardHelper
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,8 +168,8 @@ fun TerminalScreen(
                     }
 
                     is TerminalScreenState.Connected -> {
-                        TerminalOutputView(
-                            output = viewModel.terminalOutput,
+                        TerminalRenderer(
+                            emulator = viewModel.terminalEmulator,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -420,40 +416,6 @@ private fun RawModeInput(
     }
 }
 
-/**
- * Simple terminal output view.
- * Displays text output from the terminal.
- *
- * Note: A full terminal emulator (Termux or xterm.js WebView)
- * should be integrated for proper ANSI escape sequence rendering.
- */
-@Composable
-private fun TerminalOutputView(
-    output: StateFlow<String>,
-    modifier: Modifier = Modifier
-) {
-    val scrollState = rememberScrollState()
-    val outputText by output.collectAsStateWithLifecycle()
-
-    Box(
-        modifier = modifier
-            .padding(8.dp)
-            .verticalScroll(scrollState)
-    ) {
-        Text(
-            text = outputText,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-
-    // Auto-scroll to bottom when new content arrives
-    LaunchedEffect(outputText) {
-        scrollState.animateScrollTo(scrollState.maxValue)
-    }
-}
 
 @Preview(showBackground = true)
 @Composable
