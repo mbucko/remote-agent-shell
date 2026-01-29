@@ -758,15 +758,33 @@ class TerminalViewModelTest {
     }
 
     @Test
-    fun `terminalOutput flow is passthrough from repository`() = runTest {
+    fun `terminalOutput accumulates output from repository`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.terminalOutput.test {
-            outputFlow.emit("test output".toByteArray())
-            testDispatcher.scheduler.advanceUntilIdle()
+        // Emit output after ViewModel init (simulates daemon sending output after attach)
+        outputFlow.emit("first ".toByteArray())
+        testDispatcher.scheduler.advanceUntilIdle()
+        outputFlow.emit("second".toByteArray())
+        testDispatcher.scheduler.advanceUntilIdle()
 
-            assertEquals("test output", String(awaitItem()))
+        // Output should be accumulated as String (not individual emissions)
+        assertEquals("first second", viewModel.terminalOutput.value)
+    }
+
+    @Test
+    fun `terminalOutput StateFlow provides current value to late subscribers`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Emit output
+        outputFlow.emit("accumulated content".toByteArray())
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // A late subscriber (like UI starting to compose) sees accumulated value
+        // This is the key benefit of StateFlow vs SharedFlow
+        viewModel.terminalOutput.test {
+            assertEquals("accumulated content", awaitItem())
         }
     }
 
