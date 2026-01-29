@@ -12,6 +12,9 @@ sealed class ConnectionOwnership {
     /** Connection is owned by PairingManager during initial setup and authentication */
     data object PairingManager : ConnectionOwnership()
 
+    /** Connection is owned by ReconnectionManager during auto-reconnection */
+    data object ReconnectionManager : ConnectionOwnership()
+
     /** Connection is owned by ConnectionManager for active session */
     data object ConnectionManager : ConnectionOwnership()
 

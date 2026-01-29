@@ -4,6 +4,9 @@ package com.ras.ui.navigation
  * Navigation routes for the app.
  */
 sealed class Routes(val route: String) {
+    /** Startup screen - checks credentials and auto-reconnects */
+    data object Startup : Routes("startup")
+
     /** QR scanning and pairing screen */
     data object Pairing : Routes("pairing")
 

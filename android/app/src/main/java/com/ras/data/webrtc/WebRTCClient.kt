@@ -484,8 +484,10 @@ class WebRTCClient(
         private val context: Context,
         private val peerConnectionFactory: PeerConnectionFactory
     ) {
-        fun create(): WebRTCClient {
-            return WebRTCClient(context, peerConnectionFactory)
+        fun create(
+            initialOwner: ConnectionOwnership = ConnectionOwnership.PairingManager
+        ): WebRTCClient {
+            return WebRTCClient(context, peerConnectionFactory, initialOwner)
         }
     }
 }

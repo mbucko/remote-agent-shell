@@ -11,19 +11,35 @@ import com.ras.ui.pairing.PairingScreen
 import com.ras.ui.sessions.CreateSessionScreen
 import com.ras.ui.sessions.SessionsScreen
 import com.ras.ui.settings.SettingsScreen
+import com.ras.ui.startup.StartupScreen
 import com.ras.ui.terminal.TerminalScreen
 
 @Composable
 fun NavGraph(
     navController: NavHostController,
     modifier: Modifier = Modifier,
-    startDestination: String = Routes.Pairing.route
+    startDestination: String = Routes.Startup.route
 ) {
     NavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier
     ) {
+        composable(Routes.Startup.route) {
+            StartupScreen(
+                onNavigateToPairing = {
+                    navController.navigate(Routes.Pairing.route) {
+                        popUpTo(Routes.Startup.route) { inclusive = true }
+                    }
+                },
+                onNavigateToSessions = {
+                    navController.navigate(Routes.Sessions.route) {
+                        popUpTo(Routes.Startup.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable(Routes.Pairing.route) {
             PairingScreen(
                 onPaired = {
