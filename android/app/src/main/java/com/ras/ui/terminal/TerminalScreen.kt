@@ -68,6 +68,7 @@ import com.ras.ui.theme.StatusConnected
 import com.ras.ui.theme.StatusError
 import com.ras.ui.theme.TerminalBackground
 import com.ras.util.ClipboardHelper
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -172,7 +173,7 @@ fun TerminalScreen(
 
                     is TerminalScreenState.Connected -> {
                         TerminalOutputView(
-                            outputFlow = viewModel.terminalOutput,
+                            output = viewModel.terminalOutput,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -428,23 +429,11 @@ private fun RawModeInput(
  */
 @Composable
 private fun TerminalOutputView(
-    outputFlow: kotlinx.coroutines.flow.SharedFlow<ByteArray>,
+    output: StateFlow<String>,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
-    val outputBuilder = remember { StringBuilder() }
-
-    // Collect output and append
-    LaunchedEffect(outputFlow) {
-        outputFlow.collectLatest { bytes ->
-            val text = String(bytes, Charsets.UTF_8)
-            outputBuilder.append(text)
-            // Keep only last 100KB of output to prevent memory issues
-            if (outputBuilder.length > 100_000) {
-                outputBuilder.delete(0, outputBuilder.length - 100_000)
-            }
-        }
-    }
+    val outputText by output.collectAsStateWithLifecycle()
 
     Box(
         modifier = modifier
@@ -452,7 +441,7 @@ private fun TerminalOutputView(
             .verticalScroll(scrollState)
     ) {
         Text(
-            text = outputBuilder.toString(),
+            text = outputText,
             fontFamily = FontFamily.Monospace,
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurface,
@@ -461,7 +450,7 @@ private fun TerminalOutputView(
     }
 
     // Auto-scroll to bottom when new content arrives
-    LaunchedEffect(outputBuilder.length) {
+    LaunchedEffect(outputText) {
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 }

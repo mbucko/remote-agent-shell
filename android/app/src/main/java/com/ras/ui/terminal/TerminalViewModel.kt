@@ -53,8 +53,10 @@ class TerminalViewModel @Inject constructor(
     // Terminal state from repository
     val terminalState: StateFlow<TerminalState> = repository.state
 
-    // Terminal output for rendering
-    val terminalOutput: SharedFlow<ByteArray> = repository.output
+    // Terminal output - accumulated in ViewModel so it survives UI lifecycle
+    private val outputBuffer = StringBuilder()
+    private val _terminalOutput = MutableStateFlow("")
+    val terminalOutput: StateFlow<String> = _terminalOutput.asStateFlow()
 
     // Connection state
     val isConnected: StateFlow<Boolean> = repository.isConnected
@@ -90,7 +92,22 @@ class TerminalViewModel @Inject constructor(
     init {
         observeTerminalState()
         observeTerminalEvents()
+        observeTerminalOutput()
         attach()
+    }
+
+    private fun observeTerminalOutput() {
+        repository.output
+            .onEach { bytes ->
+                val text = String(bytes, Charsets.UTF_8)
+                outputBuffer.append(text)
+                // Keep only last 100KB to prevent memory issues
+                if (outputBuffer.length > 100_000) {
+                    outputBuffer.delete(0, outputBuffer.length - 100_000)
+                }
+                _terminalOutput.value = outputBuffer.toString()
+            }
+            .launchIn(viewModelScope)
     }
 
     private fun observeTerminalState() {
