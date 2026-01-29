@@ -252,6 +252,44 @@ class TestE2EAttachFlow:
         assert output_events[0][1].output.data == b"chunk2"
         assert output_events[1][1].output.data == b"chunk3"
 
+    @pytest.mark.asyncio
+    async def test_attach_with_from_sequence_zero_sends_all_buffered_output(
+        self, manager, mock_session_provider, event_collector
+    ):
+        """Attach with from_sequence=0 sends all buffered output from beginning."""
+        mock_session_provider.add_session("abc123def456", "ras-test-session")
+
+        # Pre-populate buffer with data
+        manager._buffers["abc123def456"] = CircularBuffer(max_size_bytes=10000)
+        manager._buffers["abc123def456"].append(b"first")
+        manager._buffers["abc123def456"].append(b"second")
+        manager._buffers["abc123def456"].append(b"third")
+
+        with patch("ras.terminal.manager.OutputCapture") as mock_capture_class:
+            mock_capture = AsyncMock()
+            mock_capture.start = AsyncMock()
+            mock_capture_class.return_value = mock_capture
+
+            # Attach requesting from sequence 0 (all output from beginning)
+            command = TerminalCommand(
+                attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+            )
+            await manager.handle_command("conn1", command)
+
+        # Should get attached + ALL buffered chunks
+        events = event_collector.events
+        # First event: attached
+        assert events[0][1].attached.session_id == "abc123def456"
+        # Next events: all buffered output starting from sequence 0
+        output_events = event_collector.get_output_events()
+        assert len(output_events) == 3
+        assert output_events[0][1].output.data == b"first"
+        assert output_events[0][1].output.sequence == 0
+        assert output_events[1][1].output.data == b"second"
+        assert output_events[1][1].output.sequence == 1
+        assert output_events[2][1].output.data == b"third"
+        assert output_events[2][1].output.sequence == 2
+
 
 class TestE2EInputFlow:
     """E2E tests for input flow."""
