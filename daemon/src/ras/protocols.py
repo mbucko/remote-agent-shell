@@ -173,3 +173,68 @@ class ControlModeProcessProtocol(Protocol):
     def is_running(self) -> bool:
         """Check if process is still running."""
         ...
+
+
+# ============================================================================
+# Manager Dependency Protocols
+# ============================================================================
+
+
+class SessionProviderProtocol(Protocol):
+    """Protocol for getting session info.
+
+    Used by TerminalManager to look up session details (tmux_name, status).
+    """
+
+    def get_session(self, session_id: str) -> dict | None:
+        """Get session info by ID.
+
+        Args:
+            session_id: The session ID to look up.
+
+        Returns:
+            Dict with 'tmux_name', 'status' fields, or None if not found.
+        """
+        ...
+
+
+class EventSenderProtocol(Protocol):
+    """Protocol for sending events to a specific connection.
+
+    Used to send targeted events (like TerminalEvent) to a single device.
+    """
+
+    def send(self, connection_id: str, event: bytes) -> None:
+        """Send event to a specific connection.
+
+        Args:
+            connection_id: The device/connection ID to send to.
+            event: Serialized event data.
+        """
+        ...
+
+
+class ConnectionProviderProtocol(Protocol):
+    """Protocol for accessing and broadcasting to connections.
+
+    Used by adapters to get connection objects and broadcast messages.
+    """
+
+    def get_connection(self, device_id: str):
+        """Get a connection by device ID.
+
+        Args:
+            device_id: The device identifier.
+
+        Returns:
+            Connection object with send() method, or None if not found.
+        """
+        ...
+
+    async def broadcast(self, data: bytes) -> None:
+        """Broadcast data to all connected devices.
+
+        Args:
+            data: Serialized data to broadcast.
+        """
+        ...

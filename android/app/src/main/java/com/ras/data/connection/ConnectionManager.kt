@@ -47,18 +47,27 @@ import javax.inject.Singleton
  * - This class is thread-safe for concurrent access.
  * - Connection state changes are synchronized.
  */
+/**
+ * Configuration for ConnectionManager.
+ * Allows DI of timing parameters for testing.
+ */
+data class ConnectionConfig(
+    val pingIntervalMs: Long = 45_000L, // Send ping every 45s to keep connection alive
+    val heartbeatCheckIntervalMs: Long = 30_000L, // Check health every 30s
+    val maxIdleMs: Long = 90_000L, // Consider unhealthy after 90s idle
+    val receiveTimeoutMs: Long = 60_000L, // 60 second timeout for receive
+    val connectionReadyTimeoutMs: Long = 10_000L // 10 second timeout for ConnectionReady
+)
+
 @Singleton
 class ConnectionManager @Inject constructor(
     private val webRtcClientFactory: WebRTCClient.Factory,
-    @IoDispatcher private val ioDispatcher: CoroutineDispatcher
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+    private val config: ConnectionConfig = ConnectionConfig()
 ) {
     companion object {
         private const val TAG = "ConnectionManager"
         private const val MAX_MESSAGE_SIZE = 16 * 1024 * 1024 // 16 MB
-        private const val RECEIVE_TIMEOUT_MS = 60_000L // 60 second timeout for receive
-        private const val HEARTBEAT_CHECK_INTERVAL_MS = 30_000L // Check health every 30s
-        private const val MAX_IDLE_MS = 90_000L // Consider unhealthy after 90s idle
-        private const val CONNECTION_READY_TIMEOUT_MS = 10_000L // 10 second timeout for ConnectionReady
     }
 
     // Exception handler to prevent silent failures in coroutines
@@ -78,6 +87,7 @@ class ConnectionManager @Inject constructor(
 
     private var eventListenerJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var pingJob: Job? = null
 
     // Connection state
     private val _isConnected = MutableStateFlow(false)
@@ -150,6 +160,7 @@ class ConnectionManager @Inject constructor(
             _isHealthy.value = true
             startEventListener()
             startHeartbeatMonitor()
+            startPingLoop()
             Log.i(TAG, "Connected to daemon with encryption")
         }
 
@@ -157,7 +168,7 @@ class ConnectionManager @Inject constructor(
         // This ensures the daemon knows we're ready before this function returns
         // Use timeout to prevent hanging if daemon is unresponsive
         try {
-            withTimeout(CONNECTION_READY_TIMEOUT_MS) {
+            withTimeout(config.connectionReadyTimeoutMs) {
                 sendConnectionReady()
             }
             Log.i(TAG, "Sent ConnectionReady to daemon - handoff complete")
@@ -187,6 +198,8 @@ class ConnectionManager @Inject constructor(
         eventListenerJob = null
         heartbeatJob?.cancel()
         heartbeatJob = null
+        pingJob?.cancel()
+        pingJob = null
         _isConnected.value = false
         _isHealthy.value = false
         webRtcClient?.close()
@@ -290,13 +303,13 @@ class ConnectionManager @Inject constructor(
             try {
                 while (_isConnected.value && isActive) {
                     try {
-                        val data = client.receive(RECEIVE_TIMEOUT_MS)
+                        val data = client.receive(config.receiveTimeoutMs)
                         routeMessage(data)
                     } catch (e: IllegalStateException) {
                         if (e.message?.contains("timeout") == true) {
                             // Timeout is expected, check connection health
                             Log.d(TAG, "Receive timeout, checking health...")
-                            if (!client.isHealthy(MAX_IDLE_MS)) {
+                            if (!client.isHealthy(config.maxIdleMs)) {
                                 Log.w(TAG, "Connection appears unhealthy")
                                 _isHealthy.value = false
                             }
@@ -324,10 +337,10 @@ class ConnectionManager @Inject constructor(
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             while (_isConnected.value && isActive) {
-                delay(HEARTBEAT_CHECK_INTERVAL_MS)
+                delay(config.heartbeatCheckIntervalMs)
                 val client = webRtcClient ?: continue
 
-                val healthy = client.isHealthy(MAX_IDLE_MS)
+                val healthy = client.isHealthy(config.maxIdleMs)
                 if (_isHealthy.value != healthy) {
                     _isHealthy.value = healthy
                     if (!healthy) {
@@ -335,6 +348,35 @@ class ConnectionManager @Inject constructor(
                     } else {
                         Log.d(TAG, "Connection health restored")
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Start the ping loop to keep connection alive.
+     *
+     * Sends periodic pings to the daemon to prevent the connection from being
+     * closed due to inactivity. The daemon has a keepalive timeout (default 60s)
+     * and will close connections that don't send any messages.
+     *
+     * CONTRACT: pingIntervalMs (default 45s) < daemon keepalive_timeout (default 60s)
+     */
+    private fun startPingLoop() {
+        if (config.pingIntervalMs <= 0) {
+            Log.d(TAG, "Ping loop disabled (pingIntervalMs=${config.pingIntervalMs})")
+            return
+        }
+
+        pingJob?.cancel()
+        pingJob = scope.launch {
+            while (_isConnected.value && isActive) {
+                delay(config.pingIntervalMs)
+                try {
+                    sendPing()
+                    Log.d(TAG, "Sent keepalive ping")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send keepalive ping", e)
                 }
             }
         }

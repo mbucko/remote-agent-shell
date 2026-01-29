@@ -210,8 +210,24 @@ class Daemon:
             await self._session_manager.initialize()
             logger.info(f"Session manager initialized with {len(self._session_manager._sessions)} sessions")
 
-        # Terminal manager initialization would go here
-        # Clipboard manager initialization would go here
+        # Terminal manager initialization via ManagerFactory
+        if self._terminal_manager is None:
+            from ras.manager_factory import ManagerFactory, ManagerDependencies
+            from ras.tmux import TmuxService
+
+            tmux_service = TmuxService()
+
+            deps = ManagerDependencies(
+                config=self._config,
+                connection_manager=self._connection_manager,
+                session_manager=self._session_manager,
+                tmux_service=tmux_service,
+            )
+
+            factory = ManagerFactory()
+            managers = factory.create(deps)
+            self._terminal_manager = managers.terminal
+            self._clipboard_manager = managers.clipboard
 
     async def _start_signaling_server(self) -> None:
         """Start unified HTTP server for pairing and reconnection."""
