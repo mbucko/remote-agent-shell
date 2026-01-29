@@ -44,6 +44,10 @@ class PairingManager @Inject constructor(
     private var authKey: ByteArray? = null
     private var webRTCClient: WebRTCClient? = null
 
+    // Lock to synchronize connection state transitions
+    // Prevents TOCTOU race between shouldCloseOnCleanup() check and closeByOwner() act
+    private val connectionStateLock = Any()
+
     // Connection lifecycle state machine
     @Volatile
     private var connectionState: PairingConnectionState = PairingConnectionState.Closed
@@ -173,18 +177,28 @@ class PairingManager @Inject constructor(
                 // Hand off WebRTC connection to ConnectionManager with encryption key
                 // IMPORTANT: This is a critical section - we must complete the handoff
                 // before returning, so ConnectionManager has a fully working connection
-                val client = webRTCClient
-                val key = authKey
+                val client: WebRTCClient?
+                val key: ByteArray?
+
+                // Synchronize the ownership transfer and state change to prevent
+                // race condition with cleanup()
+                synchronized(connectionStateLock) {
+                    client = webRTCClient
+                    key = authKey
+
+                    if (client != null && key != null) {
+                        // Transfer ownership BEFORE passing to ConnectionManager
+                        // This ensures cleanup() won't close it even if called concurrently
+                        client.transferOwnership(ConnectionOwnership.ConnectionManager)
+                        connectionState = PairingConnectionState.HandedOff("ConnectionManager")
+                        webRTCClient = null  // Clear reference BEFORE calling connect
+                    }
+                }
 
                 if (client != null && key != null) {
-                    // Transfer ownership BEFORE passing to ConnectionManager
-                    // This ensures cleanup() won't close it even if called concurrently
-                    client.transferOwnership(ConnectionOwnership.ConnectionManager)
-                    connectionState = PairingConnectionState.HandedOff("ConnectionManager")
-                    webRTCClient = null  // Clear reference BEFORE calling connect
-
                     try {
                         // AWAIT the connection setup - this sends ConnectionReady synchronously
+                        // Note: This is outside the lock to avoid blocking cleanup() during connect
                         connectionManager.connect(client, key)
                         android.util.Log.i("PairingManager", "Handoff to ConnectionManager complete")
                     } catch (e: Exception) {
@@ -217,14 +231,19 @@ class PairingManager @Inject constructor(
     }
 
     private fun cleanup() {
-        // Only close if we still own the connection (not handed off)
-        if (connectionState.shouldCloseOnCleanup()) {
-            webRTCClient?.closeByOwner(ConnectionOwnership.PairingManager)
+        // Use lock to make check-act atomic, preventing TOCTOU race:
+        // Without lock, another thread could call transferOwnership() between
+        // shouldCloseOnCleanup() check and closeByOwner() act
+        synchronized(connectionStateLock) {
+            // Only close if we still own the connection (not handed off)
+            if (connectionState.shouldCloseOnCleanup()) {
+                webRTCClient?.closeByOwner(ConnectionOwnership.PairingManager)
+            }
+            webRTCClient = null
+            connectionState = PairingConnectionState.Closed
         }
-        webRTCClient = null
-        connectionState = PairingConnectionState.Closed
 
-        // Zero sensitive data
+        // Zero sensitive data (outside lock since these are independent)
         authKey?.fill(0)
         authKey = null
 

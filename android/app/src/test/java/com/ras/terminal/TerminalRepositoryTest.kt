@@ -3,6 +3,7 @@ package com.ras.terminal
 import app.cash.turbine.test
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.terminal.OutputSkippedInfo
+import com.ras.data.terminal.TerminalAttachException
 import com.ras.data.terminal.TerminalEvent
 import com.ras.data.terminal.TerminalRepository
 import com.ras.data.terminal.TerminalState
@@ -23,9 +24,14 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -35,6 +41,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 
@@ -109,12 +116,23 @@ class TerminalRepositoryTest {
         val commandSlot = slot<TerminalCommand>()
         coEvery { connectionManager.sendTerminalCommand(capture(commandSlot)) } returns Unit
 
-        repository.attach("abc123def456")
+        // Launch attach in background (it's now a blocking request-response)
+        val job = launch {
+            repository.attach("abc123def456")
+        }
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(commandSlot.captured.hasAttach())
         assertEquals("abc123def456", commandSlot.captured.attach.sessionId)
         assertEquals(0L, commandSlot.captured.attach.fromSequence)
+
+        // Complete the attach to clean up
+        val event = ProtoTerminalEvent.newBuilder()
+            .setAttached(TerminalAttached.newBuilder().setSessionId("abc123def456").build())
+            .build()
+        terminalEventsFlow.emit(event)
+        testDispatcher.scheduler.advanceUntilIdle()
+        job.join()
     }
 
     @Test
@@ -122,20 +140,43 @@ class TerminalRepositoryTest {
         val commandSlot = slot<TerminalCommand>()
         coEvery { connectionManager.sendTerminalCommand(capture(commandSlot)) } returns Unit
 
-        repository.attach("abc123def456", fromSequence = 100)
+        val job = launch {
+            repository.attach("abc123def456", fromSequence = 100)
+        }
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(100L, commandSlot.captured.attach.fromSequence)
+
+        // Complete the attach
+        val event = ProtoTerminalEvent.newBuilder()
+            .setAttached(TerminalAttached.newBuilder().setSessionId("abc123def456").build())
+            .build()
+        terminalEventsFlow.emit(event)
+        testDispatcher.scheduler.advanceUntilIdle()
+        job.join()
     }
 
     @Test
     fun `attach updates state to attaching`() = runTest {
-        repository.attach("abc123def456")
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        val job = launch {
+            repository.attach("abc123def456")
+        }
         testDispatcher.scheduler.advanceUntilIdle()
 
+        // Check attaching state before response arrives
         val state = repository.state.value
         assertTrue(state.isAttaching)
         assertEquals("abc123def456", state.sessionId)
+
+        // Complete the attach
+        val event = ProtoTerminalEvent.newBuilder()
+            .setAttached(TerminalAttached.newBuilder().setSessionId("abc123def456").build())
+            .build()
+        terminalEventsFlow.emit(event)
+        testDispatcher.scheduler.advanceUntilIdle()
+        job.join()
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -151,6 +192,184 @@ class TerminalRepositoryTest {
     @Test(expected = IllegalArgumentException::class)
     fun `attach throws for invalid session ID - path traversal`() = runTest {
         repository.attach("../../../etc")
+    }
+
+    // ==========================================================================
+    // Attach Request-Response Correlation Tests (CompletableDeferred pattern)
+    // ==========================================================================
+
+    @Test
+    fun `attach completes when daemon responds with TerminalAttached`() = runTest {
+        val commandSlot = slot<TerminalCommand>()
+        coEvery { connectionManager.sendTerminalCommand(capture(commandSlot)) } returns Unit
+
+        // Launch attach in background and immediately respond
+        val attachJob = async {
+            repository.attach("abc123def456")
+        }
+
+        // Wait for command to be sent
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Simulate daemon response
+        val attachedEvent = ProtoTerminalEvent.newBuilder()
+            .setAttached(TerminalAttached.newBuilder()
+                .setSessionId("abc123def456")
+                .setCols(80)
+                .setRows(24)
+                .setCurrentSeq(0)
+                .build())
+            .build()
+        terminalEventsFlow.emit(attachedEvent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Verify attach completes without exception
+        attachJob.await()
+
+        // Verify final state
+        val state = repository.state.value
+        assertTrue(state.isAttached)
+        assertFalse(state.isAttaching)
+        assertEquals("abc123def456", state.sessionId)
+    }
+
+    @Test
+    fun `attach throws TerminalAttachException when daemon responds with error`() = runTest {
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        // Launch attach in background
+        val attachJob = async {
+            try {
+                repository.attach("abc123def456")
+                fail("Expected TerminalAttachException")
+            } catch (e: TerminalAttachException) {
+                assertEquals("SESSION_NOT_FOUND", e.code)
+                assertEquals("Session not found", e.message)
+            }
+        }
+
+        // Wait for command to be sent
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Simulate daemon error response
+        val errorEvent = ProtoTerminalEvent.newBuilder()
+            .setError(TerminalError.newBuilder()
+                .setSessionId("abc123def456")
+                .setErrorCode("SESSION_NOT_FOUND")
+                .setMessage("Session not found")
+                .build())
+            .build()
+        terminalEventsFlow.emit(errorEvent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Wait for exception to propagate
+        attachJob.await()
+
+        // Verify state reflects error
+        val state = repository.state.value
+        assertFalse(state.isAttached)
+        assertFalse(state.isAttaching)
+        assertNotNull(state.error)
+    }
+
+    @Test
+    fun `attach throws TimeoutCancellationException when daemon does not respond`() = runTest {
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        // Launch attach in background
+        val attachJob = async {
+            try {
+                repository.attach("abc123def456")
+                fail("Expected TimeoutCancellationException")
+            } catch (e: TimeoutCancellationException) {
+                // Expected
+            }
+        }
+
+        // Advance past the timeout (10 seconds)
+        advanceTimeBy(11_000)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Wait for timeout to propagate
+        attachJob.await()
+
+        // Verify state reflects timeout
+        val state = repository.state.value
+        assertFalse(state.isAttached)
+        assertFalse(state.isAttaching)
+        assertNotNull(state.error)
+        assertEquals("ATTACH_TIMEOUT", state.error?.code)
+    }
+
+    @Test
+    fun `concurrent attach calls to same session are no-op`() = runTest {
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        // First attach - will be pending
+        val firstAttachJob = launch {
+            repository.attach("abc123def456")
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Second attach to same session - should return immediately (no-op)
+        val secondAttachJob = launch {
+            repository.attach("abc123def456")
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Complete the first attach
+        val attachedEvent = ProtoTerminalEvent.newBuilder()
+            .setAttached(TerminalAttached.newBuilder()
+                .setSessionId("abc123def456")
+                .setCols(80)
+                .setRows(24)
+                .build())
+            .build()
+        terminalEventsFlow.emit(attachedEvent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        firstAttachJob.join()
+        secondAttachJob.join()
+
+        // Only one command should have been sent
+        coVerify(exactly = 1) { connectionManager.sendTerminalCommand(any()) }
+    }
+
+    @Test
+    fun `concurrent attach to different session throws exception`() = runTest {
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        // First attach - will be pending
+        val firstAttachJob = launch {
+            repository.attach("abc123def456")
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Second attach to different session - should throw
+        val secondAttachJob = async {
+            try {
+                repository.attach("xyz789abc012")
+                fail("Expected IllegalStateException")
+            } catch (e: IllegalStateException) {
+                assertTrue(e.message?.contains("Already attaching") == true)
+            }
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        secondAttachJob.await()
+
+        // Complete first attach to clean up
+        val attachedEvent = ProtoTerminalEvent.newBuilder()
+            .setAttached(TerminalAttached.newBuilder()
+                .setSessionId("abc123def456")
+                .setCols(80)
+                .setRows(24)
+                .build())
+            .build()
+        terminalEventsFlow.emit(attachedEvent)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        firstAttachJob.join()
     }
 
     // ==========================================================================
@@ -200,7 +419,7 @@ class TerminalRepositoryTest {
     @Test
     fun `sendInput sends data command when attached`() = runTest {
         // Attach first
-        simulateAttached()
+        simulateAttachedState()
 
         val commandSlot = slot<TerminalCommand>()
         coEvery { connectionManager.sendTerminalCommand(capture(commandSlot)) } returns Unit
@@ -215,7 +434,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `sendInput string sends UTF-8 encoded bytes`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val commandSlot = slot<TerminalCommand>()
         coEvery { connectionManager.sendTerminalCommand(capture(commandSlot)) } returns Unit
@@ -228,7 +447,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `sendLine appends carriage return`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val commandSlot = slot<TerminalCommand>()
         coEvery { connectionManager.sendTerminalCommand(capture(commandSlot)) } returns Unit
@@ -246,7 +465,7 @@ class TerminalRepositoryTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun `sendInput throws for data too large`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
         repository.sendInput(ByteArray(100_000)) // > 64KB
     }
 
@@ -256,7 +475,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `sendSpecialKey sends correct command`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val commandSlot = slot<TerminalCommand>()
         coEvery { connectionManager.sendTerminalCommand(capture(commandSlot)) } returns Unit
@@ -271,7 +490,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `sendSpecialKey with modifiers sends correct command`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val commandSlot = slot<TerminalCommand>()
         coEvery { connectionManager.sendTerminalCommand(capture(commandSlot)) } returns Unit
@@ -293,7 +512,11 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleAttached updates state correctly`() = runTest {
-        repository.attach("abc123def456")
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        val attachJob = launch {
+            repository.attach("abc123def456")
+        }
         testDispatcher.scheduler.advanceUntilIdle()
 
         val event = ProtoTerminalEvent.newBuilder()
@@ -308,6 +531,7 @@ class TerminalRepositoryTest {
 
         terminalEventsFlow.emit(event)
         testDispatcher.scheduler.advanceUntilIdle()
+        attachJob.join()
 
         val state = repository.state.value
         assertTrue(state.isAttached)
@@ -322,8 +546,12 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleAttached emits Attached event`() = runTest {
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
         repository.events.test {
-            repository.attach("abc123def456")
+            val attachJob = launch {
+                repository.attach("abc123def456")
+            }
             testDispatcher.scheduler.advanceUntilIdle()
 
             val event = ProtoTerminalEvent.newBuilder()
@@ -337,6 +565,7 @@ class TerminalRepositoryTest {
 
             terminalEventsFlow.emit(event)
             testDispatcher.scheduler.advanceUntilIdle()
+            attachJob.join()
 
             val emitted = awaitItem() as TerminalEvent.Attached
             assertEquals("abc123def456", emitted.sessionId)
@@ -352,7 +581,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleDetached updates state correctly`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val event = ProtoTerminalEvent.newBuilder()
             .setDetached(TerminalDetached.newBuilder()
@@ -371,7 +600,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleDetached with non-user reason sets error`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val event = ProtoTerminalEvent.newBuilder()
             .setDetached(TerminalDetached.newBuilder()
@@ -389,7 +618,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleDetached emits Detached event`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         repository.events.test {
             val event = ProtoTerminalEvent.newBuilder()
@@ -414,7 +643,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleOutput emits to output flow`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         repository.output.test {
             val event = ProtoTerminalEvent.newBuilder()
@@ -436,7 +665,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleOutput updates lastSequence`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val event = ProtoTerminalEvent.newBuilder()
             .setOutput(TerminalOutput.newBuilder()
@@ -454,7 +683,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleOutput emits Output event`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         repository.events.test {
             val event = ProtoTerminalEvent.newBuilder()
@@ -483,7 +712,15 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleError updates state correctly`() = runTest {
-        repository.attach("abc123def456")
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        val attachJob = async {
+            try {
+                repository.attach("abc123def456")
+            } catch (e: TerminalAttachException) {
+                // Expected
+            }
+        }
         testDispatcher.scheduler.advanceUntilIdle()
 
         val event = ProtoTerminalEvent.newBuilder()
@@ -496,6 +733,7 @@ class TerminalRepositoryTest {
 
         terminalEventsFlow.emit(event)
         testDispatcher.scheduler.advanceUntilIdle()
+        attachJob.await()
 
         val state = repository.state.value
         assertFalse(state.isAttaching)
@@ -531,7 +769,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleSkipped updates state correctly`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val event = ProtoTerminalEvent.newBuilder()
             .setSkipped(OutputSkipped.newBuilder()
@@ -554,7 +792,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `handleSkipped emits OutputSkipped event`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         repository.events.test {
             val event = ProtoTerminalEvent.newBuilder()
@@ -603,8 +841,16 @@ class TerminalRepositoryTest {
 
     @Test
     fun `clearError clears error state`() = runTest {
-        // Set an error
-        repository.attach("abc123def456")
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        // Set an error by attempting attach and receiving error response
+        val attachJob = async {
+            try {
+                repository.attach("abc123def456")
+            } catch (e: TerminalAttachException) {
+                // Expected
+            }
+        }
         testDispatcher.scheduler.advanceUntilIdle()
 
         val errorEvent = ProtoTerminalEvent.newBuilder()
@@ -615,6 +861,7 @@ class TerminalRepositoryTest {
             .build()
         terminalEventsFlow.emit(errorEvent)
         testDispatcher.scheduler.advanceUntilIdle()
+        attachJob.await()
 
         assertNotNull(repository.state.value.error)
 
@@ -624,7 +871,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `clearOutputSkipped clears skipped state`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val skippedEvent = ProtoTerminalEvent.newBuilder()
             .setSkipped(OutputSkipped.newBuilder()
@@ -644,7 +891,7 @@ class TerminalRepositoryTest {
 
     @Test
     fun `reset clears all state`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
         repository.setRawMode(true)
 
         repository.reset()
@@ -668,13 +915,13 @@ class TerminalRepositoryTest {
 
     @Test
     fun `canSendInput returns true when attached without error`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
         assertTrue(repository.state.value.canSendInput)
     }
 
     @Test
     fun `canSendInput returns false when has error`() = runTest {
-        simulateAttached()
+        simulateAttachedState()
 
         val errorEvent = ProtoTerminalEvent.newBuilder()
             .setError(TerminalError.newBuilder()
@@ -938,19 +1185,32 @@ class TerminalRepositoryTest {
     // Helper Methods
     // ==========================================================================
 
-    private suspend fun simulateAttached() {
-        repository.attach("abc123def456")
-        testDispatcher.scheduler.advanceUntilIdle()
+    /**
+     * Helper to simulate a full attach sequence by directly setting state.
+     * This bypasses the request-response flow for tests that just need
+     * the repository to be in an attached state.
+     *
+     * For testing the actual attach() request-response flow, use the
+     * dedicated tests in "Attach Request-Response Correlation Tests" section.
+     */
+    private fun simulateAttachedState() {
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
 
-        val attachedEvent = ProtoTerminalEvent.newBuilder()
-            .setAttached(TerminalAttached.newBuilder()
-                .setSessionId("abc123def456")
-                .setCols(80)
-                .setRows(24)
-                .setCurrentSeq(0)
-                .build())
-            .build()
-        terminalEventsFlow.emit(attachedEvent)
+        // Directly emit the attached event to simulate daemon response
+        // This sets the state without going through the full attach() flow
+        kotlinx.coroutines.runBlocking {
+            val attachedEvent = ProtoTerminalEvent.newBuilder()
+                .setAttached(TerminalAttached.newBuilder()
+                    .setSessionId("abc123def456")
+                    .setCols(80)
+                    .setRows(24)
+                    .setCurrentSeq(0)
+                    .build())
+                .build()
+            terminalEventsFlow.emit(attachedEvent)
+        }
+
+        // Advance to process the event
         testDispatcher.scheduler.advanceUntilIdle()
     }
 }

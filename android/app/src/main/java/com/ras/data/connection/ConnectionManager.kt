@@ -16,9 +16,11 @@ import com.ras.proto.SessionListEvent
 import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -55,9 +58,15 @@ class ConnectionManager @Inject constructor(
         private const val RECEIVE_TIMEOUT_MS = 60_000L // 60 second timeout for receive
         private const val HEARTBEAT_CHECK_INTERVAL_MS = 30_000L // Check health every 30s
         private const val MAX_IDLE_MS = 90_000L // Consider unhealthy after 90s idle
+        private const val CONNECTION_READY_TIMEOUT_MS = 10_000L // 10 second timeout for ConnectionReady
     }
 
-    val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
+    // Exception handler to prevent silent failures in coroutines
+    private val exceptionHandler = CoroutineExceptionHandler { _, exception ->
+        Log.e(TAG, "Uncaught exception in ConnectionManager scope", exception)
+    }
+
+    val scope = CoroutineScope(SupervisorJob() + ioDispatcher + exceptionHandler)
 
     private val connectionLock = Any()
 
@@ -86,8 +95,10 @@ class ConnectionManager @Inject constructor(
     val sessionEvents: SharedFlow<ProtoSessionEvent> = _sessionEvents.asSharedFlow()
 
     // Terminal events (emitted when a TerminalEvent proto is received)
+    // replay = 1 ensures late subscribers get the most recent event (e.g., TerminalAttached)
+    // This prevents race conditions where attach response arrives before subscriber is ready
     private val _terminalEvents = MutableSharedFlow<ProtoTerminalEvent>(
-        replay = 0,
+        replay = 1,
         extraBufferCapacity = 128 // Increased for terminal output bursts
     )
     val terminalEvents: SharedFlow<ProtoTerminalEvent> = _terminalEvents.asSharedFlow()
@@ -144,9 +155,16 @@ class ConnectionManager @Inject constructor(
 
         // Send ConnectionReady SYNCHRONOUSLY (outside the lock to avoid blocking)
         // This ensures the daemon knows we're ready before this function returns
+        // Use timeout to prevent hanging if daemon is unresponsive
         try {
-            sendConnectionReady()
+            withTimeout(CONNECTION_READY_TIMEOUT_MS) {
+                sendConnectionReady()
+            }
             Log.i(TAG, "Sent ConnectionReady to daemon - handoff complete")
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Timeout sending ConnectionReady - daemon unresponsive")
+            disconnect()
+            throw IllegalStateException("ConnectionReady timeout: daemon unresponsive", e)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send ConnectionReady", e)
             // If we can't send ConnectionReady, the connection is broken
@@ -377,16 +395,8 @@ class ConnectionManager @Inject constructor(
             RasEvent.EventCase.INITIAL_STATE -> {
                 Log.i(TAG, "Received InitialState: ${event.initialState.sessionsCount} sessions, ${event.initialState.agentsCount} agents")
                 _initialState.emit(event.initialState)
-                // Also emit as SessionListEvent for backward compatibility
-                if (event.initialState.sessionsCount > 0) {
-                    val listEvent = ProtoSessionEvent.newBuilder()
-                        .setList(
-                            SessionListEvent.newBuilder()
-                                .addAllSessions(event.initialState.sessionsList)
-                        )
-                        .build()
-                    _sessionEvents.emit(listEvent)
-                }
+                // Note: SessionRepository.subscribeToInitialState() handles this directly
+                // No need to also emit to sessionEvents - that was causing race conditions
             }
             RasEvent.EventCase.PONG -> {
                 val latency = System.currentTimeMillis() - event.pong.timestamp

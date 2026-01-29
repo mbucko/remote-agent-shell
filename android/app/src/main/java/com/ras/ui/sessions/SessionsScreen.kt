@@ -267,7 +267,7 @@ private fun SessionsList(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item { Spacer(modifier = Modifier.height(4.dp)) }
+        item(key = "top_spacer") { Spacer(modifier = Modifier.height(4.dp)) }
         items(
             items = sessions,
             key = { it.id }
@@ -279,7 +279,7 @@ private fun SessionsList(
                 onRenameClick = { onRenameClick(session) }
             )
         }
-        item { Spacer(modifier = Modifier.height(4.dp)) }
+        item(key = "bottom_spacer") { Spacer(modifier = Modifier.height(4.dp)) }
     }
 }
 

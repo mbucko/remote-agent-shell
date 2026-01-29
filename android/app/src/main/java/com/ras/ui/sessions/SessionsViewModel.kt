@@ -1,5 +1,6 @@
 package com.ras.ui.sessions
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.sessions.SessionEvent
@@ -7,15 +8,16 @@ import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.sessions.SessionsScreenState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val TAG = "SessionsViewModel"
 
 /**
  * ViewModel for the Sessions screen.
@@ -35,14 +37,16 @@ class SessionsViewModel @Inject constructor(
     private val _showRenameDialog = MutableStateFlow<SessionInfo?>(null)
     val showRenameDialog: StateFlow<SessionInfo?> = _showRenameDialog.asStateFlow()
 
-    // One-time UI events
-    private val _uiEvents = MutableSharedFlow<SessionsUiEvent>(extraBufferCapacity = 64)
-    val uiEvents: SharedFlow<SessionsUiEvent> = _uiEvents.asSharedFlow()
+    // One-time UI events using Channel for guaranteed single delivery
+    // Industry standard: Channel prevents event duplication and guarantees consumption
+    private val _uiEvents = Channel<SessionsUiEvent>(Channel.BUFFERED)
+    val uiEvents = _uiEvents.receiveAsFlow()
 
     // Connection status
     val isConnected: StateFlow<Boolean> = sessionRepository.isConnected
 
     init {
+        Log.i(TAG, "SessionsViewModel created, isConnected=${sessionRepository.isConnected.value}")
         observeSessions()
         observeRepositoryEvents()
         loadSessions()
@@ -50,13 +54,20 @@ class SessionsViewModel @Inject constructor(
 
     private fun observeSessions() {
         viewModelScope.launch {
+            Log.i(TAG, "Starting to observe sessions from repository")
             sessionRepository.sessions.collect { sessions ->
-                val currentState = _screenState.value
-                val isRefreshing = (currentState as? SessionsScreenState.Loaded)?.isRefreshing ?: false
-                _screenState.value = SessionsScreenState.Loaded(
-                    sessions = sessions.sortedByDescending { it.lastActivityAt },
-                    isRefreshing = isRefreshing
-                )
+                Log.i(TAG, "Received ${sessions.size} sessions from repository")
+                // Use atomic update to preserve isRefreshing flag across concurrent updates
+                _screenState.update { currentState ->
+                    Log.i(TAG, "Current screen state: ${currentState::class.simpleName}")
+                    val isRefreshing = (currentState as? SessionsScreenState.Loaded)?.isRefreshing ?: false
+                    SessionsScreenState.Loaded(
+                        sessions = sessions.sortedByDescending { it.lastActivityAt },
+                        isRefreshing = isRefreshing
+                    ).also {
+                        Log.i(TAG, "Updated screen state to Loaded with ${sessions.size} sessions")
+                    }
+                }
             }
         }
     }
@@ -66,16 +77,16 @@ class SessionsViewModel @Inject constructor(
             sessionRepository.events.collect { event ->
                 when (event) {
                     is SessionEvent.SessionCreated -> {
-                        _uiEvents.emit(SessionsUiEvent.SessionCreated(event.session.displayText))
+                        _uiEvents.send(SessionsUiEvent.SessionCreated(event.session.displayText))
                     }
                     is SessionEvent.SessionKilled -> {
-                        _uiEvents.emit(SessionsUiEvent.SessionKilled)
+                        _uiEvents.send(SessionsUiEvent.SessionKilled)
                     }
                     is SessionEvent.SessionRenamed -> {
-                        _uiEvents.emit(SessionsUiEvent.SessionRenamed(event.newName))
+                        _uiEvents.send(SessionsUiEvent.SessionRenamed(event.newName))
                     }
                     is SessionEvent.SessionError -> {
-                        _uiEvents.emit(SessionsUiEvent.Error(event.message))
+                        _uiEvents.send(SessionsUiEvent.Error(event.message))
                     }
                     is SessionEvent.SessionActivity -> {
                         // Activity updates are reflected in the session list automatically
@@ -93,13 +104,29 @@ class SessionsViewModel @Inject constructor(
 
     private fun loadSessions() {
         viewModelScope.launch {
-            _screenState.value = SessionsScreenState.Loading
+            // Atomic check-and-update: only set Loading if we don't already have sessions
+            var shouldLoad = false
+            _screenState.update { currentState ->
+                if (currentState is SessionsScreenState.Loaded && currentState.sessions.isNotEmpty()) {
+                    Log.i(TAG, "loadSessions: already have ${currentState.sessions.size} sessions, skipping")
+                    currentState // Keep current state
+                } else {
+                    Log.i(TAG, "loadSessions: setting state to Loading")
+                    shouldLoad = true
+                    SessionsScreenState.Loading
+                }
+            }
+
+            if (!shouldLoad) return@launch
+
             try {
                 sessionRepository.listSessions()
+                Log.i(TAG, "loadSessions: listSessions command sent successfully")
             } catch (e: Exception) {
-                _screenState.value = SessionsScreenState.Error(
-                    e.message ?: "Failed to load sessions"
-                )
+                Log.e(TAG, "loadSessions: error - ${e.message}")
+                _screenState.update {
+                    SessionsScreenState.Error(e.message ?: "Failed to load sessions")
+                }
             }
         }
     }
@@ -109,16 +136,24 @@ class SessionsViewModel @Inject constructor(
      */
     fun refreshSessions() {
         viewModelScope.launch {
-            val currentState = _screenState.value
-            if (currentState is SessionsScreenState.Loaded) {
-                _screenState.value = currentState.copy(isRefreshing = true)
+            // Atomic update to set refreshing = true
+            _screenState.update { currentState ->
+                if (currentState is SessionsScreenState.Loaded) {
+                    currentState.copy(isRefreshing = true)
+                } else {
+                    currentState
+                }
             }
             try {
                 sessionRepository.listSessions()
             } finally {
-                val state = _screenState.value
-                if (state is SessionsScreenState.Loaded) {
-                    _screenState.value = state.copy(isRefreshing = false)
+                // Atomic update to set refreshing = false
+                _screenState.update { currentState ->
+                    if (currentState is SessionsScreenState.Loaded) {
+                        currentState.copy(isRefreshing = false)
+                    } else {
+                        currentState
+                    }
                 }
             }
         }
@@ -143,14 +178,14 @@ class SessionsViewModel @Inject constructor(
      */
     fun confirmKillSession() {
         val session = _showKillDialog.value ?: return
+        _showKillDialog.value = null  // Dismiss dialog immediately for responsiveness
         viewModelScope.launch {
             try {
                 sessionRepository.killSession(session.id)
             } catch (e: Exception) {
-                _uiEvents.emit(SessionsUiEvent.Error("Failed to kill session: ${e.message}"))
+                _uiEvents.send(SessionsUiEvent.Error("Failed to kill session: ${e.message}"))
             }
         }
-        _showKillDialog.value = null
     }
 
     /**
@@ -172,14 +207,14 @@ class SessionsViewModel @Inject constructor(
      */
     fun confirmRenameSession(newName: String) {
         val session = _showRenameDialog.value ?: return
+        _showRenameDialog.value = null  // Dismiss dialog immediately for responsiveness
         viewModelScope.launch {
             try {
                 sessionRepository.renameSession(session.id, newName)
             } catch (e: Exception) {
-                _uiEvents.emit(SessionsUiEvent.Error("Failed to rename session: ${e.message}"))
+                _uiEvents.send(SessionsUiEvent.Error("Failed to rename session: ${e.message}"))
             }
         }
-        _showRenameDialog.value = null
     }
 }
 

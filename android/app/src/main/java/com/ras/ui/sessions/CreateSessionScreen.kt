@@ -275,20 +275,23 @@ private fun DirectorySelectionStep(
                 ) {
                     // Recent directories section (only at root)
                     if (currentPath.isEmpty() && recentDirectories.isNotEmpty()) {
-                        item {
+                        item(key = "recent_header") {
                             Text(
                                 text = "Recent",
                                 style = MaterialTheme.typography.titleSmall,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
-                        items(recentDirectories.take(5)) { directory ->
+                        items(
+                            items = recentDirectories.take(5),
+                            key = { directory -> "recent_$directory" }
+                        ) { directory ->
                             RecentDirectoryItem(
                                 path = directory,
                                 onClick = { onRecentSelect(directory) }
                             )
                         }
-                        item {
+                        item(key = "browse_header") {
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 text = "Browse",
@@ -299,7 +302,10 @@ private fun DirectorySelectionStep(
                     }
 
                     // Directory entries
-                    items(directoryState.entries) { entry ->
+                    items(
+                        items = directoryState.entries,
+                        key = { entry -> "dir_${entry.path}" }
+                    ) { entry ->
                         DirectoryItem(
                             entry = entry,
                             onClick = { onDirectoryClick(entry.path) },
@@ -309,7 +315,7 @@ private fun DirectorySelectionStep(
 
                     // Select current directory option
                     if (currentPath.isNotEmpty()) {
-                        item {
+                        item(key = "select_current") {
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
                                 onClick = { onDirectorySelect(currentPath) },
@@ -515,7 +521,10 @@ private fun AgentSelectionStep(
                             }
                         }
                     } else {
-                        items(availableAgents) { agent ->
+                        items(
+                            items = availableAgents,
+                            key = { agent -> "available_${agent.binary}" }
+                        ) { agent ->
                             AgentItem(
                                 agent = agent,
                                 isSelected = selectedAgent == agent.binary,
@@ -527,7 +536,7 @@ private fun AgentSelectionStep(
                     // Show unavailable agents
                     val unavailableAgents = agentsState.agents.filter { !it.available }
                     if (unavailableAgents.isNotEmpty()) {
-                        item {
+                        item(key = "unavailable_header") {
                             Text(
                                 text = "Not Installed",
                                 style = MaterialTheme.typography.titleSmall,
@@ -535,7 +544,10 @@ private fun AgentSelectionStep(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
-                        items(unavailableAgents) { agent ->
+                        items(
+                            items = unavailableAgents,
+                            key = { agent -> "unavailable_${agent.binary}" }
+                        ) { agent ->
                             AgentItem(
                                 agent = agent,
                                 isSelected = false,

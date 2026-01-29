@@ -12,6 +12,7 @@ import com.ras.data.sessions.SessionRepository
 import com.ras.data.sessions.SessionStatus
 import com.ras.ui.sessions.CreateSessionUiEvent
 import com.ras.ui.sessions.CreateSessionViewModel
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -100,7 +101,12 @@ class CreateSessionViewModelTest {
 
     @Test
     fun `selectAgent updates selectedAgent`() = runTest {
+        // Pre-load agents for validation
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+
         val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         viewModel.startDirectorySelection()
         viewModel.selectDirectory("/home/user/project")
         viewModel.proceedToAgentSelection()
@@ -111,7 +117,12 @@ class CreateSessionViewModelTest {
 
     @Test
     fun `createSession calls repository and changes state to Creating`() = runTest {
+        // Pre-load agents for validation
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+
         val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         viewModel.startDirectorySelection()
         viewModel.selectDirectory("/home/user/project")
         viewModel.proceedToAgentSelection()
@@ -124,7 +135,12 @@ class CreateSessionViewModelTest {
 
     @Test
     fun `reset clears all state`() = runTest {
+        // Pre-load agents for validation
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+
         val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         viewModel.startDirectorySelection()
         viewModel.selectDirectory("/home/user/project")
         viewModel.proceedToAgentSelection()
@@ -190,10 +206,23 @@ class CreateSessionViewModelTest {
     }
 
     @Test
-    fun `SessionError event changes state to Failed`() = runTest {
+    fun `SessionError event changes state to Failed when in Creating state`() = runTest {
+        // Pre-load agents for validation
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
+        // Must be in Creating state for SessionError to update state
+        viewModel.startDirectorySelection()
+        viewModel.selectDirectory("/home/user/project")
+        viewModel.proceedToAgentSelection()
+        viewModel.selectAgent("claude")
+        viewModel.createSession()
+
+        assertTrue(viewModel.createState.value is CreateSessionState.Creating)
+
+        // Now emit error
         eventsFlow.emit(SessionEvent.SessionError("DIR_NOT_FOUND", "Directory not found", null))
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -466,6 +495,243 @@ class CreateSessionViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(recent, viewModel.recentDirectories.value)
+    }
+
+    // ==========================================================================
+    // Loading Fix Tests (verifying fix for hanging/race condition)
+    // ==========================================================================
+
+    @Test
+    fun `loadInitialData uses existing agents without calling getAgents`() = runTest {
+        // Pre-populate agents before ViewModel creation
+        val existingAgents = listOf(
+            AgentInfo("Claude", "claude", "/usr/bin/claude", true)
+        )
+        agentsFlow.value = existingAgents
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should use existing agents
+        val state = viewModel.agentsState.value
+        assertTrue(state is AgentsListState.Loaded)
+        assertEquals(1, (state as AgentsListState.Loaded).agents.size)
+
+        // getAgents should NOT be called when agents already exist
+        coVerify(exactly = 0) { repository.getAgents() }
+    }
+
+    @Test
+    fun `loadInitialData calls getAgents when no existing agents`() = runTest {
+        // No pre-populated agents
+        agentsFlow.value = emptyList()
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should call getAgents
+        coVerify { repository.getAgents() }
+    }
+
+    @Test
+    fun `SessionError only updates state when in Creating state`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Start directory selection (not Creating state)
+        viewModel.startDirectorySelection()
+        assertTrue(viewModel.createState.value is CreateSessionState.SelectingDirectory)
+
+        // Emit session error
+        eventsFlow.emit(SessionEvent.SessionError("ERROR", "Some error", null))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // State should NOT change to Failed (still SelectingDirectory)
+        assertTrue(viewModel.createState.value is CreateSessionState.SelectingDirectory)
+    }
+
+    @Test
+    fun `SessionError updates state when in Creating state`() = runTest {
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Go through wizard to Creating state
+        viewModel.startDirectorySelection()
+        viewModel.selectDirectory("/home/user/project")
+        viewModel.proceedToAgentSelection()
+        viewModel.selectAgent("claude")
+        viewModel.createSession()
+
+        assertTrue(viewModel.createState.value is CreateSessionState.Creating)
+
+        // Emit session error
+        eventsFlow.emit(SessionEvent.SessionError("DIR_NOT_FOUND", "Directory not found", null))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // State SHOULD change to Failed
+        val state = viewModel.createState.value
+        assertTrue(state is CreateSessionState.Failed)
+        assertEquals("DIR_NOT_FOUND", (state as CreateSessionState.Failed).errorCode)
+    }
+
+    // ==========================================================================
+    // Channel Single Delivery Tests
+    // ==========================================================================
+
+    @Test
+    fun `UI events are delivered exactly once via Channel`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val receivedEvents = mutableListOf<CreateSessionUiEvent>()
+        viewModel.uiEvents.test {
+            // Emit error event
+            eventsFlow.emit(SessionEvent.SessionError("ERROR1", "Error 1", null))
+            testDispatcher.scheduler.advanceUntilIdle()
+            receivedEvents.add(awaitItem())
+
+            // Emit another error
+            eventsFlow.emit(SessionEvent.SessionError("ERROR2", "Error 2", null))
+            testDispatcher.scheduler.advanceUntilIdle()
+            receivedEvents.add(awaitItem())
+        }
+
+        assertEquals(2, receivedEvents.size)
+        assertEquals("Error 1", (receivedEvents[0] as CreateSessionUiEvent.Error).message)
+        assertEquals("Error 2", (receivedEvents[1] as CreateSessionUiEvent.Error).message)
+    }
+
+    // ==========================================================================
+    // Atomic State Transition Tests
+    // ==========================================================================
+
+    @Test
+    fun `concurrent createSession calls are prevented by atomic check`() = runTest {
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.startDirectorySelection()
+        viewModel.selectDirectory("/home/user/project")
+        viewModel.proceedToAgentSelection()
+        viewModel.selectAgent("claude")
+
+        // Call createSession multiple times rapidly
+        viewModel.createSession()
+        viewModel.createSession()
+        viewModel.createSession()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should only call repository once (atomic guard)
+        coVerify(exactly = 1) { repository.createSession(any(), any()) }
+    }
+
+    @Test
+    fun `goBackStep atomic transition from SelectingAgent preserves directory`() = runTest {
+        val viewModel = createViewModel()
+        viewModel.startDirectorySelection()
+        viewModel.selectDirectory("/home/user/my-project")
+        viewModel.proceedToAgentSelection()
+
+        viewModel.goBackStep()
+
+        val state = viewModel.createState.value
+        assertTrue(state is CreateSessionState.DirectorySelected)
+        assertEquals("/home/user/my-project", (state as CreateSessionState.DirectorySelected).directory)
+    }
+
+    @Test
+    fun `reset atomically clears all state`() = runTest {
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Set up state
+        viewModel.startDirectorySelection()
+        viewModel.selectDirectory("/home/user/project")
+        viewModel.proceedToAgentSelection()
+        viewModel.selectAgent("claude")
+
+        // Reset
+        viewModel.reset()
+
+        // All state should be cleared
+        assertTrue(viewModel.createState.value is CreateSessionState.Idle)
+        assertNull(viewModel.selectedDirectory.value)
+        assertNull(viewModel.selectedAgent.value)
+        assertEquals("", viewModel.currentPath.value)
+    }
+
+    @Test
+    fun `directory state updates atomically on navigation`() = runTest {
+        val viewModel = createViewModel()
+        viewModel.startDirectorySelection()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Navigate to directory - should set Loading state
+        viewModel.navigateToDirectory("/home/user")
+
+        // State should be Loading
+        assertTrue(viewModel.directoryState.value is DirectoryBrowserState.Loading)
+        assertEquals("/home/user", viewModel.currentPath.value)
+    }
+
+    // ==========================================================================
+    // Error Handling Tests
+    // ==========================================================================
+
+    @Test
+    fun `createSession error updates state and emits event`() = runTest {
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+        coEvery { repository.createSession(any(), any()) } throws RuntimeException("Network error")
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.startDirectorySelection()
+        viewModel.selectDirectory("/home/user/project")
+        viewModel.proceedToAgentSelection()
+        viewModel.selectAgent("claude")
+
+        viewModel.uiEvents.test {
+            viewModel.createSession()
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is CreateSessionUiEvent.Error)
+            assertTrue((event as CreateSessionUiEvent.Error).message.contains("Network error"))
+        }
+
+        // State should be Failed
+        val state = viewModel.createState.value
+        assertTrue(state is CreateSessionState.Failed)
+    }
+
+    @Test
+    fun `refreshAgents sets Loading state then updates on response`() = runTest {
+        agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Initially Loaded
+        assertTrue(viewModel.agentsState.value is AgentsListState.Loaded)
+
+        // Refresh sets Loading
+        viewModel.refreshAgents()
+        assertTrue(viewModel.agentsState.value is AgentsListState.Loading)
+
+        // Simulate response
+        eventsFlow.emit(SessionEvent.AgentsLoaded(listOf(
+            AgentInfo("Claude", "claude", "/usr/bin/claude", true),
+            AgentInfo("Aider", "aider", "/usr/bin/aider", true)
+        )))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should be Loaded with new agents
+        val state = viewModel.agentsState.value
+        assertTrue(state is AgentsListState.Loaded)
+        assertEquals(2, (state as AgentsListState.Loaded).agents.size)
     }
 
     private fun createViewModel() = CreateSessionViewModel(repository)

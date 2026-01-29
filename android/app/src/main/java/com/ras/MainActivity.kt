@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,14 +18,13 @@ import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
-import com.ras.data.sessions.SessionRepository
 import com.ras.notifications.NotificationHandler
 import com.ras.ui.navigation.NavGraph
 import com.ras.ui.navigation.Routes
 import com.ras.ui.theme.RASTheme
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -44,12 +42,10 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var notificationHandler: NotificationHandler
 
-    @Inject
-    lateinit var sessionRepository: SessionRepository
-
-    // Flow to communicate deep link navigation to composable
-    private val _deepLinkNavigation = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    private val deepLinkNavigation = _deepLinkNavigation.asSharedFlow()
+    // Channel to communicate deep link navigation to composable
+    // Using Channel for guaranteed single delivery of navigation events
+    private val _deepLinkNavigation = Channel<String>(Channel.BUFFERED)
+    private val deepLinkNavigation = _deepLinkNavigation.receiveAsFlow()
 
     // Track if we've already handled the current intent to prevent double handling
     private var handledIntentHashCode: Int? = null
@@ -78,10 +74,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             RASTheme {
-                MainContent(
-                    deepLinkNavigation = deepLinkNavigation,
-                    onSessionNotFound = { showSessionNotFoundToast() }
-                )
+                MainContent(deepLinkNavigation = deepLinkNavigation)
             }
         }
     }
@@ -114,8 +107,9 @@ class MainActivity : ComponentActivity() {
     /**
      * Handle intent from notification tap.
      *
-     * Validates the intent, checks if the session exists, and navigates accordingly.
-     * Clears intent extras only after navigation is complete to prevent race conditions.
+     * Navigates to the appropriate screen based on the intent extras.
+     * Does NOT validate if session exists - let the destination handle that.
+     * This avoids race conditions when sessions haven't loaded yet on cold start.
      */
     private fun handleNotificationIntent(intent: Intent?) {
         if (intent == null) return
@@ -136,38 +130,22 @@ class MainActivity : ComponentActivity() {
         // Mark as handled before processing
         handledIntentHashCode = intentHash
 
-        lifecycleScope.launch {
-            try {
-                if (sessionId.isNullOrBlank()) {
-                    // Group summary was tapped - navigate to sessions list
-                    _deepLinkNavigation.emit(NAVIGATE_TO_SESSIONS)
-                } else {
-                    // Specific session notification was tapped
-                    val sessions = sessionRepository.sessions.value
-                    val sessionExists = sessions.any { it.id == sessionId }
+        // Clear extras immediately to prevent re-processing on configuration change
+        intent.removeExtra(NotificationHandler.EXTRA_SESSION_ID)
+        intent.removeExtra(NotificationHandler.EXTRA_FROM_NOTIFICATION)
 
-                    if (sessionExists) {
-                        // Navigate to session terminal
-                        _deepLinkNavigation.emit(sessionId)
-                        // Dismiss the notification
-                        notificationHandler.dismissNotification(sessionId)
-                    } else {
-                        // Session no longer exists - show toast and navigate to sessions list
-                        showSessionNotFoundToast()
-                        _deepLinkNavigation.emit(NAVIGATE_TO_SESSIONS)
-                    }
-                }
-            } finally {
-                // Clear the extras only after processing is complete
-                // This prevents race conditions with configuration changes
-                intent.removeExtra(NotificationHandler.EXTRA_SESSION_ID)
-                intent.removeExtra(NotificationHandler.EXTRA_FROM_NOTIFICATION)
+        lifecycleScope.launch {
+            if (sessionId.isNullOrBlank()) {
+                // Group summary was tapped - navigate to sessions list
+                _deepLinkNavigation.send(NAVIGATE_TO_SESSIONS)
+            } else {
+                // Specific session notification was tapped - navigate to terminal
+                // TerminalViewModel will handle if session doesn't exist
+                _deepLinkNavigation.send(sessionId)
+                // Dismiss the notification
+                notificationHandler.dismissNotification(sessionId)
             }
         }
-    }
-
-    private fun showSessionNotFoundToast() {
-        Toast.makeText(this, "Session not found", Toast.LENGTH_SHORT).show()
     }
 
     companion object {
@@ -178,8 +156,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun MainContent(
-    deepLinkNavigation: kotlinx.coroutines.flow.SharedFlow<String>,
-    @Suppress("UNUSED_PARAMETER") onSessionNotFound: () -> Unit
+    deepLinkNavigation: kotlinx.coroutines.flow.Flow<String>
 ) {
     val navController = rememberNavController()
 

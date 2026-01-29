@@ -16,6 +16,9 @@ import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
 import com.ras.util.ClipboardHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -184,10 +187,21 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
+    @OptIn(DelicateCoroutinesApi::class)
     override fun onCleared() {
         super.onCleared()
-        viewModelScope.launch {
-            repository.detach()
+        // Use GlobalScope for cleanup that should complete even after ViewModel is destroyed.
+        // This is the standard Android pattern for cleanup that:
+        // 1. Should not block the main thread (runBlocking would cause ANR)
+        // 2. Should outlive the ViewModel's scope (viewModelScope is cancelled here)
+        // The daemon will also timeout abandoned sessions, so this is best-effort.
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                repository.detach()
+            } catch (e: Exception) {
+                // Log but don't crash - cleanup should be best-effort
+                android.util.Log.w("TerminalViewModel", "Error during detach in onCleared", e)
+            }
         }
     }
 

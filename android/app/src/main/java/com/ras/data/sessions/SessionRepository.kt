@@ -17,6 +17,7 @@ import com.ras.proto.Session
 import com.ras.proto.SessionCommand
 import com.ras.proto.SessionEvent as ProtoSessionEvent
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -41,7 +44,16 @@ class SessionRepository @Inject constructor(
     private val connectionManager: ConnectionManager,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
+    // Exception handler to prevent silent failures in coroutines
+    private val exceptionHandler = CoroutineExceptionHandler { _, exception ->
+        Log.e(TAG, "Uncaught exception in SessionRepository scope", exception)
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher + exceptionHandler)
+
+    // Mutex to synchronize state updates from InitialState and SessionEvents
+    // Prevents race conditions when both arrive nearly simultaneously
+    private val stateMutex = Mutex()
 
     // Session state
     private val _sessions = MutableStateFlow<List<SessionInfo>>(emptyList())
@@ -67,11 +79,14 @@ class SessionRepository @Inject constructor(
 
     /**
      * Subscribe to session events from ConnectionManager.
+     * Uses mutex to synchronize with InitialState updates.
      */
     private fun subscribeToSessionEvents() {
         scope.launch {
             connectionManager.sessionEvents.collect { event ->
-                processEvent(event)
+                stateMutex.withLock {
+                    processEvent(event)
+                }
             }
         }
     }
@@ -79,22 +94,37 @@ class SessionRepository @Inject constructor(
     /**
      * Subscribe to InitialState from ConnectionManager.
      * InitialState is sent once when connection is established.
+     * Uses mutex to synchronize with session event updates.
      */
     private fun subscribeToInitialState() {
         scope.launch {
             connectionManager.initialState.collect { initialState ->
-                Log.i(TAG, "Received InitialState: ${initialState.sessionsCount} sessions, ${initialState.agentsCount} agents")
+                stateMutex.withLock {
+                    Log.i(TAG, "Received InitialState: ${initialState.sessionsCount} sessions, ${initialState.agentsCount} agents")
 
-                // Update sessions
-                if (initialState.sessionsCount > 0) {
-                    _sessions.value = initialState.sessionsList.map { it.toDomain() }
-                }
+                    // Update sessions
+                    if (initialState.sessionsCount > 0) {
+                        try {
+                            val sessions = initialState.sessionsList.map { it.toDomain() }
+                            Log.i(TAG, "Mapped ${sessions.size} sessions, updating _sessions")
+                            _sessions.value = sessions
+                            Log.i(TAG, "_sessions updated, now has ${_sessions.value.size} sessions")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error mapping sessions", e)
+                        }
+                    }
 
-                // Update agents
-                if (initialState.agentsCount > 0) {
-                    val agents = initialState.agentsList.map { it.toDomain() }
-                    _agents.value = agents
-                    _events.tryEmit(SessionEvent.AgentsLoaded(agents))
+                    // Update agents
+                    if (initialState.agentsCount > 0) {
+                        try {
+                            val agents = initialState.agentsList.map { it.toDomain() }
+                            Log.i(TAG, "Mapped ${agents.size} agents")
+                            _agents.value = agents
+                            _events.tryEmit(SessionEvent.AgentsLoaded(agents))
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error mapping agents", e)
+                        }
+                    }
                 }
             }
         }

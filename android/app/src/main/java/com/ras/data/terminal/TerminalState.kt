@@ -55,6 +55,15 @@ data class TerminalErrorInfo(
 )
 
 /**
+ * Exception thrown when terminal attach operation fails.
+ * Used for request-response correlation in TerminalRepository.attach().
+ */
+class TerminalAttachException(
+    val code: String,
+    override val message: String
+) : Exception(message)
+
+/**
  * Terminal error codes from the daemon.
  */
 object TerminalErrorCodes {

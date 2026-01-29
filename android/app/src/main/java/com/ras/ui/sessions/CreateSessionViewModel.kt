@@ -12,13 +12,12 @@ import com.ras.data.sessions.DirectoryPathValidator
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -60,9 +59,9 @@ class CreateSessionViewModel @Inject constructor(
     private val _recentDirectories = MutableStateFlow<List<String>>(emptyList())
     val recentDirectories: StateFlow<List<String>> = _recentDirectories.asStateFlow()
 
-    // One-time UI events
-    private val _uiEvents = MutableSharedFlow<CreateSessionUiEvent>(extraBufferCapacity = 64)
-    val uiEvents: SharedFlow<CreateSessionUiEvent> = _uiEvents.asSharedFlow()
+    // One-time UI events using Channel for guaranteed single delivery
+    private val _uiEvents = Channel<CreateSessionUiEvent>(Channel.BUFFERED)
+    val uiEvents = _uiEvents.receiveAsFlow()
 
     init {
         observeRepositoryEvents()
@@ -74,12 +73,19 @@ class CreateSessionViewModel @Inject constructor(
             sessionRepository.events.collect { event ->
                 when (event) {
                     is SessionEvent.SessionCreated -> {
-                        _createState.value = CreateSessionState.Created(event.session)
-                        _uiEvents.emit(CreateSessionUiEvent.SessionCreated(event.session.displayText))
+                        _createState.update { CreateSessionState.Created(event.session) }
+                        _uiEvents.send(CreateSessionUiEvent.SessionCreated(event.session.displayText))
                     }
                     is SessionEvent.SessionError -> {
-                        _createState.value = CreateSessionState.Failed(event.code, event.message)
-                        _uiEvents.emit(CreateSessionUiEvent.Error(event.message))
+                        // Only update state if we were in Creating state (error relevant to us)
+                        _createState.update { current ->
+                            if (current is CreateSessionState.Creating) {
+                                CreateSessionState.Failed(event.code, event.message)
+                            } else {
+                                current
+                            }
+                        }
+                        _uiEvents.send(CreateSessionUiEvent.Error(event.message))
                     }
                     is SessionEvent.DirectoriesLoaded -> {
                         updateDirectories(event.parent, event.entries, event.recentDirectories)
@@ -95,14 +101,17 @@ class CreateSessionViewModel @Inject constructor(
 
     private fun loadInitialData() {
         viewModelScope.launch {
-            // Load agents
-            try {
-                sessionRepository.getAgents()
-                // Wait for agents to be loaded via the flow
-                val agents = sessionRepository.agents.first { it.isNotEmpty() || !sessionRepository.isConnected.value }
-                _agentsState.value = AgentsListState.Loaded(agents)
-            } catch (e: Exception) {
-                _agentsState.value = AgentsListState.Error(e.message ?: "Failed to load agents")
+            // Check if we already have agents from InitialState
+            val existingAgents = sessionRepository.agents.value
+            if (existingAgents.isNotEmpty()) {
+                _agentsState.update { AgentsListState.Loaded(existingAgents) }
+            } else {
+                // Request agents - result will arrive via AgentsLoaded event
+                try {
+                    sessionRepository.getAgents()
+                } catch (e: Exception) {
+                    _agentsState.update { AgentsListState.Error(e.message ?: "Failed to load agents") }
+                }
             }
 
             // Load root directories
@@ -114,7 +123,7 @@ class CreateSessionViewModel @Inject constructor(
      * Start the directory selection step.
      */
     fun startDirectorySelection() {
-        _createState.value = CreateSessionState.SelectingDirectory
+        _createState.update { CreateSessionState.SelectingDirectory }
         pathHistory.clear()
         loadDirectories("")
     }
@@ -147,17 +156,17 @@ class CreateSessionViewModel @Inject constructor(
     }
 
     private fun loadDirectories(path: String) {
-        _currentPath.value = path
-        _directoryState.value = DirectoryBrowserState.Loading
+        _currentPath.update { path }
+        _directoryState.update { DirectoryBrowserState.Loading }
 
         viewModelScope.launch {
             try {
                 sessionRepository.getDirectories(path)
                 // Directory data will arrive via DirectoriesLoaded event
             } catch (e: Exception) {
-                _directoryState.value = DirectoryBrowserState.Error(
-                    e.message ?: "Failed to load directories"
-                )
+                _directoryState.update {
+                    DirectoryBrowserState.Error(e.message ?: "Failed to load directories")
+                }
             }
         }
     }
@@ -170,12 +179,12 @@ class CreateSessionViewModel @Inject constructor(
     fun selectDirectory(directory: String) {
         if (!DirectoryPathValidator.isValid(directory)) {
             viewModelScope.launch {
-                _uiEvents.emit(CreateSessionUiEvent.Error("Invalid directory path"))
+                _uiEvents.send(CreateSessionUiEvent.Error("Invalid directory path"))
             }
             return
         }
-        _selectedDirectory.value = directory
-        _createState.value = CreateSessionState.DirectorySelected(directory)
+        _selectedDirectory.update { directory }
+        _createState.update { CreateSessionState.DirectorySelected(directory) }
     }
 
     /**
@@ -186,19 +195,19 @@ class CreateSessionViewModel @Inject constructor(
     fun selectRecentDirectory(directory: String) {
         if (!DirectoryPathValidator.isValid(directory)) {
             viewModelScope.launch {
-                _uiEvents.emit(CreateSessionUiEvent.Error("Invalid directory path"))
+                _uiEvents.send(CreateSessionUiEvent.Error("Invalid directory path"))
             }
             return
         }
-        _selectedDirectory.value = directory
-        _createState.value = CreateSessionState.DirectorySelected(directory)
+        _selectedDirectory.update { directory }
+        _createState.update { CreateSessionState.DirectorySelected(directory) }
     }
 
     /**
      * Proceed to agent selection.
      */
     fun proceedToAgentSelection() {
-        _createState.value = CreateSessionState.SelectingAgent
+        _createState.update { CreateSessionState.SelectingAgent }
     }
 
     /**
@@ -210,7 +219,7 @@ class CreateSessionViewModel @Inject constructor(
         // Validate agent name format
         if (!AgentNameValidator.isValid(agent)) {
             viewModelScope.launch {
-                _uiEvents.emit(CreateSessionUiEvent.Error("Invalid agent name"))
+                _uiEvents.send(CreateSessionUiEvent.Error("Invalid agent name"))
             }
             return
         }
@@ -220,45 +229,50 @@ class CreateSessionViewModel @Inject constructor(
         val agentInfo = agentsList.find { it.binary == agent }
         if (agentInfo == null) {
             viewModelScope.launch {
-                _uiEvents.emit(CreateSessionUiEvent.Error("Agent not found"))
+                _uiEvents.send(CreateSessionUiEvent.Error("Agent not found"))
             }
             return
         }
         if (!agentInfo.available) {
             viewModelScope.launch {
-                _uiEvents.emit(CreateSessionUiEvent.Error("Agent is not available"))
+                _uiEvents.send(CreateSessionUiEvent.Error("Agent is not available"))
             }
             return
         }
 
-        _selectedAgent.value = agent
+        _selectedAgent.update { agent }
     }
 
     /**
      * Create the session with selected directory and agent.
-     * This method is guarded against concurrent calls.
+     * This method is guarded against concurrent calls using atomic state check.
      */
     fun createSession() {
-        // Guard against concurrent calls
-        if (_createState.value is CreateSessionState.Creating) {
-            return
-        }
-
         val directory = _selectedDirectory.value ?: return
         val agent = _selectedAgent.value ?: return
 
-        _createState.value = CreateSessionState.Creating(directory, agent)
+        // Atomic check-and-set to guard against concurrent calls
+        var shouldCreate = false
+        _createState.update { currentState ->
+            if (currentState is CreateSessionState.Creating) {
+                currentState  // Already creating, no-op
+            } else {
+                shouldCreate = true
+                CreateSessionState.Creating(directory, agent)
+            }
+        }
+
+        if (!shouldCreate) return
 
         viewModelScope.launch {
             try {
                 sessionRepository.createSession(directory, agent)
                 // Success will be handled via SessionCreated event
             } catch (e: Exception) {
-                _createState.value = CreateSessionState.Failed(
-                    "UNKNOWN",
-                    e.message ?: "Failed to create session"
-                )
-                _uiEvents.emit(CreateSessionUiEvent.Error(e.message ?: "Failed to create session"))
+                _createState.update {
+                    CreateSessionState.Failed("UNKNOWN", e.message ?: "Failed to create session")
+                }
+                _uiEvents.send(CreateSessionUiEvent.Error(e.message ?: "Failed to create session"))
             }
         }
     }
@@ -267,10 +281,10 @@ class CreateSessionViewModel @Inject constructor(
      * Reset the wizard to initial state.
      */
     fun reset() {
-        _createState.value = CreateSessionState.Idle
-        _selectedDirectory.value = null
-        _selectedAgent.value = null
-        _currentPath.value = ""
+        _createState.update { CreateSessionState.Idle }
+        _selectedDirectory.update { null }
+        _selectedAgent.update { null }
+        _currentPath.update { "" }
         pathHistory.clear()
     }
 
@@ -278,20 +292,14 @@ class CreateSessionViewModel @Inject constructor(
      * Go back one step in the wizard.
      */
     fun goBackStep() {
-        when (_createState.value) {
-            is CreateSessionState.DirectorySelected -> {
-                _createState.value = CreateSessionState.SelectingDirectory
+        val directory = _selectedDirectory.value ?: ""
+        _createState.update { currentState ->
+            when (currentState) {
+                is CreateSessionState.DirectorySelected -> CreateSessionState.SelectingDirectory
+                is CreateSessionState.SelectingAgent -> CreateSessionState.DirectorySelected(directory)
+                is CreateSessionState.Failed -> CreateSessionState.SelectingAgent
+                else -> currentState  // Can't go back from other states
             }
-            is CreateSessionState.SelectingAgent -> {
-                _createState.value = CreateSessionState.DirectorySelected(
-                    _selectedDirectory.value ?: ""
-                )
-            }
-            is CreateSessionState.Failed -> {
-                // Go back to agent selection
-                _createState.value = CreateSessionState.SelectingAgent
-            }
-            else -> { /* Can't go back from other states */ }
         }
     }
 
@@ -299,12 +307,12 @@ class CreateSessionViewModel @Inject constructor(
      * Refresh agents list.
      */
     fun refreshAgents() {
-        _agentsState.value = AgentsListState.Loading
+        _agentsState.update { AgentsListState.Loading }
         viewModelScope.launch {
             try {
                 sessionRepository.refreshAgents()
             } catch (e: Exception) {
-                _agentsState.value = AgentsListState.Error(e.message ?: "Failed to refresh agents")
+                _agentsState.update { AgentsListState.Error(e.message ?: "Failed to refresh agents") }
             }
         }
     }
@@ -313,18 +321,20 @@ class CreateSessionViewModel @Inject constructor(
      * Update directory browser with data from daemon.
      * Called when DirectoriesListEvent is received.
      */
-    fun updateDirectories(
+    private fun updateDirectories(
         parent: String,
         entries: List<DirectoryEntryInfo>,
         recentDirs: List<String>
     ) {
-        _directoryState.value = DirectoryBrowserState.Loaded(
-            parent = parent,
-            entries = entries,
-            recentDirectories = recentDirs
-        )
+        _directoryState.update {
+            DirectoryBrowserState.Loaded(
+                parent = parent,
+                entries = entries,
+                recentDirectories = recentDirs
+            )
+        }
         if (recentDirs.isNotEmpty()) {
-            _recentDirectories.value = recentDirs
+            _recentDirectories.update { recentDirs }
         }
     }
 
@@ -332,8 +342,8 @@ class CreateSessionViewModel @Inject constructor(
      * Update agents list with data from daemon.
      * Called when AgentsListEvent is received.
      */
-    fun updateAgents(agents: List<AgentInfo>) {
-        _agentsState.value = AgentsListState.Loaded(agents)
+    private fun updateAgents(agents: List<AgentInfo>) {
+        _agentsState.update { AgentsListState.Loaded(agents) }
     }
 }
 

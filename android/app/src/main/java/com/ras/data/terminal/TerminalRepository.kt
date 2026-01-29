@@ -8,14 +8,18 @@ import com.ras.proto.AttachTerminal
 import com.ras.proto.DetachTerminal
 import com.ras.proto.KeyType
 import com.ras.proto.SpecialKey
+import com.ras.proto.TerminalAttached
 import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalInput
 import com.ras.proto.TerminalNotification
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import com.google.protobuf.ByteString
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -25,7 +29,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,9 +52,15 @@ class TerminalRepository @Inject constructor(
 ) {
     companion object {
         private const val TAG = "TerminalRepository"
+        private const val ATTACH_TIMEOUT_MS = 10_000L // 10 seconds
     }
 
-    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
+    // Exception handler to prevent silent failures in coroutines
+    private val exceptionHandler = CoroutineExceptionHandler { _, exception ->
+        Log.e(TAG, "Uncaught exception in TerminalRepository scope", exception)
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher + exceptionHandler)
 
     // Terminal state
     private val _state = MutableStateFlow(TerminalState())
@@ -90,8 +102,10 @@ class TerminalRepository @Inject constructor(
         }
     }
 
-    private suspend fun handleAttached(attached: com.ras.proto.TerminalAttached) {
+    private suspend fun handleAttached(attached: TerminalAttached) {
         Log.d(TAG, "Attached to session: ${attached.sessionId}")
+
+        // Update state
         _state.update { current ->
             current.copy(
                 sessionId = attached.sessionId,
@@ -104,6 +118,12 @@ class TerminalRepository @Inject constructor(
                 error = null
             )
         }
+
+        // Complete pending request-response correlation
+        // This unblocks the attach() caller who is awaiting the response
+        pendingAttach?.complete(attached)
+
+        // Emit event for other listeners
         _events.emit(
             TerminalEvent.Attached(
                 sessionId = attached.sessionId,
@@ -163,6 +183,10 @@ class TerminalRepository @Inject constructor(
 
     private suspend fun handleError(error: com.ras.proto.TerminalError) {
         Log.e(TAG, "Terminal error: ${error.errorCode} - ${error.message}")
+
+        val wasAttaching = _state.value.isAttaching
+
+        // Update state
         _state.update { current ->
             current.copy(
                 isAttaching = false,
@@ -173,6 +197,16 @@ class TerminalRepository @Inject constructor(
                 )
             )
         }
+
+        // If we were attaching, complete the pending request-response with error
+        // This unblocks the attach() caller with an exception
+        if (wasAttaching) {
+            pendingAttach?.completeExceptionally(
+                TerminalAttachException(error.errorCode, error.message)
+            )
+        }
+
+        // Emit event for other listeners
         _events.emit(
             TerminalEvent.Error(
                 sessionId = error.sessionId.ifEmpty { null },
@@ -226,22 +260,37 @@ class TerminalRepository @Inject constructor(
     // Commands (Phone -> Daemon)
     // ==========================================================================
 
-    // Lock for preventing multiple attach() calls
-    private val attachLock = Any()
+    // Mutex for preventing concurrent attach() calls (coroutine-safe)
+    private val attachMutex = Mutex()
+
+    // Pending attach operation - completed when daemon responds with Attached or Error
+    // This is the industry-standard request-response correlation pattern
+    @Volatile
+    private var pendingAttach: CompletableDeferred<TerminalAttached>? = null
 
     /**
      * Attach to a terminal session.
+     *
+     * This is a suspending request-response operation that:
+     * 1. Sends the attach command to the daemon
+     * 2. Waits for the daemon's response (TerminalAttached or TerminalError)
+     * 3. Returns when attached or throws on error/timeout
+     *
+     * Uses CompletableDeferred for proper request-response correlation,
+     * avoiding race conditions between sending command and receiving response.
      *
      * @param sessionId The session ID to attach to
      * @param fromSequence Resume from this sequence (0 = from buffer start)
      * @throws IllegalArgumentException if sessionId is invalid
      * @throws IllegalStateException if already attaching or attached
+     * @throws TimeoutCancellationException if daemon doesn't respond in time
+     * @throws TerminalAttachException if daemon returns an error
      */
     suspend fun attach(sessionId: String, fromSequence: Long = 0) {
         TerminalInputValidator.requireValidSessionId(sessionId)
 
-        // Synchronize to prevent race conditions with multiple attach() calls
-        synchronized(attachLock) {
+        // Use mutex to prevent concurrent attach operations
+        attachMutex.withLock {
             val current = _state.value
 
             // Already attached or attaching to the same session - no-op
@@ -264,20 +313,60 @@ class TerminalRepository @Inject constructor(
                 isAttaching = true,
                 error = null
             )
+
+            Log.d(TAG, "Attaching to session: $sessionId from seq $fromSequence")
+
+            // Create deferred for request-response correlation
+            val deferred = CompletableDeferred<TerminalAttached>()
+            pendingAttach = deferred
+
+            // Send the command
+            val command = TerminalCommand.newBuilder()
+                .setAttach(
+                    AttachTerminal.newBuilder()
+                        .setSessionId(sessionId)
+                        .setFromSequence(fromSequence)
+                        .build()
+                )
+                .build()
+
+            try {
+                connectionManager.sendTerminalCommand(command)
+
+                // Await response with timeout
+                // withTimeout is the proper coroutine-based timeout mechanism
+                withTimeout(ATTACH_TIMEOUT_MS) {
+                    deferred.await()
+                }
+                Log.d(TAG, "Attach completed successfully for session: $sessionId")
+            } catch (e: TimeoutCancellationException) {
+                Log.w(TAG, "Attach timeout for session: $sessionId")
+                pendingAttach = null
+                _state.update { it.copy(
+                    isAttaching = false,
+                    error = TerminalErrorInfo(
+                        code = "ATTACH_TIMEOUT",
+                        message = "Connection to terminal timed out",
+                        sessionId = sessionId
+                    )
+                )}
+                _events.emit(
+                    TerminalEvent.Error(
+                        sessionId = sessionId,
+                        code = "ATTACH_TIMEOUT",
+                        message = "Connection to terminal timed out"
+                    )
+                )
+                throw e
+            } catch (e: TerminalAttachException) {
+                Log.e(TAG, "Attach failed for session: $sessionId - ${e.message}")
+                pendingAttach = null
+                // State already updated in handleError
+                throw e
+            } finally {
+                pendingAttach = null
+            }
         }
-
-        Log.d(TAG, "Attaching to session: $sessionId from seq $fromSequence")
-
-        val command = TerminalCommand.newBuilder()
-            .setAttach(
-                AttachTerminal.newBuilder()
-                    .setSessionId(sessionId)
-                    .setFromSequence(fromSequence)
-                    .build()
-            )
-            .build()
-
-        connectionManager.sendTerminalCommand(command)
     }
 
     /**

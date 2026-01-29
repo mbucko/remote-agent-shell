@@ -227,6 +227,133 @@ class SessionsViewModelTest {
         assertEquals(false, viewModel.isConnected.value)
     }
 
+    // ==========================================================================
+    // Channel Single Delivery Tests (verifying fix for SharedFlow -> Channel)
+    // ==========================================================================
+
+    @Test
+    fun `UI events are delivered exactly once via Channel`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Collect events in first collector
+        val receivedEvents = mutableListOf<SessionsUiEvent>()
+        viewModel.uiEvents.test {
+            eventsFlow.emit(SessionEvent.SessionCreated(createSession("1")))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            receivedEvents.add(awaitItem())
+
+            // Emit another event
+            eventsFlow.emit(SessionEvent.SessionKilled("1"))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            receivedEvents.add(awaitItem())
+        }
+
+        // Verify exactly 2 events received
+        assertEquals(2, receivedEvents.size)
+        assertTrue(receivedEvents[0] is SessionsUiEvent.SessionCreated)
+        assertTrue(receivedEvents[1] is SessionsUiEvent.SessionKilled)
+    }
+
+    @Test
+    fun `multiple rapid events are all delivered via Channel`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            // Emit multiple events rapidly
+            repeat(5) { i ->
+                eventsFlow.emit(SessionEvent.SessionCreated(createSession("$i")))
+            }
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // All 5 events should be received
+            repeat(5) {
+                val event = awaitItem()
+                assertTrue(event is SessionsUiEvent.SessionCreated)
+            }
+        }
+    }
+
+    // ==========================================================================
+    // Atomic State Update Tests
+    // ==========================================================================
+
+    @Test
+    fun `refreshSessions preserves isRefreshing during concurrent session updates`() = runTest {
+        val viewModel = createViewModel()
+
+        // Set initial loaded state
+        sessionsFlow.value = listOf(createSession("1"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Start refresh
+        viewModel.refreshSessions()
+
+        // Simulate concurrent session update while refreshing
+        sessionsFlow.value = listOf(createSession("1"), createSession("2"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // State should be Loaded (refresh completes)
+        val state = viewModel.screenState.value
+        assertTrue(state is SessionsScreenState.Loaded)
+        assertEquals(2, (state as SessionsScreenState.Loaded).sessions.size)
+    }
+
+    @Test
+    fun `loadSessions does not overwrite existing sessions with Loading state`() = runTest {
+        // Pre-populate sessions
+        sessionsFlow.value = listOf(createSession("1"), createSession("2"))
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should be Loaded, not Loading
+        val state = viewModel.screenState.value
+        assertTrue(state is SessionsScreenState.Loaded)
+        assertEquals(2, (state as SessionsScreenState.Loaded).sessions.size)
+    }
+
+    @Test
+    fun `confirmKillSession dismisses dialog immediately for responsiveness`() = runTest {
+        val viewModel = createViewModel()
+        val session = createSession("1")
+
+        viewModel.showKillDialog(session)
+        assertEquals(session, viewModel.showKillDialog.value)
+
+        // Call confirm - dialog should dismiss immediately (before repository call completes)
+        viewModel.confirmKillSession()
+
+        // Dialog should be null immediately
+        assertNull(viewModel.showKillDialog.value)
+
+        // Repository call happens asynchronously
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify { repository.killSession("1") }
+    }
+
+    @Test
+    fun `confirmRenameSession dismisses dialog immediately for responsiveness`() = runTest {
+        val viewModel = createViewModel()
+        val session = createSession("1")
+
+        viewModel.showRenameDialog(session)
+        assertEquals(session, viewModel.showRenameDialog.value)
+
+        // Call confirm - dialog should dismiss immediately
+        viewModel.confirmRenameSession("New Name")
+
+        // Dialog should be null immediately
+        assertNull(viewModel.showRenameDialog.value)
+
+        // Repository call happens asynchronously
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify { repository.renameSession("1", "New Name") }
+    }
+
     private fun createViewModel() = SessionsViewModel(repository)
 
     private fun createSession(
