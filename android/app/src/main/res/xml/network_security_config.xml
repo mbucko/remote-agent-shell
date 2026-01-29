@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext for local development/testing only -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">10.0.2.2</domain>
-    </domain-config>
-
-    <!-- Default: require HTTPS -->
-    <base-config cleartextTrafficPermitted="false">
+    <!--
+         Allow cleartext for local network communication with daemon.
+         This app connects to a local daemon over the LAN which uses HTTP.
+         Production deployments should use TLS, but for local dev/testing
+         and typical home network use, cleartext is acceptable.
+    -->
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
