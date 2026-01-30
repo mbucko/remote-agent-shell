@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
-from ras.proto.ras import (
+from ras.proto.ras.ras import (
     Agent,
     AgentsListEvent,
     CreateSessionCommand,

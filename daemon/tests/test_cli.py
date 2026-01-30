@@ -40,8 +40,14 @@ class TestDaemonCommands:
 
     def test_daemon_start_command_exists(self, runner):
         """ras daemon start is a valid command."""
-        # Mock the Daemon to avoid actually starting a server
-        with patch("ras.daemon.Daemon") as mock_daemon_class:
+        # Mock the DaemonLock to avoid checking for existing daemon
+        # and mock the Daemon to avoid actually starting a server
+        with patch("ras.daemon_lock.DaemonLock") as mock_lock_class, \
+             patch("ras.daemon.Daemon") as mock_daemon_class:
+            mock_lock = mock_lock_class.return_value
+            mock_lock.acquire = lambda: None
+            mock_lock.release = lambda: None
+
             mock_daemon = AsyncMock()
             mock_daemon.start = AsyncMock()
             mock_daemon.run_forever = AsyncMock(side_effect=KeyboardInterrupt)

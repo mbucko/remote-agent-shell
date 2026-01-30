@@ -15,7 +15,9 @@ class MockTmuxExecutor:
 
     def __init__(self, should_fail: bool = False):
         self.send_keys = AsyncMock()
+        self.resize_session = AsyncMock()
         self.calls: list[tuple[str, bytes, bool]] = []
+        self.resize_calls: list[tuple[str, int, int]] = []
         self.should_fail = should_fail
 
         async def capture_call(tmux_name: str, keys: bytes, literal: bool = True):
@@ -23,7 +25,13 @@ class MockTmuxExecutor:
             if self.should_fail:
                 raise RuntimeError("Simulated failure")
 
+        async def capture_resize(session_id: str, rows: int, cols: int):
+            self.resize_calls.append((session_id, rows, cols))
+            if self.should_fail:
+                raise RuntimeError("Simulated failure")
+
         self.send_keys.side_effect = capture_call
+        self.resize_session.side_effect = capture_resize
 
 
 class TestInputHandlerBasic:
@@ -99,8 +107,8 @@ class TestInputHandlerBasic:
         assert mock_tmux.calls[0][1] == b"\x1b[A"
 
     @pytest.mark.asyncio
-    async def test_handle_resize_is_noop(self, handler, mock_tmux):
-        """Resize should be a no-op (fixed 80x24)."""
+    async def test_handle_resize_calls_resize_session(self, handler, mock_tmux):
+        """Resize should call resize_session on tmux executor."""
         input_msg = TerminalInput(
             session_id="abc123def456",
             resize=TerminalResize(cols=120, rows=40),
@@ -111,7 +119,8 @@ class TestInputHandlerBasic:
         )
 
         assert result is None
-        assert len(mock_tmux.calls) == 0
+        assert len(mock_tmux.resize_calls) == 1
+        assert mock_tmux.resize_calls[0] == ("ras-test-session", 40, 120)
 
     @pytest.mark.asyncio
     async def test_handle_unknown_key_type(self, handler, mock_tmux):
