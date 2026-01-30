@@ -131,9 +131,9 @@ class SessionsViewModelE2ETest {
         advanceUntilIdle()
 
         viewModel.screenState.test {
-            // Skip to loaded state
-            skipItems(1)
-            assertEquals(2, (awaitItem() as SessionsScreenState.Loaded).sessions.size)
+            // Get current loaded state (already processed by advanceUntilIdle)
+            val initial = awaitItem() as SessionsScreenState.Loaded
+            assertEquals(2, initial.sessions.size)
 
             sessionsFlow.value = listOf(createSession("session2bbbb", "Second"))
             advanceUntilIdle()
@@ -150,8 +150,9 @@ class SessionsViewModelE2ETest {
         advanceUntilIdle()
 
         viewModel.screenState.test {
-            skipItems(1)
-            assertEquals(1, (awaitItem() as SessionsScreenState.Loaded).sessions.size)
+            // Get current loaded state
+            val initial = awaitItem() as SessionsScreenState.Loaded
+            assertEquals(1, initial.sessions.size)
 
             sessionsFlow.value = emptyList()
             advanceUntilIdle()
@@ -172,7 +173,7 @@ class SessionsViewModelE2ETest {
         advanceUntilIdle()
 
         viewModel.screenState.test {
-            skipItems(1)
+            // Get current loaded state (already processed)
             val state = awaitItem() as SessionsScreenState.Loaded
             assertEquals("session2bbbb", state.sessions[0].id) // Newest first
             assertEquals("session3cccc", state.sessions[1].id) // Middle
@@ -356,16 +357,17 @@ class SessionsViewModelE2ETest {
         advanceUntilIdle()
 
         viewModel.screenState.test {
-            skipItems(1)
+            // Get current loaded state
             val initial = awaitItem() as SessionsScreenState.Loaded
             assertEquals(false, initial.isRefreshing)
 
             viewModel.refreshSessions()
             advanceUntilIdle()
 
-            // Should see isRefreshing = true then false
-            val refreshing = awaitItem() as SessionsScreenState.Loaded
-            // Note: Due to test timing, we might catch it before or after
+            // After refresh completes, isRefreshing should be false again
+            // Due to StateFlow conflation, we may not see the intermediate true state
+            val afterRefresh = expectMostRecentItem() as SessionsScreenState.Loaded
+            assertEquals(false, afterRefresh.isRefreshing)
         }
     }
 
@@ -454,7 +456,7 @@ class SessionsViewModelE2ETest {
         advanceUntilIdle()
 
         viewModel.screenState.test {
-            skipItems(1)
+            // Get current loaded state (already processed)
             val state = awaitItem() as SessionsScreenState.Loaded
             assertEquals(3, state.sessions.size)
         }
@@ -469,7 +471,8 @@ class SessionsViewModelE2ETest {
         advanceUntilIdle()
 
         viewModel.screenState.test {
-            skipItems(1)
+            // Get initial state (empty Loaded after advanceUntilIdle)
+            awaitItem()
 
             // Rapid updates
             for (i in 1..20) {
@@ -479,16 +482,9 @@ class SessionsViewModelE2ETest {
             }
             advanceUntilIdle()
 
-            // Should eventually stabilize at 20 sessions
-            var lastState: SessionsScreenState? = null
-            repeat(25) {
-                try {
-                    lastState = awaitItem()
-                } catch (e: Exception) {
-                    // No more items
-                }
-            }
-            assertEquals(20, (lastState as SessionsScreenState.Loaded).sessions.size)
+            // Due to StateFlow conflation, we get the final state
+            val finalState = expectMostRecentItem() as SessionsScreenState.Loaded
+            assertEquals(20, finalState.sessions.size)
         }
     }
 
@@ -509,7 +505,7 @@ class SessionsViewModelE2ETest {
         advanceUntilIdle()
 
         viewModel.screenState.test {
-            skipItems(1)
+            // Get current loaded state (already processed)
             val state = awaitItem() as SessionsScreenState.Loaded
             assertEquals("ras-claude-project", state.sessions[0].displayText)
         }
@@ -523,7 +519,7 @@ class SessionsViewModelE2ETest {
         advanceUntilIdle()
 
         viewModel.screenState.test {
-            skipItems(1)
+            // Get current loaded state (already processed)
             val state = awaitItem() as SessionsScreenState.Loaded
             assertEquals("my-project", state.sessions[0].directoryBasename)
         }
