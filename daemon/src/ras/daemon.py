@@ -16,7 +16,9 @@ from ras.crypto import BytesCodec
 from ras.device_store import JsonDeviceStore, PairedDevice
 from ras.ip_provider import IpProvider, LocalNetworkIpProvider
 from ras.message_dispatcher import MessageDispatcher
+from ras.ntfy_signaling.reconnection_manager import NtfyReconnectionManager
 from ras.server import UnifiedServer
+from ras.tailscale import TailscaleListener
 from ras.proto.ras import (
     ConnectionReady,
     InitialState,
@@ -100,6 +102,12 @@ class Daemon:
         self._server_runner = None
         self._keepalive_task: Optional[asyncio.Task] = None
 
+        # Ntfy reconnection manager for cross-NAT reconnection
+        self._ntfy_reconnection_manager: Optional[NtfyReconnectionManager] = None
+
+        # Tailscale listener for direct VPN connections
+        self._tailscale_listener: Optional[TailscaleListener] = None
+
         # Connections pending ConnectionReady handshake
         # Device IDs in this set have connected but not yet sent ConnectionReady
         self._pending_ready: set[str] = set()
@@ -126,6 +134,12 @@ class Daemon:
 
         # Start signaling server
         await self._start_signaling_server()
+
+        # Start Tailscale listener for direct VPN connections
+        await self._start_tailscale_listener()
+
+        # Start ntfy reconnection manager for cross-NAT reconnection
+        await self._start_ntfy_reconnection()
 
         # Start keepalive loop
         self._keepalive_task = asyncio.create_task(self._keepalive_loop())
@@ -252,6 +266,68 @@ class Daemon:
         )
         logger.info(f"Unified server started on {self._config.bind_address}:{self._unified_server.get_port()}")
 
+    async def _start_tailscale_listener(self) -> None:
+        """Start Tailscale listener for direct VPN connections.
+
+        Detects Tailscale VPN and starts a UDP listener if available.
+        This enables direct connections when both phone and daemon are
+        on the same Tailscale network, bypassing NAT entirely.
+        """
+        self._tailscale_listener = TailscaleListener(
+            on_connection=self._on_tailscale_connection,
+        )
+
+        started = await self._tailscale_listener.start()
+        if started:
+            logger.info(
+                f"Tailscale listener started on "
+                f"{self._tailscale_listener.tailscale_ip}:{self._tailscale_listener.port}"
+            )
+        else:
+            logger.info("Tailscale not detected, direct VPN connections disabled")
+
+    async def _on_tailscale_connection(self, transport: Any) -> None:
+        """Handle new Tailscale connection from phone.
+
+        Args:
+            transport: TailscaleTransport for the connection.
+        """
+        logger.info(f"Tailscale connection from {transport.remote_address}")
+        # TODO: Integrate with authentication flow
+        # For now, we need to receive device_id and auth from the transport
+        # The phone should send authentication data after connecting
+
+    def get_tailscale_capabilities(self) -> dict:
+        """Get Tailscale capabilities for signaling exchange.
+
+        Returns:
+            Dict with tailscale_ip and tailscale_port if available,
+            empty dict otherwise.
+        """
+        if self._tailscale_listener and self._tailscale_listener.is_available:
+            return self._tailscale_listener.get_capabilities()
+        return {}
+
+    async def _start_ntfy_reconnection(self) -> None:
+        """Start ntfy reconnection manager for cross-NAT reconnection.
+
+        Subscribes to ntfy topics for all paired devices to handle
+        reconnection requests when direct HTTP is not reachable.
+        """
+        if self._device_store is None:
+            logger.warning("Device store not initialized, skipping ntfy reconnection")
+            return
+
+        self._ntfy_reconnection_manager = NtfyReconnectionManager(
+            device_store=self._device_store,
+            stun_servers=self._config.stun_servers,
+            on_reconnection=self._on_device_reconnected,
+            capabilities_provider=self.get_tailscale_capabilities,
+        )
+
+        await self._ntfy_reconnection_manager.start()
+        logger.info("Ntfy reconnection manager started")
+
     def _setup_signals(self) -> None:
         """Set up signal handlers for graceful shutdown."""
         loop = asyncio.get_running_loop()
@@ -280,6 +356,14 @@ class Daemon:
         # Shutdown terminal manager
         if self._terminal_manager:
             await self._terminal_manager.shutdown()
+
+        # Stop ntfy reconnection manager
+        if self._ntfy_reconnection_manager:
+            await self._ntfy_reconnection_manager.stop()
+
+        # Stop Tailscale listener
+        if self._tailscale_listener:
+            await self._tailscale_listener.stop()
 
         # Stop unified server
         if self._unified_server:

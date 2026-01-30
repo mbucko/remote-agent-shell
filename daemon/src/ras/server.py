@@ -720,8 +720,9 @@ class UnifiedServer:
 
         # Set callback for when offer is received
         async def on_offer_received(
-            device_id: str, device_name: str, peer: PeerConnection
+            device_id: str, device_name: str, peer: PeerConnection, is_reconnection: bool
         ) -> None:
+            # Note: is_reconnection will always be False in pairing mode
             await self._on_ntfy_offer_received(session, device_id, device_name, peer)
 
         subscriber.on_offer_received = on_offer_received

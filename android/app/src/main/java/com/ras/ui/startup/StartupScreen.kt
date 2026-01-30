@@ -55,7 +55,7 @@ fun StartupScreen(
                 LoadingContent(message = "Checking credentials...")
             }
             is StartupState.Connecting -> {
-                LoadingContent(message = "Connecting to daemon...")
+                ConnectingContent(progress = currentState.progress)
             }
             is StartupState.ConnectionFailed -> {
                 ConnectionFailedContent(
@@ -90,6 +90,54 @@ private fun LoadingContent(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConnectingContent(
+    progress: ConnectionProgressInfo,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Progress indicator
+        if (progress.progress != null) {
+            CircularProgressIndicator(progress = { progress.progress })
+        } else {
+            CircularProgressIndicator()
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Strategy name (if available)
+        if (progress.strategyName.isNotEmpty()) {
+            Text(
+                text = progress.strategyName,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        // Step description
+        Text(
+            text = progress.step,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // Detail (if available)
+        if (progress.detail != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = progress.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
     }
@@ -150,6 +198,7 @@ private fun getFailureMessage(reason: ReconnectionResult.Failure): String {
         is ReconnectionResult.Failure.NoCredentials -> "No credentials stored."
         is ReconnectionResult.Failure.DaemonUnreachable -> "Could not reach daemon. Make sure the daemon is running."
         is ReconnectionResult.Failure.AuthenticationFailed -> "Authentication failed. You may need to re-pair."
+        is ReconnectionResult.Failure.DeviceNotFound -> "Device not found on daemon. Please re-pair your device."
         is ReconnectionResult.Failure.NetworkError -> "Network error. Check your connection."
         is ReconnectionResult.Failure.Unknown -> reason.message
     }

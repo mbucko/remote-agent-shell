@@ -3,12 +3,21 @@
 This module provides:
 - NtfySignalingHandler: Processes incoming OFFER messages from ntfy
 - Creates WebRTC peer connections and generates ANSWER responses
+- Supports both pairing mode (session_id validation) and reconnection mode (device_id validation)
 - All errors are handled silently (security requirement)
 
 Usage:
+    # For pairing (validates session_id)
     handler = NtfySignalingHandler(
         master_secret=master_secret,
         pending_session_id="abc123",
+    )
+
+    # For reconnection (validates device_id against device_store)
+    handler = NtfySignalingHandler(
+        master_secret=master_secret,
+        pending_session_id="",  # Empty = reconnection mode
+        device_store=device_store,
     )
 
     # When message received from ntfy
@@ -22,7 +31,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional, Protocol
 
 from ras.ntfy_signaling.crypto import (
     DecryptionError,
@@ -34,9 +43,21 @@ from ras.ntfy_signaling.validation import (
     NtfySignalMessageValidator,
     sanitize_device_name,
 )
-from ras.proto.ras.ras import NtfySignalMessage, NtfySignalMessageMessageType
+from ras.proto.ras.ras import (
+    ConnectionCapabilities,
+    NtfySignalMessage,
+    NtfySignalMessageMessageType,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class DeviceStoreProtocol(Protocol):
+    """Protocol for device store access."""
+
+    def get(self, device_id: str) -> Optional[Any]:
+        """Get a device by ID, or None if not found."""
+        ...
 
 
 @dataclass
@@ -48,6 +69,7 @@ class HandlerResult:
     device_id: Optional[str]
     device_name: Optional[str]
     peer: Optional[Any]  # PeerConnection
+    is_reconnection: bool = False  # True if this was a reconnection (not pairing)
 
 
 class NtfySignalingHandler:
@@ -55,6 +77,10 @@ class NtfySignalingHandler:
 
     Processes incoming OFFER messages, validates them, creates WebRTC
     peer connections, and generates encrypted ANSWER responses.
+
+    Modes:
+    - Pairing mode: pending_session_id is set, validates against it
+    - Reconnection mode: pending_session_id is empty, validates device_id against device_store
 
     Security:
     - All errors are silently ignored (no error messages to attacker)
@@ -68,23 +94,45 @@ class NtfySignalingHandler:
         master_secret: bytes,
         pending_session_id: str,
         stun_servers: Optional[list[str]] = None,
+        device_store: Optional[DeviceStoreProtocol] = None,
+        capabilities_provider: Optional[Callable[[], dict]] = None,
     ):
         """Initialize handler.
 
         Args:
             master_secret: 32-byte master secret from QR code.
-            pending_session_id: Expected session ID.
+            pending_session_id: Expected session ID for pairing mode.
+                               Empty string ("") enables reconnection mode.
             stun_servers: STUN servers for WebRTC (optional).
+            device_store: Device store for reconnection mode (required if reconnection enabled).
+            capabilities_provider: Optional callable returning capabilities dict.
+                                  Used to include Tailscale info in ANSWER messages.
         """
         signaling_key = derive_signaling_key(master_secret)
         self._crypto = NtfySignalingCrypto(signaling_key)
-        self._validator = NtfySignalMessageValidator(
-            pending_session_id=pending_session_id,
-            expected_type="OFFER",
-        )
         self._session_id = pending_session_id
         self._stun_servers = stun_servers or []
         self._peer: Optional[Any] = None
+        self._device_store = device_store
+        self._capabilities_provider = capabilities_provider
+
+        # Determine mode
+        self._reconnection_mode = pending_session_id == ""
+
+        if self._reconnection_mode:
+            # Reconnection mode - will validate device_id dynamically
+            self._validator = NtfySignalMessageValidator(
+                pending_session_id="",  # Will match empty session_id in reconnection requests
+                expected_type="OFFER",
+            )
+            logger.info("NtfySignalingHandler initialized in RECONNECTION mode")
+        else:
+            # Pairing mode - validate against specific session_id
+            self._validator = NtfySignalMessageValidator(
+                pending_session_id=pending_session_id,
+                expected_type="OFFER",
+            )
+            logger.info(f"NtfySignalingHandler initialized in PAIRING mode (session={pending_session_id[:8]}...)")
 
     async def handle_message(self, encrypted: str) -> Optional[HandlerResult]:
         """Handle an encrypted ntfy signaling message.
@@ -112,17 +160,50 @@ class NtfySignalingHandler:
         # Parse protobuf
         try:
             msg = NtfySignalMessage().parse(plaintext)
-            logger.info(f"Parsed ntfy message: type={msg.type}, session={msg.session_id[:8]}...")
+            session_id_display = msg.session_id[:8] if msg.session_id else "(empty)"
+            logger.info(f"Parsed ntfy message: type={msg.type}, session={session_id_display}")
         except Exception as e:
             logger.info(f"Failed to parse protobuf: {type(e).__name__}")
             return None
 
-        # Validate
+        # Determine if this is a reconnection request (empty session_id)
+        is_reconnection_request = not msg.session_id
+
+        # Handle mode matching
+        if self._reconnection_mode:
+            # We're in reconnection mode - only accept reconnection requests
+            if not is_reconnection_request:
+                logger.info("Rejecting pairing request in reconnection mode")
+                return None
+        else:
+            # We're in pairing mode - only accept pairing requests
+            if is_reconnection_request:
+                logger.info("Rejecting reconnection request in pairing mode")
+                return None
+
+        # Validate message (timestamp, nonce, type)
         result = self._validator.validate(msg)
         if not result.is_valid:
             logger.info(f"Validation failed: {result.error}")
             return None
         logger.info("Message validated successfully")
+
+        # For reconnection mode, validate device_id against device store
+        if self._reconnection_mode:
+            if not self._device_store:
+                logger.warning("Reconnection mode but no device_store configured")
+                return None
+
+            if not msg.device_id:
+                logger.info("Reconnection request missing device_id")
+                return None
+
+            device = self._device_store.get(msg.device_id)
+            if not device:
+                logger.info(f"Unknown device_id: {msg.device_id[:8]}...")
+                return None
+
+            logger.info(f"Device validated: {msg.device_id[:8]}...")
 
         # Sanitize device name
         device_name = sanitize_device_name(msg.device_name)
@@ -140,15 +221,20 @@ class NtfySignalingHandler:
 
         self._peer = peer
 
+        # Build capabilities for ANSWER message
+        capabilities = self._build_capabilities()
+
         # Create ANSWER message
+        # For reconnection, session_id is empty in the answer too
         answer_msg = NtfySignalMessage(
             type=NtfySignalMessageMessageType.ANSWER,
-            session_id=self._session_id,
+            session_id=self._session_id,  # Empty for reconnection, set for pairing
             sdp=answer_sdp,
             device_id="",  # Not needed for ANSWER
             device_name="",  # Not needed for ANSWER
             timestamp=int(time.time()),
             nonce=os.urandom(NONCE_SIZE),
+            capabilities=capabilities,
         )
 
         # Encrypt answer
@@ -159,14 +245,45 @@ class NtfySignalingHandler:
             logger.warning(f"Failed to encrypt answer: {e}")
             return None
 
-        logger.info("Returning successful handler result")
+        mode = "reconnection" if is_reconnection_request else "pairing"
+        logger.info(f"Returning successful handler result ({mode} mode)")
         return HandlerResult(
             should_respond=True,
             answer_encrypted=answer_encrypted,
             device_id=msg.device_id,
             device_name=device_name,
             peer=peer,
+            is_reconnection=is_reconnection_request,
         )
+
+    def _build_capabilities(self) -> ConnectionCapabilities:
+        """Build connection capabilities for ANSWER message.
+
+        Returns:
+            ConnectionCapabilities with Tailscale info if available.
+        """
+        caps = ConnectionCapabilities(
+            supports_webrtc=True,
+            supports_turn=False,  # TODO: Add TURN support
+            protocol_version=1,
+        )
+
+        # Add Tailscale info if provider is configured
+        if self._capabilities_provider:
+            try:
+                caps_dict = self._capabilities_provider()
+                if caps_dict:
+                    if "tailscale_ip" in caps_dict:
+                        caps.tailscale_ip = caps_dict["tailscale_ip"]
+                    if "tailscale_port" in caps_dict:
+                        caps.tailscale_port = caps_dict["tailscale_port"]
+                    logger.debug(
+                        f"Capabilities: tailscale={caps.tailscale_ip}:{caps.tailscale_port}"
+                    )
+            except Exception as e:
+                logger.warning(f"Error getting capabilities: {e}")
+
+        return caps
 
     def _create_peer(self) -> Any:
         """Create WebRTC peer connection.

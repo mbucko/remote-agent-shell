@@ -18,11 +18,13 @@ message NtfySignalMessage {
   MessageType type = 1;
 
   enum MessageType {
-    OFFER = 0;   // Phone -> Daemon: WebRTC offer
-    ANSWER = 1;  // Daemon -> Phone: WebRTC answer
+    OFFER = 0;        // Phone -> Daemon: WebRTC offer
+    ANSWER = 1;       // Daemon -> Phone: WebRTC answer
+    CAPABILITIES = 2; // Bidirectional: Exchange connection capabilities
   }
 
   // Session ID from QR code (must match pending session)
+  // Empty string for reconnection mode
   string session_id = 2;
 
   // SDP content in raw format (NOT JSON-wrapped).
@@ -38,4 +40,22 @@ message NtfySignalMessage {
   // Replay protection
   int64 timestamp = 6;   // Unix timestamp (seconds)
   bytes nonce = 7;       // 16 random bytes (CSPRNG)
+
+  // Connection capabilities (used with CAPABILITIES type)
+  ConnectionCapabilities capabilities = 8;
+}
+
+// Connection capabilities for strategy negotiation.
+// Exchanged before attempting connection to determine best method.
+message ConnectionCapabilities {
+  // Tailscale VPN info (if available)
+  string tailscale_ip = 1;     // e.g., "100.107.50.54"
+  int32 tailscale_port = 2;    // e.g., 9876
+
+  // Supported connection methods
+  bool supports_webrtc = 3;    // Standard P2P (always true)
+  bool supports_turn = 4;      // TURN relay (if configured)
+
+  // Protocol version for compatibility
+  int32 protocol_version = 5;  // Current: 1
 }

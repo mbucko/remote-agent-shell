@@ -79,6 +79,7 @@ class NotificationType(betterproto.Enum):
 class NtfySignalMessageMessageType(betterproto.Enum):
     OFFER = 0
     ANSWER = 1
+    CAPABILITIES = 2
 
 
 class SignalErrorErrorCode(betterproto.Enum):
@@ -462,7 +463,10 @@ class NtfySignalMessage(betterproto.Message):
     """Message type"""
 
     session_id: str = betterproto.string_field(2)
-    """Session ID from QR code (must match pending session)"""
+    """
+    Session ID from QR code (must match pending session)
+     Empty string for reconnection mode
+    """
 
     sdp: str = betterproto.string_field(3)
     """
@@ -480,6 +484,27 @@ class NtfySignalMessage(betterproto.Message):
     """Replay protection"""
 
     nonce: bytes = betterproto.bytes_field(7)
+    capabilities: "ConnectionCapabilities" = betterproto.message_field(8)
+    """Connection capabilities (used with CAPABILITIES type)"""
+
+
+@dataclass(eq=False, repr=False)
+class ConnectionCapabilities(betterproto.Message):
+    """
+    Connection capabilities for strategy negotiation.
+     Exchanged before attempting connection to determine best method.
+    """
+
+    tailscale_ip: str = betterproto.string_field(1)
+    """Tailscale VPN info (if available)"""
+
+    tailscale_port: int = betterproto.int32_field(2)
+    supports_webrtc: bool = betterproto.bool_field(3)
+    """Supported connection methods"""
+
+    supports_turn: bool = betterproto.bool_field(4)
+    protocol_version: int = betterproto.int32_field(5)
+    """Protocol version for compatibility"""
 
 
 @dataclass(eq=False, repr=False)

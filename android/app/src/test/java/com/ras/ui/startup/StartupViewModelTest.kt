@@ -124,7 +124,7 @@ class StartupViewModelTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceTimeBy(50)
 
-        assertEquals(StartupState.Connecting, viewModel.state.value)
+        assertTrue(viewModel.state.value is StartupState.Connecting)
     }
 
     @Test
@@ -249,7 +249,7 @@ class StartupViewModelTest {
         viewModel.retry()
         testDispatcher.scheduler.advanceTimeBy(50)
 
-        assertEquals(StartupState.Connecting, viewModel.state.value)
+        assertTrue(viewModel.state.value is StartupState.Connecting)
     }
 
     // ==========================================================================

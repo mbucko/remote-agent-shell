@@ -43,7 +43,7 @@ class StartupViewModel @Inject constructor(
                         _state.value = StartupState.NavigateToPairing
                     }
                     is CredentialStatus.HasCredentials -> {
-                        _state.value = StartupState.Connecting
+                        _state.value = StartupState.Connecting()
                         attemptReconnection()
                     }
                 }
@@ -76,7 +76,7 @@ class StartupViewModel @Inject constructor(
      */
     fun retry() {
         viewModelScope.launch {
-            _state.value = StartupState.Connecting
+            _state.value = StartupState.Connecting()
             attemptReconnection()
         }
     }

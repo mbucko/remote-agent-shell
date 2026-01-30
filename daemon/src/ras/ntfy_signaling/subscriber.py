@@ -4,23 +4,33 @@ This module provides:
 - NtfySignalingSubscriber: Subscribes to ntfy topic for signaling messages
 - Processes incoming OFFER messages via NtfySignalingHandler
 - Publishes encrypted ANSWER responses back to ntfy
+- Supports both pairing mode (session_id) and reconnection mode (device_id)
 
 Usage:
+    # For pairing
     subscriber = NtfySignalingSubscriber(
         master_secret=master_secret,
         session_id="abc123",
         ntfy_topic="ras-abc123",
     )
 
+    # For reconnection
+    subscriber = NtfySignalingSubscriber(
+        master_secret=master_secret,
+        session_id="",  # Empty = reconnection mode
+        ntfy_topic="ras-abc123",
+        device_store=device_store,
+    )
+
     # Set callback for when offer is received
-    subscriber.on_offer_received = async def callback(device_id, device_name, peer):
+    subscriber.on_offer_received = async def callback(device_id, device_name, peer, is_reconnection):
         # Handle successful signaling
         pass
 
     # Start subscription
     await subscriber.start()
 
-    # When done (pairing complete or cancelled)
+    # When done (pairing/reconnection complete or cancelled)
     await subscriber.close()
 """
 
@@ -31,9 +41,13 @@ from typing import Any, Callable, Coroutine, Optional
 
 import aiohttp
 
-from ras.ntfy_signaling.handler import NtfySignalingHandler, HandlerResult
+from ras.ntfy_signaling.handler import DeviceStoreProtocol, NtfySignalingHandler, HandlerResult
 
 logger = logging.getLogger(__name__)
+
+
+# Callback type: (device_id, device_name, peer, is_reconnection) -> None
+OfferReceivedCallback = Callable[[str, str, Any, bool], Coroutine[Any, Any, None]]
 
 
 class NtfySignalingSubscriber:
@@ -42,6 +56,10 @@ class NtfySignalingSubscriber:
     Listens for encrypted OFFER messages via SSE (Server-Sent Events),
     processes them through NtfySignalingHandler, and publishes encrypted
     ANSWER responses back to the same ntfy topic.
+
+    Modes:
+    - Pairing mode: session_id is set, validates against it
+    - Reconnection mode: session_id is empty, validates device_id against device_store
 
     All errors are handled silently (security requirement).
     """
@@ -63,22 +81,30 @@ class NtfySignalingSubscriber:
         ntfy_topic: str,
         ntfy_server: str = "https://ntfy.sh",
         stun_servers: Optional[list[str]] = None,
+        device_store: Optional[DeviceStoreProtocol] = None,
         http_session: Optional[aiohttp.ClientSession] = None,
+        capabilities_provider: Optional[Callable[[], dict]] = None,
     ):
         """Initialize subscriber.
 
         Args:
             master_secret: 32-byte master secret from QR code.
-            session_id: Expected session ID.
+            session_id: Expected session ID for pairing mode.
+                       Empty string ("") enables reconnection mode.
             ntfy_topic: ntfy topic to subscribe to.
             ntfy_server: ntfy server URL.
             stun_servers: STUN servers for WebRTC (optional).
+            device_store: Device store for reconnection mode (required if reconnection enabled).
             http_session: Optional aiohttp session (for testing).
+            capabilities_provider: Optional callable returning capabilities dict.
+                                  Used to include Tailscale info in ANSWER messages.
         """
         self._handler = NtfySignalingHandler(
             master_secret=master_secret,
             pending_session_id=session_id,
             stun_servers=stun_servers,
+            device_store=device_store,
+            capabilities_provider=capabilities_provider,
         )
         self._topic = ntfy_topic
         self._server = ntfy_server.rstrip("/")
@@ -87,15 +113,22 @@ class NtfySignalingSubscriber:
         self._subscribed = False
         self._subscription_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._reconnection_mode = session_id == ""
 
         # Callback for successful offer processing
-        self.on_offer_received: Optional[
-            Callable[[str, str, Any], Coroutine[Any, Any, None]]
-        ] = None
+        # Signature: (device_id, device_name, peer, is_reconnection) -> None
+        self.on_offer_received: Optional[OfferReceivedCallback] = None
+
+        mode = "reconnection" if self._reconnection_mode else "pairing"
+        logger.info(f"NtfySignalingSubscriber initialized in {mode} mode")
 
     def is_subscribed(self) -> bool:
         """Check if currently subscribed to ntfy topic."""
         return self._subscribed
+
+    def is_reconnection_mode(self) -> bool:
+        """Check if subscriber is in reconnection mode."""
+        return self._reconnection_mode
 
     async def start(self) -> None:
         """Start subscription to ntfy topic.
@@ -114,7 +147,8 @@ class NtfySignalingSubscriber:
 
         # Start subscription in background
         self._subscription_task = asyncio.create_task(self._run_subscription())
-        logger.info(f"Started ntfy signaling subscription to topic {self._topic[:8]}...")
+        mode = "reconnection" if self._reconnection_mode else "pairing"
+        logger.info(f"Started ntfy signaling subscription ({mode}) to topic {self._topic[:8]}...")
 
     async def stop(self) -> None:
         """Stop subscription to ntfy topic."""
@@ -264,11 +298,12 @@ class NtfySignalingSubscriber:
                 success = await self._publish(result.answer_encrypted)
 
                 if success and self.on_offer_received:
-                    # Notify callback
+                    # Notify callback with is_reconnection flag
                     await self.on_offer_received(
                         result.device_id,
                         result.device_name,
                         result.peer,
+                        result.is_reconnection,
                     )
         except Exception as e:
             # Log processing errors (but don't expose details that could help attackers)
