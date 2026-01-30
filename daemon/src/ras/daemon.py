@@ -2,8 +2,10 @@
 
 import asyncio
 import logging
+import secrets
 import shutil
 import signal
+import struct
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -12,13 +14,14 @@ import betterproto
 
 from ras.config import Config
 from ras.connection_manager import ConnectionManager
-from ras.crypto import BytesCodec
+from ras.crypto import BytesCodec, derive_key
+from ras.pairing.auth_handler import AuthHandler
 from ras.device_store import JsonDeviceStore, PairedDevice
 from ras.ip_provider import IpProvider, LocalNetworkIpProvider
 from ras.message_dispatcher import MessageDispatcher
 from ras.ntfy_signaling.reconnection_manager import NtfyReconnectionManager
 from ras.server import UnifiedServer
-from ras.tailscale import TailscaleListener
+from ras.tailscale import TailscaleListener, TailscalePeer
 from ras.proto.ras import (
     ConnectionReady,
     InitialState,
@@ -258,6 +261,7 @@ class Daemon:
                 pairing_timeout=self._config.daemon.pairing_timeout,
                 max_pairing_sessions=self._config.daemon.max_pairing_sessions,
                 on_device_connected=self._on_device_reconnected,
+                tailscale_capabilities_provider=self.get_tailscale_capabilities,
             )
 
         self._server_runner = await self._unified_server.start(
@@ -289,13 +293,89 @@ class Daemon:
     async def _on_tailscale_connection(self, transport: Any) -> None:
         """Handle new Tailscale connection from phone.
 
+        Performs simple auth validation:
+        1. Receives device_id (length-prefixed) + auth_key from phone
+        2. Validates against device store
+        3. Sends 0x01 for success, 0x00 for failure
+
         Args:
             transport: TailscaleTransport for the connection.
         """
         logger.info(f"Tailscale connection from {transport.remote_address}")
-        # TODO: Integrate with authentication flow
-        # For now, we need to receive device_id and auth from the transport
-        # The phone should send authentication data after connecting
+
+        try:
+            # Receive auth message with timeout
+            # Format: [device_id_len: 4 bytes BE][device_id: N bytes][auth: 32 bytes]
+            auth_data = await transport.receive(timeout=10.0)
+
+            if len(auth_data) < 36:  # 4 + min 1 byte device_id + 32 auth
+                logger.warning(f"Auth data too short: {len(auth_data)} bytes")
+                await transport.send(b'\x00')  # Failure
+                return
+
+            # Parse device_id length
+            device_id_len = struct.unpack(">I", auth_data[:4])[0]
+
+            if device_id_len < 1 or device_id_len > 100:
+                logger.warning(f"Invalid device_id length: {device_id_len}")
+                await transport.send(b'\x00')
+                return
+
+            if len(auth_data) < 4 + device_id_len + 32:
+                logger.warning(f"Auth data incomplete: need {4 + device_id_len + 32}, got {len(auth_data)}")
+                await transport.send(b'\x00')
+                return
+
+            # Extract device_id and auth_key
+            device_id = auth_data[4:4 + device_id_len].decode('utf-8')
+            auth_key = auth_data[4 + device_id_len:4 + device_id_len + 32]
+
+            logger.info(f"Tailscale auth request from device: {device_id[:8]}...")
+
+            # Lookup device
+            if not self._device_store:
+                logger.warning("No device store configured")
+                await transport.send(b'\x00')
+                return
+
+            device = self._device_store.get(device_id)
+            if not device:
+                logger.warning(f"Unknown device: {device_id[:8]}...")
+                await transport.send(b'\x00')
+                return
+
+            # Derive expected auth key and compare
+            expected_auth_key = derive_key(device.master_secret, "auth")
+
+            if not secrets.compare_digest(auth_key, expected_auth_key):
+                logger.warning(f"Auth key mismatch for device: {device_id[:8]}...")
+                await transport.send(b'\x00')
+                return
+
+            # Success!
+            logger.info(f"Tailscale auth successful for device: {device_id[:8]}...")
+            await transport.send(b'\x01')
+
+            # Wrap transport in TailscalePeer (implements PeerProtocol)
+            peer = TailscalePeer(transport)
+
+            # Create codec for encrypted communication
+            codec = BytesCodec(auth_key)
+
+            # Register with connection manager
+            await self.on_new_connection(
+                device_id=device_id,
+                device_name=device.name,
+                peer=peer,
+                codec=codec,
+            )
+
+            logger.info(f"Tailscale connection registered for device: {device_id[:8]}...")
+
+        except TimeoutError:
+            logger.warning(f"Tailscale auth timeout from {transport.remote_address}")
+        except Exception as e:
+            logger.error(f"Tailscale auth error: {e}")
 
     def get_tailscale_capabilities(self) -> dict:
         """Get Tailscale capabilities for signaling exchange.
@@ -513,16 +593,34 @@ class Daemon:
         peer: Any,
         auth_key: bytes,
     ) -> None:
-        """Handle successful device reconnection.
+        """Handle device reconnection request.
 
-        Called by ReconnectionServer after successful authentication.
+        Runs authentication handshake before establishing connection.
 
         Args:
             device_id: Device identifier.
             device_name: Human-readable device name.
             peer: WebRTC peer connection.
-            auth_key: Auth key for message encryption.
+            auth_key: Auth key for authentication and message encryption.
         """
+        # Run authentication handshake
+        auth_handler = AuthHandler(auth_key, device_id)
+
+        async def send_message(data: bytes) -> None:
+            await peer.send(data)
+
+        async def receive_message() -> bytes:
+            return await peer.receive()
+
+        success = await auth_handler.run_handshake(send_message, receive_message)
+
+        if not success:
+            logger.warning(f"Authentication failed for reconnecting device {device_id[:8]}...")
+            await peer.close()
+            return
+
+        logger.info(f"Authentication successful for reconnecting device {device_id[:8]}...")
+
         # Create codec for encrypted communication
         codec = BytesCodec(auth_key)
         await self.on_new_connection(

@@ -5,7 +5,7 @@ import logging
 import struct
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -186,3 +186,103 @@ class TailscaleProtocol(asyncio.DatagramProtocol):
             response = struct.pack(">II", HANDSHAKE_MAGIC, 0)
             self._transport.sendto(response, addr)
             logger.debug(f"Sent handshake response to {addr}")
+
+
+class TailscalePeer:
+    """Wrapper around TailscaleTransport that implements PeerProtocol.
+
+    Bridges the blocking receive() model to callback-based on_message().
+    Runs a background task to continuously receive and dispatch messages.
+    """
+
+    def __init__(self, transport: TailscaleTransport):
+        """Initialize peer with transport.
+
+        Args:
+            transport: The underlying TailscaleTransport.
+        """
+        self._transport = transport
+        self._message_handler: Optional[Callable[[bytes], Any]] = None
+        self._close_handler: Optional[Callable[[], None]] = None
+        self._receive_task: Optional[asyncio.Task] = None
+        self._closed = False
+
+    def on_message(self, handler: Callable[[bytes], Any]) -> None:
+        """Set message handler and start receive loop.
+
+        Args:
+            handler: Callback for received messages.
+        """
+        self._message_handler = handler
+        # Start receive loop if not already running
+        if self._receive_task is None:
+            self._receive_task = asyncio.create_task(self._receive_loop())
+
+    def on_close(self, handler: Callable[[], None]) -> None:
+        """Set close handler.
+
+        Args:
+            handler: Callback when connection closes.
+        """
+        self._close_handler = handler
+
+    async def send(self, data: bytes) -> None:
+        """Send data to remote peer.
+
+        Args:
+            data: Data to send.
+        """
+        await self._transport.send(data)
+
+    async def close(self) -> None:
+        """Close the connection."""
+        if self._closed:
+            return
+        self._closed = True
+
+        # Cancel receive task
+        if self._receive_task:
+            self._receive_task.cancel()
+            try:
+                await self._receive_task
+            except asyncio.CancelledError:
+                pass
+
+        self._transport.close()
+
+    async def receive(self, timeout: float = 30.0) -> bytes:
+        """Receive data from remote peer (for auth phase).
+
+        Args:
+            timeout: Timeout in seconds.
+
+        Returns:
+            Received data.
+        """
+        return await self._transport.receive(timeout=timeout)
+
+    async def _receive_loop(self) -> None:
+        """Background task to receive and dispatch messages."""
+        logger.debug(f"Starting receive loop for {self._transport.remote_address}")
+        try:
+            while not self._closed:
+                try:
+                    data = await self._transport.receive(timeout=60.0)
+                    if self._message_handler:
+                        # Handler may be sync or async
+                        result = self._message_handler(data)
+                        if asyncio.iscoroutine(result):
+                            await result
+                except TimeoutError:
+                    # No data, just continue (acts as keepalive check)
+                    continue
+                except ConnectionError:
+                    logger.info(f"Connection closed: {self._transport.remote_address}")
+                    break
+                except Exception as e:
+                    logger.error(f"Receive loop error: {e}")
+                    break
+        finally:
+            if self._close_handler and not self._closed:
+                self._close_handler()
+            logger.debug(f"Receive loop ended for {self._transport.remote_address}")

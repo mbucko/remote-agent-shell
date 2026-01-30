@@ -44,6 +44,8 @@ class TailscaleListener:
         self._tailscale_info: Optional[TailscaleInfo] = None
         self._running = False
         self._pending_handshakes: dict[Tuple[str, int], float] = {}
+        # Track established connections by address to route packets correctly
+        self._connections: dict[Tuple[str, int], TailscaleTransport] = {}
 
     @property
     def tailscale_ip(self) -> Optional[str]:
@@ -149,20 +151,14 @@ class TailscaleListener:
             except struct.error:
                 pass
 
-        # Regular data packet - check if we have an established connection
-        logger.debug(f"Received {len(data)} bytes from {addr}")
-
-        # For now, create transport on-demand for this address
-        # In production, you'd track established connections
-        if self._on_connection:
-            transport = TailscaleTransport(
-                self._transport,
-                self._protocol,
-                addr
-            )
-            # Put the received data back for the connection handler
+        # Regular data packet - route to existing connection
+        if addr in self._connections:
+            # Put packet in queue for the existing transport to receive
+            logger.debug(f"Routing {len(data)} bytes to existing connection from {addr}")
             await self._protocol._queue.put((data, addr))
-            await self._on_connection(transport)
+        else:
+            # No established connection for this address - might be a late handshake or error
+            logger.warning(f"Received {len(data)} bytes from unknown address {addr}")
 
     async def _handle_handshake(self, addr: Tuple[str, int]) -> None:
         """Handle handshake from phone.
@@ -170,18 +166,26 @@ class TailscaleListener:
         Args:
             addr: Remote (ip, port) tuple
         """
+        # Check if we already have a connection from this address
+        if addr in self._connections:
+            logger.debug(f"Re-handshake from existing connection {addr}")
+            # Send response but don't create new transport
+            self._protocol.send_handshake_response(addr)
+            return
+
         logger.info(f"Received Tailscale handshake from {addr}")
 
         # Send handshake response
         self._protocol.send_handshake_response(addr)
 
-        # Create transport and notify callback
+        # Create transport, track it, and notify callback
         if self._on_connection and self._transport and self._protocol:
             transport = TailscaleTransport(
                 self._transport,
                 self._protocol,
                 addr
             )
+            self._connections[addr] = transport
             await self._on_connection(transport)
 
     def get_capabilities(self) -> dict:
