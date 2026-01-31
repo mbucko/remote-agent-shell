@@ -7,6 +7,7 @@ import com.ras.data.webrtc.WebRTCClient
 import com.ras.di.IoDispatcher
 import com.ras.proto.ConnectionReady
 import com.ras.proto.InitialState
+import com.ras.proto.Heartbeat
 import com.ras.proto.Ping
 import com.ras.proto.RasCommand
 import com.ras.proto.RasEvent
@@ -126,6 +127,10 @@ class ConnectionManager @Inject constructor(
     // Last ping time for calculating latency
     @Volatile
     private var lastPingTimestamp: Long = 0
+
+    // Heartbeat sequence number
+    @Volatile
+    private var heartbeatSequence: Long = 0
 
     // Connection errors
     private val _connectionErrors = MutableSharedFlow<ConnectionError>(
@@ -423,6 +428,25 @@ class ConnectionManager @Inject constructor(
     }
 
     /**
+     * Send a heartbeat to keep connection alive.
+     *
+     * Unlike ping, heartbeat is fire-and-forget with no response expected.
+     * Used for SCTP keepalive to prevent ~30s timeout.
+     */
+    suspend fun sendHeartbeat() {
+        heartbeatSequence++
+        val heartbeat = Heartbeat.newBuilder()
+            .setTimestamp(System.currentTimeMillis())
+            .setSequence(heartbeatSequence)
+            .build()
+        val command = RasCommand.newBuilder()
+            .setHeartbeat(heartbeat)
+            .build()
+        val plaintext = command.toByteArray()
+        sendEncrypted(plaintext)
+    }
+
+    /**
      * Send raw bytes to the daemon (encrypted).
      *
      * @throws IllegalStateException if not connected
@@ -516,11 +540,14 @@ class ConnectionManager @Inject constructor(
     /**
      * Start the ping loop to keep connection alive.
      *
-     * Sends periodic pings to the daemon to prevent the connection from being
-     * closed due to inactivity. The daemon has a keepalive timeout (default 60s)
-     * and will close connections that don't send any messages.
+     * Sends periodic pings to the daemon to prevent SCTP timeout (~30s).
+     * Uses Ping instead of Heartbeat because it also provides latency measurement
+     * via Pong response. Both serve the same keepalive purpose.
      *
      * CONTRACT: pingIntervalMs (default 15s) < SCTP timeout (~30s)
+     *
+     * Industry pattern: Application-level keepalive pings are standard for
+     * WebRTC data channels (used by Slack, Discord, Zoom, etc).
      */
     private fun startPingLoop() {
         if (config.pingIntervalMs <= 0) {
@@ -610,6 +637,12 @@ class ConnectionManager @Inject constructor(
             RasEvent.EventCase.CLIPBOARD -> {
                 Log.d(TAG, "Clipboard message received")
                 // TODO: Handle clipboard events
+            }
+            RasEvent.EventCase.HEARTBEAT -> {
+                // Heartbeat received from daemon - connection is alive
+                // The fact that we received it already updates lastMessageTime in WebRTCClient
+                val seq = event.heartbeat.sequence
+                Log.d(TAG, "Heartbeat received from daemon: seq=$seq")
             }
             RasEvent.EventCase.EVENT_NOT_SET, null -> {
                 Log.w(TAG, "Received RasEvent with no event set")

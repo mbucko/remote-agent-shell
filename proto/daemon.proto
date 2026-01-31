@@ -20,7 +20,7 @@ message ConnectionReady {
     // Empty - just signals readiness
 }
 
-// ============ Ping/Pong for keepalive ============
+// ============ Ping/Pong for latency measurement ============
 
 message Ping {
     int64 timestamp = 1;    // Unix timestamp milliseconds
@@ -28,6 +28,15 @@ message Ping {
 
 message Pong {
     int64 timestamp = 1;    // Echo back the same timestamp
+}
+
+// ============ Heartbeat for connection keepalive ============
+// Bidirectional - both sides send periodically to keep SCTP alive
+// No response expected - receiving any heartbeat proves connection is alive
+
+message Heartbeat {
+    int64 timestamp = 1;    // Sender's timestamp (ms since epoch)
+    uint64 sequence = 2;    // Monotonic sequence number for debugging
 }
 
 // ============ Initial State ============
@@ -55,6 +64,7 @@ message RasCommand {
         ras.clipboard.ClipboardMessage clipboard = 3;
         Ping ping = 4;
         ConnectionReady connection_ready = 5;
+        Heartbeat heartbeat = 6;
     }
 }
 
@@ -67,5 +77,6 @@ message RasEvent {
         Pong pong = 4;
         InitialState initial_state = 5;
         ErrorResponse error = 6;
+        Heartbeat heartbeat = 7;
     }
 }

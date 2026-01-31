@@ -17,6 +17,7 @@ from ras.connection_manager import ConnectionManager
 from ras.crypto import BytesCodec, derive_key
 from ras.pairing.auth_handler import AuthHandler
 from ras.device_store import JsonDeviceStore, PairedDevice
+from ras.heartbeat import HeartbeatConfig, HeartbeatManager
 from ras.ip_provider import IpProvider, LocalNetworkIpProvider
 from ras.message_dispatcher import MessageDispatcher
 from ras.ntfy_signaling.reconnection_manager import NtfyReconnectionManager
@@ -24,6 +25,7 @@ from ras.server import UnifiedServer
 from ras.tailscale import TailscaleListener, TailscalePeer
 from ras.proto.ras import (
     ConnectionReady,
+    Heartbeat,
     InitialState,
     Ping,
     Pong,
@@ -103,7 +105,15 @@ class Daemon:
 
         # Server state
         self._server_runner = None
-        self._keepalive_task: Optional[asyncio.Task] = None
+
+        # Heartbeat manager for connection keepalive
+        self._heartbeat_manager = HeartbeatManager(
+            config=HeartbeatConfig(
+                send_interval=config.daemon.keepalive_interval,
+                receive_timeout=config.daemon.keepalive_timeout,
+            ),
+            send_callback=self._send_heartbeat,
+        )
 
         # Ntfy reconnection manager for cross-NAT reconnection
         self._ntfy_reconnection_manager: Optional[NtfyReconnectionManager] = None
@@ -144,8 +154,8 @@ class Daemon:
         # Start ntfy reconnection manager for cross-NAT reconnection
         await self._start_ntfy_reconnection()
 
-        # Start keepalive loop
-        self._keepalive_task = asyncio.create_task(self._keepalive_loop())
+        # Start heartbeat manager for connection keepalive
+        await self._heartbeat_manager.start()
 
         # Set up signal handlers
         self._setup_signals()
@@ -191,6 +201,7 @@ class Daemon:
         self._dispatcher.register("terminal", self._handle_terminal_command)
         self._dispatcher.register("clipboard", self._handle_clipboard_message)
         self._dispatcher.register("ping", self._handle_ping)
+        self._dispatcher.register("heartbeat", self._handle_heartbeat)
         self._dispatcher.register("connection_ready", self._handle_connection_ready)
         logger.debug("Message handlers registered")
 
@@ -422,13 +433,8 @@ class Daemon:
         """Perform graceful shutdown."""
         logger.info("Shutting down daemon...")
 
-        # Cancel keepalive task
-        if self._keepalive_task:
-            self._keepalive_task.cancel()
-            try:
-                await self._keepalive_task
-            except asyncio.CancelledError:
-                pass
+        # Stop heartbeat manager
+        await self._heartbeat_manager.stop()
 
         # Close all connections
         await self._connection_manager.close_all()
@@ -476,37 +482,11 @@ class Daemon:
         if self._unified_server:
             self._unified_server.expire_pairing_session(session_id)
 
-    async def _keepalive_loop(self) -> None:
-        """Monitor connections and send keepalives to prevent SCTP timeout."""
-        interval = self._config.daemon.keepalive_interval
-        timeout = self._config.daemon.keepalive_timeout
-
-        while self._running:
-            try:
-                await asyncio.sleep(interval)
-
-                now = time.time()
-                for device_id, conn in list(
-                    self._connection_manager.connections.items()
-                ):
-                    # Send ping to keep SCTP data channel alive
-                    # Use Pong message since RasEvent doesn't have Ping field
-                    try:
-                        ping_msg = RasEvent(pong=Pong(timestamp=int(now * 1000)))
-                        await conn.send(bytes(ping_msg))
-                        logger.debug(f"Keepalive ping sent to {device_id[:8]}...")
-                    except Exception as e:
-                        logger.warning(f"Keepalive ping failed for {device_id[:8]}: {e}")
-
-                    # Check for stale connections (no activity from phone)
-                    if now - conn.last_activity > timeout:
-                        logger.warning(f"Connection stale, closing: {device_id}")
-                        await conn.close()
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Keepalive loop error: {e}")
+    async def _send_heartbeat(self, device_id: str, data: bytes) -> None:
+        """Send heartbeat data to a device (callback for HeartbeatManager)."""
+        conn = self._connection_manager.get_connection(device_id)
+        if conn:
+            await conn.send(data)
 
     # ==================== Message Handlers ====================
 
@@ -550,6 +530,10 @@ class Daemon:
         conn = self._connection_manager.get_connection(device_id)
         if conn:
             await conn.send(bytes(event))
+
+    async def _handle_heartbeat(self, device_id: str, heartbeat: Heartbeat) -> None:
+        """Handle incoming heartbeat from phone."""
+        self._heartbeat_manager.on_heartbeat_received(device_id, heartbeat)
 
     async def _handle_connection_ready(
         self, device_id: str, ready: ConnectionReady
@@ -638,6 +622,9 @@ class Daemon:
         """Handle connection lost event."""
         logger.info(f"Connection lost: {device_id}")
 
+        # Clean up heartbeat tracking
+        self._heartbeat_manager.on_connection_removed(device_id)
+
         # Clean up pending ready state
         self._pending_ready.discard(device_id)
 
@@ -673,7 +660,7 @@ class Daemon:
                 logger.warning(f"Unknown device connected: {device_id} - should use pairing flow")
 
         # Add to connection manager
-        conn = await self._connection_manager.add_connection(
+        await self._connection_manager.add_connection(
             device_id=device_id,
             peer=peer,
             codec=codec,
@@ -682,13 +669,9 @@ class Daemon:
             ),
         )
 
-        # Send immediate keepalive to prevent SCTP timeout before loop runs
-        try:
-            ping_msg = RasEvent(pong=Pong(timestamp=int(time.time() * 1000)))
-            await conn.send(bytes(ping_msg))
-            logger.debug(f"Initial keepalive sent to {device_id[:8]}...")
-        except Exception as e:
-            logger.warning(f"Initial keepalive failed for {device_id[:8]}: {e}")
+        # Register with heartbeat manager and send immediate heartbeat
+        self._heartbeat_manager.on_connection_added(device_id)
+        await self._heartbeat_manager.send_immediate(device_id)
 
         # Mark as pending - wait for ConnectionReady before sending InitialState
         # This ensures the phone's event listener is set up before we send
@@ -698,6 +681,9 @@ class Daemon:
 
     async def _on_message(self, device_id: str, data: bytes) -> None:
         """Handle incoming message from phone."""
+        # Track activity for heartbeat monitoring (any message counts as activity)
+        self._heartbeat_manager.on_activity(device_id)
+
         try:
             # Parse RasCommand
             cmd = RasCommand().parse(data)

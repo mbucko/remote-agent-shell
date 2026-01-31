@@ -401,6 +401,12 @@ class Pong(betterproto.Message):
 
 
 @dataclass(eq=False, repr=False)
+class Heartbeat(betterproto.Message):
+    timestamp: int = betterproto.int64_field(1)
+    sequence: int = betterproto.uint64_field(2)
+
+
+@dataclass(eq=False, repr=False)
 class InitialState(betterproto.Message):
     """Sent to phone immediately after connection established"""
 
@@ -425,6 +431,7 @@ class RasCommand(betterproto.Message):
     )
     ping: "Ping" = betterproto.message_field(4, group="command")
     connection_ready: "ConnectionReady" = betterproto.message_field(5, group="command")
+    heartbeat: "Heartbeat" = betterproto.message_field(6, group="command")
 
 
 @dataclass(eq=False, repr=False)
@@ -439,6 +446,7 @@ class RasEvent(betterproto.Message):
     pong: "Pong" = betterproto.message_field(4, group="event")
     initial_state: "InitialState" = betterproto.message_field(5, group="event")
     error: "ErrorResponse" = betterproto.message_field(6, group="event")
+    heartbeat: "Heartbeat" = betterproto.message_field(7, group="event")
 
 
 @dataclass(eq=False, repr=False)
@@ -531,6 +539,15 @@ class QrPayload(betterproto.Message):
 
     ntfy_topic: str = betterproto.string_field(6)
     """ntfy topic for IP change notifications"""
+
+    tailscale_ip: str = betterproto.string_field(7)
+    """
+    Optional: Daemon's Tailscale IP (if available)
+     Allows direct connection when both devices are on Tailscale
+    """
+
+    tailscale_port: int = betterproto.uint32_field(8)
+    """Optional: Daemon's Tailscale port (defaults to 9876 if not set)"""
 
 
 @dataclass(eq=False, repr=False)
