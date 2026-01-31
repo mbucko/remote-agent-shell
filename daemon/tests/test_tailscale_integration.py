@@ -109,13 +109,14 @@ class TestFullConnectionFlow:
 
         # Step 1: Phone sends handshake
         handshake = struct.pack(">II", HANDSHAKE_MAGIC, 0)
-        await listener._handle_packet(handshake, phone_addr)
+        task = await listener._handle_packet(handshake, phone_addr)
 
         # Verify handshake response sent
         mock_protocol.send_handshake_response.assert_called_once_with(phone_addr)
 
-        # Allow callback task to run (it's spawned as a task, not awaited)
-        await asyncio.sleep(0)
+        # Await the callback task to complete
+        if task:
+            await task
 
         # Verify connection created and tracked
         assert phone_addr in listener._connections
@@ -195,11 +196,14 @@ class TestTwoClientsFlow:
 
         # Both handshake
         handshake = struct.pack(">II", HANDSHAKE_MAGIC, 0)
-        await listener._handle_packet(handshake, phone1_addr)
-        await listener._handle_packet(handshake, phone2_addr)
+        task1 = await listener._handle_packet(handshake, phone1_addr)
+        task2 = await listener._handle_packet(handshake, phone2_addr)
 
-        # Allow callback tasks to run (they're spawned as tasks, not awaited)
-        await asyncio.sleep(0)
+        # Await callback tasks to complete
+        if task1:
+            await task1
+        if task2:
+            await task2
 
         # Verify separate connections
         assert len(listener._connections) == 2
@@ -319,16 +323,16 @@ class TestEdgeCases:
 
         # First handshake
         handshake = struct.pack(">II", HANDSHAKE_MAGIC, 0)
-        await listener._handle_packet(handshake, phone_addr)
-        # Allow callback task to run
-        await asyncio.sleep(0)
+        task = await listener._handle_packet(handshake, phone_addr)
+        # Await callback task to complete
+        if task:
+            await task
         first_transport = listener._connections[phone_addr]
         assert connection_count[0] == 1
 
-        # Re-handshake
-        await listener._handle_packet(handshake, phone_addr)
-        # Allow any callback task to run
-        await asyncio.sleep(0)
+        # Re-handshake (returns None - no new callback)
+        task = await listener._handle_packet(handshake, phone_addr)
+        assert task is None  # Re-handshake doesn't create new connection
 
         # Should still be same connection, callback not called again
         assert len(listener._connections) == 1

@@ -175,20 +175,21 @@ class TestReHandshake:
         addr = ("100.64.0.2", 12345)
 
         # First handshake - should create transport
-        await listener._handle_handshake(addr)
-        # Allow callback task to run (it's spawned as a task, not awaited)
-        await asyncio.sleep(0)
+        task = await listener._handle_handshake(addr)
+        # Await callback task to complete
+        if task:
+            await task
         assert len(on_connection_called) == 1
         assert addr in listener._connections
 
         # Second handshake from same address - should send response but not create new transport
         mock_protocol.send_handshake_response.reset_mock()
-        await listener._handle_handshake(addr)
+        task = await listener._handle_handshake(addr)
+        assert task is None  # Re-handshake doesn't spawn new callback
 
         # Should have sent response
         mock_protocol.send_handshake_response.assert_called_with(addr)
         # Should still only have one connection
-        await asyncio.sleep(0)  # Allow any callback task to run
         assert len(on_connection_called) == 1
 
 

@@ -139,20 +139,23 @@ class TailscaleListener:
         self,
         data: bytes,
         addr: Tuple[str, int]
-    ) -> None:
+    ) -> Optional[asyncio.Task]:
         """Handle an incoming packet.
 
         Args:
             data: Packet data
             addr: Remote (ip, port) tuple
+
+        Returns:
+            Task running the on_connection callback if this was a new handshake,
+            None otherwise. Callers can await this task if needed.
         """
         # Check for handshake
         if len(data) == 8:
             try:
                 magic, _ = struct.unpack(">II", data)
                 if magic == HANDSHAKE_MAGIC:
-                    await self._handle_handshake(addr)
-                    return
+                    return await self._handle_handshake(addr)
             except struct.error:
                 pass
 
@@ -165,6 +168,7 @@ class TailscaleListener:
         else:
             # No established connection for this address - might be a late handshake or error
             logger.warning(f"Received {len(data)} bytes from unknown address {addr}")
+        return None
 
     async def _handle_handshake(self, addr: Tuple[str, int]) -> Optional[asyncio.Task]:
         """Handle handshake from phone.

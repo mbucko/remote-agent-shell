@@ -161,7 +161,9 @@ class TestMultiPacketRouting:
         listener._running = True
 
         addr = ("100.64.0.2", 12345)
-        await listener._handle_handshake(addr)
+        task = await listener._handle_handshake(addr)
+        if task:
+            await task
 
         # Send many packets
         for i in range(packet_count):
@@ -566,7 +568,7 @@ class TestCallbackNotBlocking:
 
         # _handle_handshake should return quickly, not wait for slow callback
         start = asyncio.get_event_loop().time()
-        await listener._handle_handshake(addr)
+        task = await listener._handle_handshake(addr)
         elapsed = asyncio.get_event_loop().time() - start
 
         # If _handle_handshake awaited the callback, it would take ~1 second
@@ -580,8 +582,9 @@ class TestCallbackNotBlocking:
         await asyncio.sleep(0.1)
         assert callback_started.is_set(), "Callback should have started"
 
-        # Wait for callback to complete to avoid warnings
-        await asyncio.sleep(callback_duration)
+        # Await the returned task to properly clean up
+        if task:
+            await task
 
     @pytest.mark.asyncio
     async def test_multiple_handshakes_can_process_concurrently(
@@ -614,9 +617,12 @@ class TestCallbackNotBlocking:
 
         start = asyncio.get_event_loop().time()
 
-        # All handshakes should complete quickly
+        # All handshakes should complete quickly, collect the tasks
+        tasks = []
         for addr in addrs:
-            await listener._handle_handshake(addr)
+            task = await listener._handle_handshake(addr)
+            if task:
+                tasks.append(task)
 
         elapsed = asyncio.get_event_loop().time() - start
 
@@ -636,5 +642,5 @@ class TestCallbackNotBlocking:
             "Callbacks are serializing instead of running concurrently."
         )
 
-        # Wait for all callbacks to complete
-        await asyncio.sleep(0.6)
+        # Await all tasks to properly clean up
+        await asyncio.gather(*tasks)
