@@ -2,7 +2,8 @@
 # Run 'make help' for available commands
 
 .PHONY: help install install-dev test test-daemon test-pairing test-crypto \
-        test-cov lint format proto clean build
+        test-cov lint format proto clean build \
+        android-build android-install android-test android-clean
 
 # Default target
 help:
@@ -32,6 +33,12 @@ help:
 	@echo "Build:"
 	@echo "  make build          Build daemon package"
 	@echo "  make clean          Remove build artifacts"
+	@echo ""
+	@echo "Android:"
+	@echo "  make android-build    Build Android debug APK"
+	@echo "  make android-install  Install debug APK on connected device"
+	@echo "  make android-test     Run Android unit tests"
+	@echo "  make android-clean    Clean Android build artifacts"
 	@echo ""
 	@echo "Development:"
 	@echo "  make run-pair       Run pairing command (for testing)"
@@ -153,6 +160,22 @@ docker-build:
 
 docker-run:
 	@echo "Docker run not yet implemented"
+
+# =============================================================================
+# Android
+# =============================================================================
+
+android-build:
+	cd android && ./gradlew assembleDebug
+
+android-install:
+	cd android && ./gradlew installDebug
+
+android-test:
+	cd android && ./gradlew testDebugUnitTest
+
+android-clean:
+	cd android && ./gradlew clean
 
 # =============================================================================
 # CI/CD helpers
