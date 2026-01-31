@@ -204,6 +204,61 @@ class TestTerminalManagerAttach:
         assert attached_events[0].attached.cols == 80
         assert attached_events[0].attached.rows == 24
 
+    @pytest.mark.asyncio
+    async def test_attach_to_externally_killed_session_sends_session_gone(self, setup):
+        """Attaching to session killed externally should send SESSION_GONE error."""
+        manager, _, events = setup
+
+        command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        with patch(
+            "ras.terminal.manager.OutputCapture"
+        ) as mock_capture_class:
+            mock_capture = AsyncMock()
+            # Simulate tmux error when session was killed externally
+            mock_capture.start = AsyncMock(
+                side_effect=RuntimeError("pipe-pane failed: can't find pane: %0")
+            )
+            mock_capture_class.return_value = mock_capture
+
+            await manager.handle_command("conn1", command)
+
+        # Should have received SESSION_GONE error
+        assert len(events) == 1
+        conn_id, event = events[0]
+        assert conn_id == "conn1"
+        assert event.error.error_code == "SESSION_GONE"
+        assert "no longer exists" in event.error.message
+
+    @pytest.mark.asyncio
+    async def test_attach_pipe_setup_failure_sends_error(self, setup):
+        """Other pipe setup failures should send PIPE_SETUP_FAILED error."""
+        manager, _, events = setup
+
+        command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        with patch(
+            "ras.terminal.manager.OutputCapture"
+        ) as mock_capture_class:
+            mock_capture = AsyncMock()
+            # Simulate other runtime error
+            mock_capture.start = AsyncMock(
+                side_effect=RuntimeError("pipe-pane failed: permission denied")
+            )
+            mock_capture_class.return_value = mock_capture
+
+            await manager.handle_command("conn1", command)
+
+        # Should have received PIPE_SETUP_FAILED error
+        assert len(events) == 1
+        conn_id, event = events[0]
+        assert conn_id == "conn1"
+        assert event.error.error_code == "PIPE_SETUP_FAILED"
+
 
 class TestTerminalManagerDetach:
     """Test detach functionality."""

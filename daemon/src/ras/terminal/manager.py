@@ -190,6 +190,25 @@ class TerminalManager:
             try:
                 await capture.start()
                 self._captures[session_id] = capture
+            except RuntimeError as e:
+                error_msg = str(e)
+                # Check if session was killed externally (tmux reports "can't find pane/session")
+                if "can't find" in error_msg:
+                    logger.info(
+                        f"Session {session_id} no longer exists in tmux: {error_msg}"
+                    )
+                    self._send_error(
+                        connection_id,
+                        session_id,
+                        "SESSION_GONE",
+                        "Session no longer exists",
+                    )
+                else:
+                    logger.error(f"Failed to start capture for {session_id}: {e}")
+                    self._send_error(
+                        connection_id, session_id, "PIPE_SETUP_FAILED", error_msg
+                    )
+                return
             except Exception as e:
                 logger.error(f"Failed to start capture for {session_id}: {e}")
                 self._send_error(

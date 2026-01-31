@@ -232,9 +232,31 @@ class SessionManager:
     async def list_sessions(self) -> SessionEvent:
         """List all sessions sorted by last activity.
 
+        Validates sessions against tmux before returning, removing any
+        that no longer exist (e.g., killed externally).
+
         Returns:
             SessionEvent with SessionListEvent.
         """
+        # Validate sessions still exist in tmux
+        tmux_sessions = await self._tmux.list_sessions()
+        tmux_names = {s.name for s in tmux_sessions}
+
+        # Remove dead sessions from memory
+        dead_sessions = [
+            sid
+            for sid, session in self._sessions.items()
+            if session.tmux_name not in tmux_names
+        ]
+        for sid in dead_sessions:
+            logger.info(f"Session {sid} no longer in tmux, removing")
+            del self._sessions[sid]
+
+        # Persist if any removed
+        if dead_sessions:
+            await self._save()
+
+        # Return updated list
         sessions = sorted(
             self._sessions.values(),
             key=lambda s: s.last_activity_at,

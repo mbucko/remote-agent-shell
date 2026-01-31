@@ -13,6 +13,13 @@ from ras.sessions.manager import SessionData, SessionManager
 from ras.sessions.persistence import SessionPersistence
 
 
+@dataclass
+class FakeTmuxSession:
+    """Fake tmux session for testing."""
+
+    name: str
+
+
 # Auto-patch asyncio.sleep for all tests in this module
 # The SessionManager has a 0.5s sleep in kill_session for graceful exit
 @pytest.fixture(autouse=True)
@@ -335,7 +342,7 @@ class TestListSessions:
     """Tests for list_sessions method."""
 
     @pytest.mark.asyncio
-    async def test_returns_sessions_sorted_by_activity(self, session_manager):
+    async def test_returns_sessions_sorted_by_activity(self, session_manager, mock_tmux):
         """Returns sessions sorted by last activity (most recent first)."""
         await session_manager.initialize()
 
@@ -358,11 +365,55 @@ class TestListSessions:
             last_activity_at=1700002000,  # More recent
         )
 
+        # Mock tmux to return these sessions as existing
+        mock_tmux.list_sessions.return_value = [
+            FakeTmuxSession(name="ras-claude-old"),
+            FakeTmuxSession(name="ras-claude-new"),
+        ]
+
         result = await session_manager.list_sessions()
 
         assert len(result.list.sessions) == 2
         assert result.list.sessions[0].id == "new_sessionCD"
         assert result.list.sessions[1].id == "old_sessionAB"
+
+    @pytest.mark.asyncio
+    async def test_removes_stale_sessions(self, session_manager, mock_tmux, mock_persistence):
+        """Removes sessions that no longer exist in tmux."""
+        await session_manager.initialize()
+
+        session_manager._sessions["alive_session"] = SessionData(
+            id="alive_session",
+            tmux_name="ras-claude-alive",
+            display_name="alive",
+            directory="/tmp",
+            agent="claude",
+            created_at=1700000000,
+            last_activity_at=1700000000,
+        )
+        session_manager._sessions["dead_session"] = SessionData(
+            id="dead_session",
+            tmux_name="ras-claude-dead",
+            display_name="dead",
+            directory="/tmp",
+            agent="claude",
+            created_at=1700001000,
+            last_activity_at=1700001000,
+        )
+
+        # Mock tmux to only return the alive session
+        mock_tmux.list_sessions.return_value = [
+            FakeTmuxSession(name="ras-claude-alive"),
+        ]
+
+        result = await session_manager.list_sessions()
+
+        # Only the alive session should remain
+        assert len(result.list.sessions) == 1
+        assert result.list.sessions[0].id == "alive_session"
+
+        # Persistence should have been updated
+        mock_persistence.save.assert_called()
 
 
 class TestGetAgents:
