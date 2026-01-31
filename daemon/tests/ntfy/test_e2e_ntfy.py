@@ -13,12 +13,30 @@ import asyncio
 import base64
 import os
 import time
-from unittest.mock import AsyncMock, MagicMock
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
 
-pytestmark = pytest.mark.integration
+
+@asynccontextmanager
+async def run_monitor_with_mocked_sleep(monitor, iterations: int):
+    """Run monitor with mocked sleep, stopping after N iterations."""
+    sleep_count = [0]
+
+    async def mock_sleep(delay):
+        sleep_count[0] += 1
+        if sleep_count[0] >= iterations:
+            monitor._running = False
+
+    with patch("ras.ip_monitor.monitor.asyncio.sleep", side_effect=mock_sleep):
+        await monitor.start()
+        yield
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
 from cryptography.exceptions import InvalidTag
 
 from ras.crypto import derive_key, derive_ntfy_topic, generate_secret

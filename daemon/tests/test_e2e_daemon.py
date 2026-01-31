@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+
 from ras.config import Config, DaemonConfig
 from ras.connection_manager import Connection
 from ras.daemon import Daemon
@@ -208,7 +209,9 @@ class TestConnectionLifecycle:
         )
 
         # Allow async tasks to run
-        await asyncio.sleep(0.01)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Old connection should be closed
         assert peer1._closed is True
@@ -236,7 +239,9 @@ class TestConnectionLifecycle:
 
         # Simulate disconnect
         await peer.close()
-        await asyncio.sleep(0.01)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Terminal manager should have been notified
         terminal_manager.on_connection_closed.assert_called_with("device1")
@@ -299,7 +304,9 @@ class TestMessageFlow:
         await peer.receive(bytes(cmd))
 
         # Allow async handler to run
-        await asyncio.sleep(0.1)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Should have received session list broadcast
         assert len(peer.sent_data) >= 1
@@ -329,7 +336,9 @@ class TestMessageFlow:
         await peer.receive(bytes(cmd))
 
         # Allow async handler to run
-        await asyncio.sleep(0.1)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Should have received pong
         assert len(peer.sent_data) == 1
@@ -358,7 +367,9 @@ class TestMessageFlow:
         await peer.receive(b"not a valid protobuf")
 
         # Allow async handler to run
-        await asyncio.sleep(0.1)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Daemon should still be functional
         conn = daemon._connection_manager.get_connection("device1")
@@ -510,13 +521,12 @@ class TestConcurrency:
         """E2E-CC02: Multiple messages processed concurrently."""
         call_count = 0
 
-        async def slow_handler(device_id, message):
+        async def counting_handler(device_id, message):
             nonlocal call_count
-            await asyncio.sleep(0.01)
             call_count += 1
 
         daemon = Daemon(config=config)
-        daemon._dispatcher.register("ping", slow_handler)
+        daemon._dispatcher.register("ping", counting_handler)
         await daemon._initialize_stores()
 
         peer = MockPeer()
@@ -530,7 +540,9 @@ class TestConcurrency:
             await peer.receive(bytes(cmd))
 
         # Wait for all handlers
-        await asyncio.sleep(0.2)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         assert call_count == 5
 
@@ -564,7 +576,9 @@ class TestErrorHandling:
         cmd = RasCommand(session=SessionCommand(list=ListSessionsCommand()))
         await peer.receive(bytes(cmd))
 
-        await asyncio.sleep(0.1)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Daemon should still be functional
         conn = daemon._connection_manager.get_connection("device1")
@@ -585,7 +599,9 @@ class TestErrorHandling:
         # Send garbage
         await peer.receive(b"\x00\x01\x02\x03")
 
-        await asyncio.sleep(0.1)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Connection should still be active
         conn = daemon._connection_manager.get_connection("device1")

@@ -4,9 +4,11 @@ Tests the full flow from terminal output to notification dispatch.
 """
 
 import asyncio
-from unittest.mock import AsyncMock
+import time
+from unittest.mock import AsyncMock, patch
 
 import pytest
+
 
 from ras.notifications.types import NotificationConfig, NotificationType
 from ras.notifications.matcher import PatternMatcher
@@ -172,12 +174,12 @@ class TestE2EFlows:
         # 2. Only 1 notification
         assert len(broadcast_mock.sent_events) == 1
 
-        # 3-4. Wait for cooldown and trigger again
-        await asyncio.sleep(0.15)
-        results = matcher.process_chunk(b"Proceed? (y/n)\n")
-        for r in results:
-            if r.type == NotificationType.APPROVAL:
-                await dispatcher.dispatch("s1", "n", r)
+        # 3-4. Advance time past cooldown and trigger again
+        with patch("ras.notifications.dispatcher.time.time", return_value=time.time() + 0.2):
+            results = matcher.process_chunk(b"Proceed? (y/n)\n")
+            for r in results:
+                if r.type == NotificationType.APPROVAL:
+                    await dispatcher.dispatch("s1", "n", r)
 
         assert len(broadcast_mock.sent_events) == 2
 
@@ -269,12 +271,12 @@ class TestE2EFlows:
         working_broadcast.side_effect = capture
         dispatcher._broadcast = working_broadcast
 
-        # 4-5. New match succeeds
-        await asyncio.sleep(0.15)  # Wait for cooldown
-        results = matcher.process_chunk(b"Proceed? (y/n)")
-        match = [r for r in results if r.type == NotificationType.APPROVAL][0]
-        sent = await dispatcher.dispatch("s1", "n", match)
-        assert sent is True
+        # 4-5. Advance time past cooldown, new match succeeds
+        with patch("ras.notifications.dispatcher.time.time", return_value=time.time() + 0.2):
+            results = matcher.process_chunk(b"Proceed? (y/n)")
+            match = [r for r in results if r.type == NotificationType.APPROVAL][0]
+            sent = await dispatcher.dispatch("s1", "n", match)
+            assert sent is True
         assert len(working_broadcast.sent_events) == 1
 
     @pytest.mark.asyncio

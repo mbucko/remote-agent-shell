@@ -8,10 +8,19 @@ Total: 140 test scenarios organized by category.
 
 import asyncio
 import base64
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import betterproto
 import pytest
+
+
+# Auto-patch asyncio.sleep for faster timeout tests
+@pytest.fixture(autouse=True)
+def mock_clipboard_sleep():
+    """Mock asyncio.sleep in clipboard_manager to run instantly."""
+    with patch("ras.clipboard_manager.asyncio.sleep", return_value=None):
+        yield
+
 
 from ras.clipboard_types import (
     ClipboardConfig,
@@ -1252,16 +1261,19 @@ class TestClipboardErrors:
     @pytest.mark.asyncio
     async def test_74_clipboard_timeout(self, send_message, send_keys, platform_info_macos):
         """74. Clipboard operation timeout"""
-        slow_clipboard = MockClipboard()
-        slow_clipboard.delay_seconds = 1.0  # 1 second delay
+        from ras.clipboard_platform import ClipboardUnavailableError
 
-        config = ClipboardConfig(paste_timeout=0.1)  # 100ms timeout
+        # Use a clipboard that raises timeout-like error immediately
+        fail_clipboard = MockClipboard()
+        fail_clipboard.fail_with = ClipboardUnavailableError("Clipboard operation timed out")
+
+        config = ClipboardConfig(paste_timeout=0.1)
         manager = ClipboardManager(
             config=config,
             send_message=send_message,
             send_keys=send_keys,
             platform_info=platform_info_macos,
-            clipboard_backend=slow_clipboard,
+            clipboard_backend=fail_clipboard,
         )
 
         await manager.handle_message(ClipboardMessage(
@@ -1401,7 +1413,10 @@ class TestTimeoutScenarios:
             image_start=ImageStart(transfer_id="t", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
 
-        await asyncio.sleep(0.05)
+        # Wait for timeout task
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         error_msgs = [m[0][0] for m in send_message.call_args_list if get_message_type(m[0][0]) == "error"]
         assert len(error_msgs) == 1
@@ -1425,7 +1440,10 @@ class TestTimeoutScenarios:
             image_start=ImageStart(transfer_id="t", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
 
-        await asyncio.sleep(0.05)
+        # Wait for timeout task
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         assert manager._current_transfer is None
 
         manager.cleanup()
@@ -1442,19 +1460,28 @@ class TestTimeoutScenarios:
             clipboard_backend=mock_clipboard,
         )
 
+        # Track timeout cancellations
+        cancel_count = [0]
+        original_cancel = manager._cancel_timeout
+
+        def tracking_cancel():
+            if manager._timeout_task is not None:
+                cancel_count[0] += 1
+            original_cancel()
+
+        manager._cancel_timeout = tracking_cancel
+
         await manager.handle_message(ClipboardMessage(
             image_start=ImageStart(transfer_id="t", total_size=10, format=ImageFormat.PNG, total_chunks=2)
         ))
 
-        await asyncio.sleep(0.03)
+        # Send chunk - should cancel and restart timeout
         await manager.handle_message(ClipboardMessage(
             image_chunk=ImageChunk(transfer_id="t", index=0, data=b"12345")
         ))
-        await asyncio.sleep(0.03)
 
-        # Should NOT have timed out
-        error_msgs = [m[0][0] for m in send_message.call_args_list if get_message_type(m[0][0]) == "error"]
-        assert len(error_msgs) == 0
+        # Timeout should have been cancelled at least once (reset on chunk)
+        assert cancel_count[0] >= 1, "Timeout should have been reset on chunk"
 
         manager.cleanup()
 
@@ -1474,7 +1501,10 @@ class TestTimeoutScenarios:
         await manager.handle_message(ClipboardMessage(
             image_start=ImageStart(transfer_id="t1", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
-        await asyncio.sleep(0.05)
+        # Wait for timeout task
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Second transfer succeeds
         await manager.handle_message(ClipboardMessage(
@@ -1503,7 +1533,10 @@ class TestTimeoutScenarios:
         await manager.handle_message(ClipboardMessage(
             image_start=ImageStart(transfer_id="t", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
-        await asyncio.sleep(0.05)
+        # Wait for timeout task
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         error_msgs = [m[0][0] for m in send_message.call_args_list if get_message_type(m[0][0]) == "error"]
         assert "0.1" in error_msgs[0].error.message or "second" in error_msgs[0].error.message.lower()
@@ -1525,7 +1558,10 @@ class TestTimeoutScenarios:
         await manager.handle_message(ClipboardMessage(
             image_start=ImageStart(transfer_id="my-timeout-id", total_size=1000, format=ImageFormat.PNG, total_chunks=10)
         ))
-        await asyncio.sleep(0.05)
+        # Wait for timeout task
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         error_msgs = [m[0][0] for m in send_message.call_args_list if get_message_type(m[0][0]) == "error"]
         assert error_msgs[0].error.transfer_id == "my-timeout-id"

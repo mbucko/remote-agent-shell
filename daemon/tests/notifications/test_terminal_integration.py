@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+
 from ras.terminal.manager import TerminalManager
 from ras.notifications.types import NotificationConfig, NotificationType
 from ras.proto.ras import TerminalEvent, NotificationType as ProtoNotificationType
@@ -97,10 +98,9 @@ def terminal_manager(
 
 async def process_pending_tasks():
     """Allow pending async tasks to complete."""
-    # Give tasks time to run
-    await asyncio.sleep(0.05)
-    # Process any remaining callbacks
-    await asyncio.sleep(0.01)
+    pending = asyncio.all_tasks() - {asyncio.current_task()}
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 # ============================================================================
