@@ -7,6 +7,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.ras.ui.disconnected.DisconnectedScreen
 import com.ras.ui.pairing.PairingScreen
 import com.ras.ui.sessions.CreateSessionScreen
 import com.ras.ui.sessions.SessionsScreen
@@ -34,6 +35,11 @@ fun NavGraph(
                 },
                 onNavigateToSessions = {
                     navController.navigate(Routes.Sessions.route) {
+                        popUpTo(Routes.Startup.route) { inclusive = true }
+                    }
+                },
+                onNavigateToDisconnected = {
+                    navController.navigate(Routes.Disconnected.route) {
                         popUpTo(Routes.Startup.route) { inclusive = true }
                     }
                 }
@@ -68,6 +74,11 @@ fun NavGraph(
                     navController.navigate(Routes.Pairing.route) {
                         popUpTo(0) { inclusive = true }
                     }
+                },
+                onDisconnect = {
+                    navController.navigate(Routes.Disconnected.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }
@@ -100,8 +111,23 @@ fun NavGraph(
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onDisconnect = {
-                    navController.navigate(Routes.Pairing.route) {
+                    navController.navigate(Routes.Disconnected.route) {
                         popUpTo(0) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Routes.Disconnected.route) {
+            DisconnectedScreen(
+                onNavigateToStartup = {
+                    navController.navigate(Routes.Startup.route) {
+                        popUpTo(Routes.Disconnected.route) { inclusive = true }
+                    }
+                },
+                onNavigateToPairing = {
+                    navController.navigate(Routes.Pairing.route) {
+                        popUpTo(Routes.Disconnected.route) { inclusive = true }
                     }
                 }
             )

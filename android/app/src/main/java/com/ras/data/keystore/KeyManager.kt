@@ -5,9 +5,11 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -46,6 +48,7 @@ class KeyManager @Inject constructor(
         private val KEY_DAEMON_PORT = stringPreferencesKey("daemon_port")
         private val KEY_TAILSCALE_IP = stringPreferencesKey("tailscale_ip")
         private val KEY_TAILSCALE_PORT = stringPreferencesKey("tailscale_port")
+        private val KEY_IS_DISCONNECTED = booleanPreferencesKey("is_disconnected")
     }
 
     private val keyStore: KeyStore by lazy {
@@ -200,6 +203,35 @@ class KeyManager @Inject constructor(
     }
 
     /**
+     * Set whether user has manually disconnected.
+     * When true, app should not auto-reconnect on launch.
+     */
+    suspend fun setDisconnected(value: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_IS_DISCONNECTED] = value
+        }
+    }
+
+    /**
+     * Flow of disconnected state.
+     * Returns true if user manually disconnected and hasn't reconnected.
+     */
+    fun isDisconnected(): Flow<Boolean> {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_IS_DISCONNECTED] ?: false
+        }
+    }
+
+    /**
+     * Check if user is disconnected (one-shot).
+     */
+    suspend fun isDisconnectedOnce(): Boolean {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_IS_DISCONNECTED] ?: false
+        }.first()
+    }
+
+    /**
      * Clear all stored credentials (for unpairing).
      */
     suspend fun clearCredentials() {
@@ -210,6 +242,7 @@ class KeyManager @Inject constructor(
             prefs.remove(KEY_NTFY_TOPIC)
             prefs.remove(KEY_TAILSCALE_IP)
             prefs.remove(KEY_TAILSCALE_PORT)
+            prefs.remove(KEY_IS_DISCONNECTED)
         }
     }
 

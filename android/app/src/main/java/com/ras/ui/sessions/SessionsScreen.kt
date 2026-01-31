@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -75,6 +76,7 @@ fun SessionsScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToCreateSession: () -> Unit,
     onNavigateToPairing: () -> Unit,
+    onDisconnect: () -> Unit,
     viewModel: SessionsViewModel = hiltViewModel()
 ) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
@@ -128,6 +130,9 @@ fun SessionsScreen(
                     }
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                    IconButton(onClick = { viewModel.disconnect(onDisconnect) }) {
+                        Icon(Icons.Default.LinkOff, contentDescription = "Disconnect")
                     }
                 }
             )

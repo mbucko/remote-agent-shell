@@ -3,6 +3,7 @@ package com.ras.ui.startup
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionLog
+import com.ras.data.keystore.KeyManager
 import com.ras.domain.startup.AttemptReconnectionUseCase
 import com.ras.domain.startup.CheckCredentialsUseCase
 import com.ras.domain.startup.ClearCredentialsUseCase
@@ -28,7 +29,8 @@ import javax.inject.Inject
 class StartupViewModel @Inject constructor(
     private val checkCredentialsUseCase: CheckCredentialsUseCase,
     private val attemptReconnectionUseCase: AttemptReconnectionUseCase,
-    private val clearCredentialsUseCase: ClearCredentialsUseCase
+    private val clearCredentialsUseCase: ClearCredentialsUseCase,
+    private val keyManager: KeyManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<StartupState>(StartupState.Loading)
@@ -46,8 +48,13 @@ class StartupViewModel @Inject constructor(
                         _state.value = StartupState.NavigateToPairing
                     }
                     is CredentialStatus.HasCredentials -> {
-                        _state.value = StartupState.Connecting()
-                        attemptReconnection()
+                        // Check if user manually disconnected
+                        if (keyManager.isDisconnectedOnce()) {
+                            _state.value = StartupState.NavigateToDisconnected
+                        } else {
+                            _state.value = StartupState.Connecting()
+                            attemptReconnection()
+                        }
                     }
                 }
             } catch (e: Exception) {

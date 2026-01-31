@@ -3,6 +3,7 @@ package com.ras.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionManager
+import com.ras.data.keystore.KeyManager
 import com.ras.data.sessions.AgentInfo
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionRepository
@@ -42,7 +43,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val sessionRepository: SessionRepository,
-    private val connectionManager: ConnectionManager
+    private val connectionManager: ConnectionManager,
+    private val keyManager: KeyManager
 ) : ViewModel() {
 
     // ==========================================================================
@@ -234,10 +236,13 @@ class SettingsViewModel @Inject constructor(
     // ==========================================================================
 
     /**
-     * Disconnect from the daemon.
+     * Disconnect from the daemon and set disconnected flag.
      */
     fun disconnect() {
-        connectionManager.disconnect()
+        viewModelScope.launch {
+            connectionManager.disconnect()
+            keyManager.setDisconnected(true)
+        }
     }
 }
 

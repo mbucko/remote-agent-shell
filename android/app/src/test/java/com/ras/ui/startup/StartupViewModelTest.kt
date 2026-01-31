@@ -1,5 +1,6 @@
 package com.ras.ui.startup
 
+import com.ras.data.keystore.KeyManager
 import com.ras.domain.startup.AttemptReconnectionUseCase
 import com.ras.domain.startup.CheckCredentialsUseCase
 import com.ras.domain.startup.ClearCredentialsUseCase
@@ -32,6 +33,7 @@ class StartupViewModelTest {
     private lateinit var checkCredentialsUseCase: CheckCredentialsUseCase
     private lateinit var attemptReconnectionUseCase: AttemptReconnectionUseCase
     private lateinit var clearCredentialsUseCase: ClearCredentialsUseCase
+    private lateinit var keyManager: KeyManager
 
     @Before
     fun setup() {
@@ -39,6 +41,8 @@ class StartupViewModelTest {
         checkCredentialsUseCase = mockk()
         attemptReconnectionUseCase = mockk()
         clearCredentialsUseCase = mockk(relaxed = true)
+        keyManager = mockk(relaxed = true)
+        coEvery { keyManager.isDisconnectedOnce() } returns false
     }
 
     @After
@@ -49,7 +53,8 @@ class StartupViewModelTest {
     private fun createViewModel() = StartupViewModel(
         checkCredentialsUseCase = checkCredentialsUseCase,
         attemptReconnectionUseCase = attemptReconnectionUseCase,
-        clearCredentialsUseCase = clearCredentialsUseCase
+        clearCredentialsUseCase = clearCredentialsUseCase,
+        keyManager = keyManager
     )
 
     // ==========================================================================
@@ -273,6 +278,25 @@ class StartupViewModelTest {
 
         coVerify { clearCredentialsUseCase() }
         assertEquals(StartupState.NavigateToPairing, viewModel.state.value)
+    }
+
+    // ==========================================================================
+    // Disconnected Flow
+    // ==========================================================================
+
+    @Test
+    fun `when has credentials but disconnected navigates to disconnected`() = runTest {
+        coEvery { checkCredentialsUseCase() } returns CredentialStatus.HasCredentials(
+            deviceId = "device123",
+            daemonHost = "192.168.1.100",
+            daemonPort = 8765
+        )
+        coEvery { keyManager.isDisconnectedOnce() } returns true
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(StartupState.NavigateToDisconnected, viewModel.state.value)
     }
 
     // ==========================================================================

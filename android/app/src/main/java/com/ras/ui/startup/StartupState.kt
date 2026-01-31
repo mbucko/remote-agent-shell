@@ -32,6 +32,11 @@ sealed class StartupState {
     object NavigateToSessions : StartupState()
 
     /**
+     * User previously disconnected - navigate to disconnected screen.
+     */
+    object NavigateToDisconnected : StartupState()
+
+    /**
      * Reconnection failed - show retry options.
      * @param log Final connection log showing what was tried
      */

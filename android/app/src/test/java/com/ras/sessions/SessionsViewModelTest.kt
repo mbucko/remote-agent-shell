@@ -1,6 +1,8 @@
 package com.ras.sessions
 
 import app.cash.turbine.test
+import com.ras.data.connection.ConnectionManager
+import com.ras.data.keystore.KeyManager
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionRepository
@@ -33,6 +35,8 @@ class SessionsViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: SessionRepository
+    private lateinit var keyManager: KeyManager
+    private lateinit var connectionManager: ConnectionManager
     private lateinit var sessionsFlow: MutableStateFlow<List<SessionInfo>>
     private lateinit var eventsFlow: MutableSharedFlow<SessionEvent>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
@@ -49,6 +53,8 @@ class SessionsViewModelTest {
             every { events } returns eventsFlow
             every { isConnected } returns isConnectedFlow
         }
+        keyManager = mockk(relaxed = true)
+        connectionManager = mockk(relaxed = true)
     }
 
     @After
@@ -354,7 +360,7 @@ class SessionsViewModelTest {
         coVerify { repository.renameSession("1", "New Name") }
     }
 
-    private fun createViewModel() = SessionsViewModel(repository)
+    private fun createViewModel() = SessionsViewModel(repository, keyManager, connectionManager)
 
     private fun createSession(
         id: String,

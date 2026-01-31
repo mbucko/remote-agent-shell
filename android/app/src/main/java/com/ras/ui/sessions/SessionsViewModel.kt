@@ -3,6 +3,8 @@ package com.ras.ui.sessions
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ras.data.connection.ConnectionManager
+import com.ras.data.keystore.KeyManager
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionRepository
@@ -24,7 +26,9 @@ private const val TAG = "SessionsViewModel"
  */
 @HiltViewModel
 class SessionsViewModel @Inject constructor(
-    private val sessionRepository: SessionRepository
+    private val sessionRepository: SessionRepository,
+    private val keyManager: KeyManager,
+    private val connectionManager: ConnectionManager
 ) : ViewModel() {
 
     private val _screenState = MutableStateFlow<SessionsScreenState>(SessionsScreenState.Loading)
@@ -214,6 +218,17 @@ class SessionsViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiEvents.send(SessionsUiEvent.Error("Failed to rename session: ${e.message}"))
             }
+        }
+    }
+
+    /**
+     * Disconnect from the daemon and navigate to disconnected screen.
+     */
+    fun disconnect(onNavigate: () -> Unit) {
+        viewModelScope.launch {
+            connectionManager.disconnect()
+            keyManager.setDisconnected(true)
+            onNavigate()
         }
     }
 }

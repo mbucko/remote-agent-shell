@@ -58,6 +58,7 @@ import com.ras.domain.startup.ReconnectionResult
 fun StartupScreen(
     onNavigateToPairing: () -> Unit,
     onNavigateToSessions: () -> Unit,
+    onNavigateToDisconnected: () -> Unit,
     viewModel: StartupViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -67,6 +68,7 @@ fun StartupScreen(
         when (state) {
             is StartupState.NavigateToPairing -> onNavigateToPairing()
             is StartupState.NavigateToSessions -> onNavigateToSessions()
+            is StartupState.NavigateToDisconnected -> onNavigateToDisconnected()
             else -> { /* Stay on this screen */ }
         }
     }
@@ -91,7 +93,8 @@ fun StartupScreen(
                 )
             }
             is StartupState.NavigateToPairing,
-            is StartupState.NavigateToSessions -> {
+            is StartupState.NavigateToSessions,
+            is StartupState.NavigateToDisconnected -> {
                 // Will navigate away, show loading in the meantime
                 LoadingContent(message = "")
             }

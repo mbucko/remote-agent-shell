@@ -1,6 +1,8 @@
 package com.ras.sessions
 
 import app.cash.turbine.test
+import com.ras.data.connection.ConnectionManager
+import com.ras.data.keystore.KeyManager
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionRepository
@@ -43,6 +45,8 @@ class SessionsViewModelE2ETest {
 
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var mockRepository: SessionRepository
+    private lateinit var mockKeyManager: KeyManager
+    private lateinit var mockConnectionManager: ConnectionManager
     private lateinit var sessionsFlow: MutableStateFlow<List<SessionInfo>>
     private lateinit var eventsFlow: MutableSharedFlow<SessionEvent>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
@@ -60,8 +64,10 @@ class SessionsViewModelE2ETest {
             every { events } returns eventsFlow
             every { isConnected } returns isConnectedFlow
         }
+        mockKeyManager = mockk(relaxed = true)
+        mockConnectionManager = mockk(relaxed = true)
 
-        viewModel = SessionsViewModel(mockRepository)
+        viewModel = SessionsViewModel(mockRepository, mockKeyManager, mockConnectionManager)
     }
 
     @After
