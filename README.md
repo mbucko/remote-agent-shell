@@ -36,9 +36,39 @@ The app tries multiple connection strategies in order of preference:
 
 ### Connection Priority
 
-1. **Tailscale** (if both on Tailscale) - Direct UDP, lowest latency
-2. **Local HTTP** (same network) - Direct WebRTC signaling
-3. **ntfy relay** (cross-NAT) - WebRTC via encrypted relay
+1. **Tailscale** (if both on Tailscale) - Direct TCP, lowest latency (~50ms)
+2. **Local HTTP** (same network) - Direct WebRTC signaling (~100ms)
+3. **ntfy relay** (cross-NAT) - WebRTC via encrypted relay (~1-5s depending on region)
+
+### Connection Flow
+
+The mobile app uses a **Connection Orchestrator** with parallel racing:
+
+1. **Capability Exchange** - Discover if both devices have Tailscale
+2. **Strategy Detection** - Check which connection methods are available
+3. **Parallel Signaling** - Race direct HTTP vs ntfy (first response wins)
+4. **WebRTC Setup** - ICE gathering, DTLS handshake, data channel
+5. **Authentication** - Mutual auth over encrypted data channel
+6. **Heartbeat** - Keepalive packets every 15s to detect disconnection
+
+### Connection Timing (Typical)
+
+| Phase | Same Network | Cross-NAT (same region) | Cross-NAT (different region) |
+|-------|--------------|-------------------------|------------------------------|
+| Signaling | ~50ms | ~200ms | ~800ms+ |
+| ICE Negotiation | ~100ms | ~500ms | ~2-3s |
+| DTLS Handshake | ~50ms | ~200ms | ~1s |
+| **Total** | **~200ms** | **~1s** | **~5s** |
+
+Enable DEBUG logging to see detailed timing:
+
+```yaml
+# ~/.config/ras/config.yaml
+log_level: DEBUG
+log_file: /tmp/ras-debug.log
+```
+
+Look for `[TIMING]` entries in the logs.
 
 ## Quick Start
 
@@ -180,6 +210,63 @@ The daemon requires incoming network connections for WebRTC (peer-to-peer).
 sudo ufw allow proto udp from 192.168.0.0/16
 ```
 
+## Configuration
+
+The daemon is configured via `~/.config/ras/config.yaml`:
+
+```yaml
+# Server settings
+port: 8765
+bind_address: "0.0.0.0"
+log_level: INFO  # DEBUG, INFO, WARNING, ERROR
+log_file: /tmp/ras.log  # Optional, logs to stderr if not set
+
+# Default session settings
+default_directory: ~/repos
+default_agent: claude  # claude, aider, cursor, cline, opencode
+
+# STUN servers for WebRTC NAT traversal
+stun_servers:
+  - stun:stun.l.google.com:19302
+  - stun:stun.cloudflare.com:3478
+
+# ntfy signaling relay (for NAT traversal)
+ntfy:
+  server: "https://ntfy.sh"  # Self-host for lower latency
+  enabled: true
+
+# Connection keepalive
+daemon:
+  keepalive_interval: 15.0  # Send keepalive every 15s
+  keepalive_timeout: 60.0   # Disconnect if no response in 60s
+  connect_timeout: 30.0     # Max time for WebRTC connection
+
+# Push notification patterns
+notifications:
+  enabled: true
+  cooldown_seconds: 5.0  # Dedup notifications
+  patterns:
+    shell_prompt: null  # Custom shell prompt regex
+    custom_approval:    # Additional approval patterns
+      - "Continue\\?"
+    custom_error:       # Additional error patterns
+      - "FATAL:"
+```
+
+### Self-Hosting ntfy for Lower Latency
+
+The default ntfy.sh servers are in the US. For lower latency from other regions:
+
+```bash
+# Run ntfy on a VPS in your region
+docker run -d -p 80:80 binwiederhier/ntfy
+
+# Configure daemon to use it
+# ~/.config/ras/config.yaml
+ntfy:
+  server: "https://your-server.com"
+```
+
 ## Security
 
 - **HKDF** (RFC 5869) for key derivation
@@ -201,14 +288,18 @@ sudo ufw allow proto udp from 192.168.0.0/16
 - **Terminal Handler**: Output capture via pipe-pane, input via send-keys
 - **Notification Detector**: Pattern matching for prompts/errors/completion
 - **WebRTC**: Peer connection management via aiortc
+- **Heartbeat Manager**: Connection keepalive with configurable intervals
 - **Crypto**: HKDF key derivation, AES-GCM, HMAC utilities
 - **CLI**: Click-based command interface
 
 ### Mobile App (Kotlin)
 
 - QR code scanning and pairing
+- **Connection Orchestrator**: Strategy-based connection with Tailscale/WebRTC
+- **Parallel Signaling**: Race direct HTTP vs ntfy for fastest connection
 - WebRTC client with auto-reconnect
 - Session list and management UI
+- **Seamless Session Switching**: Switch terminals without explicit detach
 - Terminal emulator with full ANSI escape sequence support (Termux terminal-emulator, Apache 2.0)
 - Clipboard paste support
 - Push notification handling
