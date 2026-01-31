@@ -152,7 +152,9 @@ object VpnCandidateInjector {
             Log.i(TAG, "Filtered $removedCount Tailscale candidates from SDP")
         }
 
-        return filtered.joinToString("\r\n")
+        // Preserve original line endings - detect from input
+        val lineEnding = if (sdp.contains("\r\n")) "\r\n" else "\n"
+        return filtered.joinToString(lineEnding)
     }
 
     /**

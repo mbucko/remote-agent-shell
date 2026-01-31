@@ -9,8 +9,9 @@ import com.ras.domain.startup.CheckCredentialsUseCase
 import com.ras.domain.startup.ClearCredentialsUseCase
 import com.ras.domain.startup.CredentialStatus
 import com.ras.domain.startup.ReconnectionResult
+import com.ras.di.DefaultDispatcher
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +31,8 @@ class StartupViewModel @Inject constructor(
     private val checkCredentialsUseCase: CheckCredentialsUseCase,
     private val attemptReconnectionUseCase: AttemptReconnectionUseCase,
     private val clearCredentialsUseCase: ClearCredentialsUseCase,
-    private val keyManager: KeyManager
+    private val keyManager: KeyManager,
+    @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<StartupState>(StartupState.Loading)
@@ -69,7 +71,7 @@ class StartupViewModel @Inject constructor(
 
         try {
             // Run connection on Default dispatcher to keep Main thread free for animations
-            val result = withContext(Dispatchers.Default) {
+            val result = withContext(defaultDispatcher) {
                 attemptReconnectionUseCase { progress ->
                     currentLog = currentLog.apply(progress)
                     // StateFlow is thread-safe, can update from any thread

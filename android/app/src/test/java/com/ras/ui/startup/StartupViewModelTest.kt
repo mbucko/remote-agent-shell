@@ -12,6 +12,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -28,7 +29,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class StartupViewModelTest {
 
-    private val testDispatcher = StandardTestDispatcher()
+    private val testDispatcher: TestDispatcher = StandardTestDispatcher()
 
     private lateinit var checkCredentialsUseCase: CheckCredentialsUseCase
     private lateinit var attemptReconnectionUseCase: AttemptReconnectionUseCase
@@ -54,7 +55,8 @@ class StartupViewModelTest {
         checkCredentialsUseCase = checkCredentialsUseCase,
         attemptReconnectionUseCase = attemptReconnectionUseCase,
         clearCredentialsUseCase = clearCredentialsUseCase,
-        keyManager = keyManager
+        keyManager = keyManager,
+        defaultDispatcher = testDispatcher
     )
 
     // ==========================================================================

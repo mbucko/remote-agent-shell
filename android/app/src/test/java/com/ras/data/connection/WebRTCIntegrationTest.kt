@@ -194,9 +194,9 @@ class WebRTCIntegrationTest {
         // Setup: WebRTC client creates offer
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
 
-        // Setup: Signaling returns answer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null  // No Tailscale
-        coEvery { mockSignaling.sendOffer(sampleOffer) } returns sampleAnswer
+        // Setup: Signaling returns answer (use any() for optional onProgress param)
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null  // No Tailscale
+        coEvery { mockSignaling.sendOffer(sampleOffer, any()) } returns sampleAnswer
 
         // Setup: WebRTC negotiation succeeds
         coEvery { mockWebRTCClient.setRemoteDescription(sampleAnswer) } returns Unit
@@ -211,7 +211,7 @@ class WebRTCIntegrationTest {
 
         // Verify: WebRTC flow was executed
         coVerify { mockWebRTCClient.createOffer() }
-        coVerify { mockSignaling.sendOffer(sampleOffer) }
+        coVerify { mockSignaling.sendOffer(sampleOffer, any()) }
         coVerify { mockWebRTCClient.setRemoteDescription(sampleAnswer) }
         coVerify { mockWebRTCClient.waitForDataChannel(any()) }
 
@@ -224,8 +224,8 @@ class WebRTCIntegrationTest {
     @Test
     fun `WebRTC used when Tailscale unavailable`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } returns sampleAnswer
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } returns sampleAnswer
         coEvery { mockWebRTCClient.setRemoteDescription(any()) } returns Unit
         coEvery { mockWebRTCClient.waitForDataChannel(any()) } returns true
 
@@ -255,8 +255,8 @@ class WebRTCIntegrationTest {
     fun `same network - connects using host candidates only`() = runTest {
         // LAN scenario: only host candidates, no STUN reflexive candidates
         coEvery { mockWebRTCClient.createOffer() } returns lanOnlyOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(lanOnlyOffer) } returns lanOnlyAnswer
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(lanOnlyOffer, any()) } returns lanOnlyAnswer
         coEvery { mockWebRTCClient.setRemoteDescription(lanOnlyAnswer) } returns Unit
         coEvery { mockWebRTCClient.waitForDataChannel(any()) } returns true
 
@@ -267,7 +267,7 @@ class WebRTCIntegrationTest {
 
         // Verify: The offer sent had only host candidates
         val capturedOffer = slot<String>()
-        coVerify { mockSignaling.sendOffer(capture(capturedOffer)) }
+        coVerify { mockSignaling.sendOffer(capture(capturedOffer), any()) }
         assertTrue("Offer should have host candidate",
             capturedOffer.captured.contains("typ host"))
         // LAN-only offer shouldn't have srflx (STUN) candidates
@@ -278,8 +278,8 @@ class WebRTCIntegrationTest {
     @Test
     fun `same network - progress reports correct steps`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns lanOnlyOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } returns lanOnlyAnswer
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } returns lanOnlyAnswer
         coEvery { mockWebRTCClient.setRemoteDescription(any()) } returns Unit
         coEvery { mockWebRTCClient.waitForDataChannel(any()) } returns true
 
@@ -304,8 +304,8 @@ class WebRTCIntegrationTest {
     fun `NAT traversal - connects using reflexive candidates`() = runTest {
         // NAT scenario: includes srflx (STUN reflexive) candidates
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer  // Has srflx
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } returns sampleAnswer  // Has srflx
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } returns sampleAnswer  // Has srflx
         coEvery { mockWebRTCClient.setRemoteDescription(any()) } returns Unit
         coEvery { mockWebRTCClient.waitForDataChannel(any()) } returns true
 
@@ -315,7 +315,7 @@ class WebRTCIntegrationTest {
 
         // Verify: Offer included srflx candidates
         val capturedOffer = slot<String>()
-        coVerify { mockSignaling.sendOffer(capture(capturedOffer)) }
+        coVerify { mockSignaling.sendOffer(capture(capturedOffer), any()) }
         assertTrue("Should have srflx candidate for NAT",
             capturedOffer.captured.contains("typ srflx"))
     }
@@ -327,8 +327,8 @@ class WebRTCIntegrationTest {
     @Test
     fun `signaling failure - no answer received`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } returns null  // No answer!
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } returns null  // No answer!
 
         val progressUpdates = mutableListOf<ConnectionProgress>()
         val transport = orchestrator.connect(createContext()) { progressUpdates.add(it) }
@@ -349,8 +349,8 @@ class WebRTCIntegrationTest {
     @Test
     fun `signaling failure - exception during offer send`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } throws Exception("Network error")
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } throws Exception("Network error")
 
         val transport = orchestrator.connect(createContext()) {}
 
@@ -365,8 +365,8 @@ class WebRTCIntegrationTest {
     @Test
     fun `ICE failure - data channel timeout`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } returns sampleAnswer
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } returns sampleAnswer
         coEvery { mockWebRTCClient.setRemoteDescription(any()) } returns Unit
         coEvery { mockWebRTCClient.waitForDataChannel(any()) } returns false  // Timeout!
 
@@ -385,8 +385,8 @@ class WebRTCIntegrationTest {
     @Test
     fun `ICE failure - setRemoteDescription throws`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } returns sampleAnswer
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } returns sampleAnswer
         coEvery { mockWebRTCClient.setRemoteDescription(any()) } throws Exception("Invalid SDP")
 
         val transport = orchestrator.connect(createContext()) {}
@@ -402,7 +402,7 @@ class WebRTCIntegrationTest {
     @Test
     fun `offer creation failure`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } throws Exception("Failed to gather candidates")
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
 
         val transport = orchestrator.connect(createContext()) {}
 
@@ -472,8 +472,8 @@ class WebRTCIntegrationTest {
         """.trimIndent()
 
         coEvery { mockWebRTCClient.createOffer() } returns multiCandidateOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } returns sampleAnswer
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } returns sampleAnswer
         coEvery { mockWebRTCClient.setRemoteDescription(any()) } returns Unit
         coEvery { mockWebRTCClient.waitForDataChannel(any()) } returns true
 
@@ -483,7 +483,7 @@ class WebRTCIntegrationTest {
 
         // Verify the offer had multiple candidates
         val capturedOffer = slot<String>()
-        coVerify { mockSignaling.sendOffer(capture(capturedOffer)) }
+        coVerify { mockSignaling.sendOffer(capture(capturedOffer), any()) }
         val candidates = capturedOffer.captured.lines().filter { it.contains("a=candidate:") }
         assertEquals("Should have 4 candidates", 4, candidates.size)
     }
@@ -495,8 +495,8 @@ class WebRTCIntegrationTest {
     @Test
     fun `handles empty answer gracefully`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
-        coEvery { mockSignaling.sendOffer(any()) } returns ""  // Empty answer
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
+        coEvery { mockSignaling.sendOffer(any(), any()) } returns ""  // Empty answer
 
         val transport = orchestrator.connect(createContext()) {}
 
