@@ -7,7 +7,7 @@ Verifies that the daemon properly authenticates reconnecting devices:
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, Mock, patch, call
 
 from ras.pairing.auth_handler import AuthHandler
 from ras.proto.ras import AuthEnvelope, AuthChallenge, AuthResponse, AuthVerify
@@ -418,6 +418,7 @@ class TestNtfyReconnectionManagerAuth:
         )
 
         mock_peer = AsyncMock()
+        mock_peer.on_message = Mock()  # Sync method that registers callback
         mock_peer.wait_connected = AsyncMock(side_effect=Exception("ICE failed"))
         mock_peer.close = AsyncMock()
 
