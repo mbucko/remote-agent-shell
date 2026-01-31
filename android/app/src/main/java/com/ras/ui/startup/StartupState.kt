@@ -94,7 +94,11 @@ data class ConnectionProgressInfo(
                 )
                 is ConnectionProgress.CapabilityDirectTimeout -> ConnectionProgressInfo(
                     step = "Discovery",
-                    detail = "CAPABILITIES → ${progress.host}:${progress.port}... timeout"
+                    detail = "CAPABILITIES → ${progress.host}:${progress.port}... unreachable"
+                )
+                is ConnectionProgress.CapabilityDirectSuccess -> ConnectionProgressInfo(
+                    step = "Discovery",
+                    detail = "CAPABILITIES → ${progress.host}:${progress.port} ✓ local"
                 )
                 is ConnectionProgress.CapabilityNtfySubscribing -> ConnectionProgressInfo(
                     step = "Discovery",

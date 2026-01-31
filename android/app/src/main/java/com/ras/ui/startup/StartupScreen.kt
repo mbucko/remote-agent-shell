@@ -195,6 +195,13 @@ private fun CapabilitySection(
     isExchanging: Boolean,
     isFinalFailure: Boolean = false
 ) {
+    // Parse exchange steps to determine Direct and ntfy status
+    val directStep = exchangeSteps.find { it.startsWith("CAPABILITIES →") && !it.contains("ntfy") }
+    val ntfyStep = exchangeSteps.find { it.contains("ntfy") }
+
+    // Determine Tailscale status from steps
+    val tailscaleStep = exchangeSteps.find { it.startsWith("TAILSCALE") }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -203,62 +210,72 @@ private fun CapabilitySection(
             .padding(12.dp)
     ) {
         Column {
-            // Local capabilities
+            // Local Tailscale detection
             CapabilityRow(
-                label = "Local",
-                value = localCapabilities?.let { caps ->
-                    if (caps.tailscaleIp != null) {
-                        "Tailscale ${caps.tailscaleIp}"
-                    } else {
-                        "WebRTC only"
-                    }
-                } ?: "Detecting...",
-                isComplete = localCapabilities != null
+                label = "Tailscale",
+                value = when {
+                    localCapabilities?.tailscaleIp != null -> localCapabilities.tailscaleIp
+                    tailscaleStep?.contains("not detected") == true -> "not detected"
+                    tailscaleStep != null -> "detecting..."
+                    else -> "pending"
+                },
+                isComplete = localCapabilities?.tailscaleIp != null,
+                isSkipped = tailscaleStep?.contains("not detected") == true
             )
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Daemon capabilities
+            // Direct HTTP probe status
             CapabilityRow(
-                label = "Daemon",
+                label = "Direct",
                 value = when {
-                    exchangeError != null -> {
-                        if (isFinalFailure) {
-                            "Failed: $exchangeError"
-                        } else {
-                            "Unavailable (proceeding via ntfy)"
-                        }
-                    }
-                    daemonCapabilities != null -> {
-                        if (daemonCapabilities.tailscaleIp != null) {
+                    directStep?.contains("✓") == true -> {
+                        // Extract daemon info if we have it
+                        if (daemonCapabilities?.tailscaleIp != null) {
                             "Tailscale ${daemonCapabilities.tailscaleIp}:${daemonCapabilities.tailscalePort}"
-                        } else {
+                        } else if (daemonCapabilities != null) {
                             "WebRTC only"
+                        } else {
+                            "connected"
                         }
                     }
-                    isExchanging -> "Exchanging..."
-                    else -> "Pending"
+                    directStep?.contains("unreachable") == true -> "unreachable"
+                    directStep != null -> "probing..."
+                    isExchanging -> "pending"
+                    else -> "pending"
                 },
-                isComplete = daemonCapabilities != null,
-                isError = exchangeError != null && isFinalFailure,
-                isSkipped = exchangeError != null && !isFinalFailure
+                isComplete = directStep?.contains("✓") == true,
+                isSkipped = directStep?.contains("unreachable") == true
             )
 
-            // Detailed exchange steps
-            if (exchangeSteps.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                exchangeSteps.forEach { step ->
-                    Text(
-                        text = "  $step",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = when {
-                            step.contains("✓") -> MaterialTheme.colorScheme.primary
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // ntfy status
+            CapabilityRow(
+                label = "ntfy",
+                value = when {
+                    ntfyStep?.contains("✓") == true -> {
+                        // Extract daemon info if we have it via ntfy
+                        if (daemonCapabilities?.tailscaleIp != null && directStep?.contains("✓") != true) {
+                            "Tailscale ${daemonCapabilities.tailscaleIp}:${daemonCapabilities.tailscalePort}"
+                        } else if (daemonCapabilities != null && directStep?.contains("✓") != true) {
+                            "WebRTC only"
+                        } else {
+                            "received"
                         }
-                    )
-                }
-            }
+                    }
+                    ntfyStep?.contains("waiting") == true -> "waiting..."
+                    ntfyStep?.contains("sending") == true -> "sending..."
+                    ntfyStep?.contains("connected") == true -> "connected"
+                    ntfyStep?.contains("connecting") == true -> "connecting..."
+                    exchangeError != null && isFinalFailure -> "failed"
+                    directStep?.contains("unreachable") == true -> "fallback"
+                    else -> "standby"
+                },
+                isComplete = ntfyStep?.contains("✓") == true,
+                isError = exchangeError != null && isFinalFailure && directStep?.contains("✓") != true,
+                isInProgress = ntfyStep != null && !ntfyStep.contains("✓") && exchangeError == null
+            )
         }
     }
 }
@@ -269,7 +286,8 @@ private fun CapabilityRow(
     value: String,
     isComplete: Boolean,
     isError: Boolean = false,
-    isSkipped: Boolean = false
+    isSkipped: Boolean = false,
+    isInProgress: Boolean = false
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -280,6 +298,7 @@ private fun CapabilityRow(
                 isError -> "x"
                 isSkipped -> "~"
                 isComplete -> "+"
+                isInProgress -> "*"
                 else -> "-"
             },
             style = MaterialTheme.typography.bodySmall,
@@ -287,6 +306,7 @@ private fun CapabilityRow(
             color = when {
                 isError -> MaterialTheme.colorScheme.error
                 isComplete -> MaterialTheme.colorScheme.primary
+                isInProgress -> MaterialTheme.colorScheme.tertiary
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             }
         )

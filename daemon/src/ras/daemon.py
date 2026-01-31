@@ -593,18 +593,19 @@ class Daemon:
         peer: Any,
         auth_key: bytes,
     ) -> None:
-        """Handle device reconnection request.
+        """Handle device reconnection after auth is complete.
 
-        Runs authentication handshake before establishing connection.
+        Called by server.py AFTER authentication has already succeeded.
+        Just waits for WebRTC connection and sets up message handling.
 
         Args:
             device_id: Device identifier.
             device_name: Human-readable device name.
-            peer: WebRTC peer connection.
-            auth_key: Auth key for authentication and message encryption.
+            peer: WebRTC peer connection (already authenticated).
+            auth_key: Auth key for message encryption.
         """
-        # Wait for WebRTC connection to be established before authenticating
-        # (signaling completes before ICE finishes)
+        # Wait for WebRTC connection to be established
+        # (signaling/auth completes before ICE finishes)
         try:
             await peer.wait_connected(timeout=30.0)
         except Exception as e:
@@ -612,31 +613,7 @@ class Daemon:
             await peer.close()
             return
 
-        # Set up message queue for auth handshake
-        auth_queue: asyncio.Queue = asyncio.Queue()
-
-        async def on_auth_message(message: bytes) -> None:
-            await auth_queue.put(message)
-
-        peer.on_message(on_auth_message)
-
-        # Run authentication handshake
-        auth_handler = AuthHandler(auth_key, device_id)
-
-        async def send_message(data: bytes) -> None:
-            await peer.send(data)
-
-        async def receive_message() -> bytes:
-            return await asyncio.wait_for(auth_queue.get(), timeout=10.0)
-
-        success = await auth_handler.run_handshake(send_message, receive_message)
-
-        if not success:
-            logger.warning(f"Authentication failed for reconnecting device {device_id[:8]}...")
-            await peer.close()
-            return
-
-        logger.info(f"Authentication successful for reconnecting device {device_id[:8]}...")
+        logger.info(f"Device connected: {device_name} ({device_id[:8]}...)")
 
         # Create codec for encrypted communication
         codec = BytesCodec(auth_key)

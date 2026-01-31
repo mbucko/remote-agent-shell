@@ -196,6 +196,7 @@ class ReconnectionSignaler(
             }
             if (result != null) {
                 Log.i(TAG, "Direct capability exchange succeeded: tailscale=${result.tailscaleIp}:${result.tailscalePort}")
+                onProgress?.invoke(ConnectionProgress.CapabilityDirectSuccess(host, port))
                 authKey.fill(0)
                 // Cancel ntfy - we don't need it
                 ntfyDeferred.cancel()

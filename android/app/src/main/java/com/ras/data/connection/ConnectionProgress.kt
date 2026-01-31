@@ -44,6 +44,11 @@ sealed class ConnectionProgress {
     data class CapabilityDirectTimeout(val host: String, val port: Int) : ConnectionProgress()
 
     /**
+     * Direct capability exchange succeeded (proves local network connectivity).
+     */
+    data class CapabilityDirectSuccess(val host: String, val port: Int) : ConnectionProgress()
+
+    /**
      * Subscribing to ntfy for capability exchange.
      */
     data class CapabilityNtfySubscribing(val topic: String) : ConnectionProgress()

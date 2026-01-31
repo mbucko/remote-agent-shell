@@ -62,8 +62,16 @@ data class ConnectionLog(
             is ConnectionProgress.CapabilityDirectTimeout -> copy(
                 // Replace the direct probe line (find by host:port pattern)
                 capabilityExchangeSteps = capabilityExchangeSteps.map { step ->
-                    if (step.contains("${progress.host}:${progress.port}") && !step.contains("timeout")) {
-                        "CAPABILITIES → ${progress.host}:${progress.port}... timeout"
+                    if (step.contains("${progress.host}:${progress.port}") && !step.contains("unreachable")) {
+                        "CAPABILITIES → ${progress.host}:${progress.port}... unreachable"
+                    } else step
+                }
+            )
+            is ConnectionProgress.CapabilityDirectSuccess -> copy(
+                // Replace the direct probe line to show success
+                capabilityExchangeSteps = capabilityExchangeSteps.map { step ->
+                    if (step.contains("${progress.host}:${progress.port}") && !step.contains("✓")) {
+                        "CAPABILITIES → ${progress.host}:${progress.port} ✓ local"
                     } else step
                 }
             )

@@ -173,11 +173,16 @@ class TestReconnectionAuthHandshake:
 
 
 class TestDaemonReconnectionCallback:
-    """Tests that daemon runs auth on reconnection callback."""
+    """Tests for daemon reconnection callback (after auth is complete)."""
 
     @pytest.mark.asyncio
-    async def test_on_device_reconnected_runs_auth(self):
-        """_on_device_reconnected should run auth handshake."""
+    async def test_on_device_reconnected_does_not_run_auth(self):
+        """_on_device_reconnected should NOT run auth - server.py already did it.
+
+        This test guards against the double-auth bug where both server.py
+        and daemon.py were running authentication, causing the second auth
+        to fail because the client had already switched to encrypted mode.
+        """
         from ras.daemon import Daemon
         from ras.config import Config
 
@@ -189,38 +194,51 @@ class TestDaemonReconnectionCallback:
         mock_peer = AsyncMock()
         mock_peer.send = AsyncMock()
         mock_peer.close = AsyncMock()
-        # on_message is called with a callback function, not awaited
         mock_peer.on_message = MagicMock()
-
-        # Make wait_connected succeed, but we'll patch the AuthHandler
-        # to fail immediately to avoid waiting for auth timeout
         mock_peer.wait_connected = AsyncMock()
 
         auth_key = bytes(range(32))
 
-        # Patch AuthHandler.run_handshake to return False immediately
-        # This tests that auth is attempted and failure is handled
-        with patch("ras.daemon.AuthHandler") as MockAuthHandler:
-            mock_handler = MagicMock()
-            mock_handler.run_handshake = AsyncMock(return_value=False)
-            MockAuthHandler.return_value = mock_handler
+        # Patch on_new_connection to verify it's called
+        daemon.on_new_connection = AsyncMock()
 
-            # Should attempt auth and fail gracefully
-            await daemon._on_device_reconnected(
-                device_id="test-device",
-                device_name="Test Phone",
-                peer=mock_peer,
-                auth_key=auth_key
-            )
+        # Call the callback (auth already done by server.py)
+        await daemon._on_device_reconnected(
+            device_id="test-device",
+            device_name="Test Phone",
+            peer=mock_peer,
+            auth_key=auth_key
+        )
 
-            # Verify AuthHandler was created with correct args
-            MockAuthHandler.assert_called_once_with(auth_key, "test-device")
+        # Verify NO auth challenge was sent (no send() for auth)
+        # The callback should just set up the connection
+        mock_peer.send.assert_not_called()
 
-            # Verify run_handshake was called
-            mock_handler.run_handshake.assert_called_once()
+        # Verify on_new_connection was called (connection established)
+        daemon.on_new_connection.assert_called_once()
 
-        # Verify peer was closed on auth failure
-        mock_peer.close.assert_called()
+    @pytest.mark.asyncio
+    async def test_on_device_reconnected_closes_peer_on_connection_failure(self):
+        """_on_device_reconnected should close peer if WebRTC connection fails."""
+        from ras.daemon import Daemon
+        from ras.config import Config
+
+        config = Config()
+        daemon = Daemon(config)
+
+        mock_peer = AsyncMock()
+        mock_peer.close = AsyncMock()
+        mock_peer.wait_connected = AsyncMock(side_effect=Exception("ICE failed"))
+
+        await daemon._on_device_reconnected(
+            device_id="test-device",
+            device_name="Test Phone",
+            peer=mock_peer,
+            auth_key=bytes(32)
+        )
+
+        # Verify peer was closed on connection failure
+        mock_peer.close.assert_called_once()
 
 
 class TestTailscaleCapabilities:
