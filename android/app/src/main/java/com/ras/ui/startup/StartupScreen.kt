@@ -226,7 +226,7 @@ private fun CapabilitySection(
                         if (isFinalFailure) {
                             "Failed: $exchangeError"
                         } else {
-                            "Skipped (using ntfy)"
+                            "Unavailable (proceeding via ntfy)"
                         }
                     }
                     daemonCapabilities != null -> {
