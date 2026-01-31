@@ -120,7 +120,7 @@ private fun ConnectingContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 16.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 72.dp, bottom = 16.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.Start
     ) {
