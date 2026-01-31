@@ -2,6 +2,7 @@ package com.ras.data.webrtc
 
 import android.content.Context
 import android.util.Log
+import com.ras.util.GlobalConnectionTimer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeoutOrNull
@@ -412,16 +413,20 @@ class WebRTCClient(
                 Log.d(TAG, "ICE connection state: $state")
                 when (state) {
                     PeerConnection.IceConnectionState.CHECKING -> {
+                        GlobalConnectionTimer.logMark("ice_checking")
                         Log.d(TAG, "ICE checking - testing candidate pairs")
                     }
                     PeerConnection.IceConnectionState.CONNECTED -> {
+                        GlobalConnectionTimer.logMark("ice_connected")
                         Log.i(TAG, "ICE connected! Peer-to-peer connection established")
                     }
                     PeerConnection.IceConnectionState.COMPLETED -> {
+                        GlobalConnectionTimer.logMark("ice_completed")
                         Log.i(TAG, "ICE completed - all checks done")
                     }
                     PeerConnection.IceConnectionState.DISCONNECTED,
                     PeerConnection.IceConnectionState.FAILED -> {
+                        GlobalConnectionTimer.logMark("ice_${state.toString().lowercase()}")
                         Log.w(TAG, "ICE connection lost: $state")
                         // Notify listener that connection is lost
                         onDisconnect?.invoke()
@@ -433,8 +438,15 @@ class WebRTCClient(
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {
                 Log.d(TAG, "ICE gathering state: $state")
-                if (state == PeerConnection.IceGatheringState.COMPLETE) {
-                    iceGatheringComplete.complete(Unit)
+                when (state) {
+                    PeerConnection.IceGatheringState.GATHERING -> {
+                        GlobalConnectionTimer.logMark("ice_gathering_start")
+                    }
+                    PeerConnection.IceGatheringState.COMPLETE -> {
+                        GlobalConnectionTimer.logMark("ice_gathering_complete")
+                        iceGatheringComplete.complete(Unit)
+                    }
+                    else -> {}
                 }
             }
             override fun onIceCandidate(candidate: IceCandidate?) {
@@ -460,9 +472,11 @@ class WebRTCClient(
 
                 when (state) {
                     DataChannel.State.OPEN -> {
+                        GlobalConnectionTimer.logMark("channel_open")
                         dataChannelOpened.complete(true)
                     }
                     DataChannel.State.CLOSED -> {
+                        GlobalConnectionTimer.logMark("channel_closed")
                         Log.w(TAG, "Data channel closed")
                         // Close message channel so receive() doesn't hang
                         messageChannel.close()

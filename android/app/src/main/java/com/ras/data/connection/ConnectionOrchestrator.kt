@@ -1,6 +1,7 @@
 package com.ras.data.connection
 
 import android.util.Log
+import com.ras.util.GlobalConnectionTimer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -62,6 +63,9 @@ class ConnectionOrchestrator @Inject constructor(
         // Cancel any existing connection attempt
         connectionJob?.cancel()
 
+        // Start global connection timer
+        GlobalConnectionTimer.start("connection")
+
         val sortedStrategies = strategies.sortedBy { it.priority }
         Log.i(TAG, "Starting connection with ${sortedStrategies.size} strategies: " +
                 sortedStrategies.joinToString { "${it.name} (p${it.priority})" })
@@ -70,6 +74,7 @@ class ConnectionOrchestrator @Inject constructor(
         // Phase 0: Parallel Capability Discovery
         // =================================================================
         // Start all probes in parallel for faster connection establishment
+        GlobalConnectionTimer.logMark("discovery_start")
         onProgress(ConnectionProgress.DiscoveryStarted)
 
         // Start Tailscale detection in parallel (fast, ~10ms)
@@ -110,6 +115,7 @@ class ConnectionOrchestrator @Inject constructor(
         }
 
         // Update context with daemon's Tailscale info (dynamic, not from stored credentials)
+        GlobalConnectionTimer.logMark("capability_exchange_done")
         val enrichedContext = if (daemonCapabilities != null) {
             onProgress(ConnectionProgress.DaemonCapabilities(
                 tailscaleIp = daemonCapabilities.tailscaleIp,
@@ -135,6 +141,7 @@ class ConnectionOrchestrator @Inject constructor(
         // =================================================================
         // Phase 1: Strategy Detection
         // =================================================================
+        GlobalConnectionTimer.logMark("strategy_detection_start")
         _state.value = ConnectionState.DETECTING
         val failedAttempts = mutableListOf<FailedAttempt>()
         val availableStrategies = mutableListOf<Pair<ConnectionStrategy, String?>>()
@@ -173,6 +180,7 @@ class ConnectionOrchestrator @Inject constructor(
         // =================================================================
         // Phase 2: Connection Attempts (sequential by priority)
         // =================================================================
+        GlobalConnectionTimer.logMark("connection_attempts_start")
         _state.value = ConnectionState.CONNECTING
 
         for ((index, pair) in availableStrategies.withIndex()) {
@@ -195,6 +203,8 @@ class ConnectionOrchestrator @Inject constructor(
                 when (result) {
                     is ConnectionResult.Success -> {
                         val duration = System.currentTimeMillis() - startTime
+                        GlobalConnectionTimer.logMark("connected")
+                        GlobalConnectionTimer.logSummary()
                         Log.i(TAG, "Connected via ${strategy.name} in ${duration}ms!")
                         _state.value = ConnectionState.CONNECTED
                         _currentTransport.value = result.transport

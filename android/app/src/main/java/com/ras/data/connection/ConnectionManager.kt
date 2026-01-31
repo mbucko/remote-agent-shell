@@ -6,6 +6,7 @@ import com.ras.crypto.CryptoException
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.di.IoDispatcher
 import com.ras.proto.ConnectionReady
+import com.ras.util.GlobalConnectionTimer
 import com.ras.proto.InitialState
 import com.ras.proto.Heartbeat
 import com.ras.proto.Ping
@@ -375,11 +376,13 @@ class ConnectionManager @Inject constructor(
      * Send ConnectionReady to signal daemon we're ready to receive messages.
      */
     private suspend fun sendConnectionReady() {
+        GlobalConnectionTimer.logMark("connection_ready_sending")
         val command = RasCommand.newBuilder()
             .setConnectionReady(ConnectionReady.getDefaultInstance())
             .build()
         val plaintext = command.toByteArray()
         sendEncrypted(plaintext)
+        GlobalConnectionTimer.logMark("connection_ready_sent")
     }
 
     /**
@@ -622,6 +625,7 @@ class ConnectionManager @Inject constructor(
                 }
             }
             RasEvent.EventCase.INITIAL_STATE -> {
+                GlobalConnectionTimer.logMark("initial_state_received")
                 Log.i(TAG, "Received InitialState: ${event.initialState.sessionsCount} sessions, ${event.initialState.agentsCount} agents")
                 _initialState.emit(event.initialState)
                 // Note: SessionRepository.subscribeToInitialState() handles this directly
