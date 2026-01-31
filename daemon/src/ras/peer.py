@@ -78,8 +78,14 @@ class PeerConnection:
                 self._connected_event.set()
             elif state == "failed":
                 self._state = PeerState.FAILED
+                if self._close_callback:
+                    self._close_callback()
             elif state == "disconnected":
                 self._state = PeerState.DISCONNECTED
+            elif state == "closed":
+                self._state = PeerState.CLOSED
+                if self._close_callback:
+                    self._close_callback()
 
         @self._pc.on("iceconnectionstatechange")
         async def on_ice_connection_state_change():

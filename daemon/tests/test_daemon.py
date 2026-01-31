@@ -260,3 +260,117 @@ class TestDaemonPingPong:
         # Verify it's a pong with same timestamp
         sent_data = mock_conn.send.call_args[0][0]
         assert b"1234567890" in str(sent_data).encode() or sent_data is not None
+
+
+class TestKeepaliveLoop:
+    """Tests for keepalive loop sending pings."""
+
+    @pytest.fixture
+    def config(self, tmp_path: Path) -> Config:
+        """Create test config."""
+        config = Config()
+        config.daemon = DaemonConfig(
+            devices_file=str(tmp_path / "devices.json"),
+            sessions_file=str(tmp_path / "sessions.json"),
+            keepalive_interval=0.1,
+            keepalive_timeout=60.0,
+        )
+        return config
+
+    @pytest.fixture
+    def daemon(self, config):
+        """Create daemon."""
+        return Daemon(config=config)
+
+    # KA01: Keepalive loop sends pings to all connections
+    @pytest.mark.asyncio
+    async def test_keepalive_loop_sends_pings(self, daemon):
+        """Keepalive loop should send ping messages to all connected devices."""
+        import time
+        from ras.proto.ras import RasEvent
+
+        mock_conn = AsyncMock()
+        mock_conn.last_activity = time.time()
+
+        daemon._connection_manager.connections = {"device1": mock_conn}
+        daemon._running = True
+
+        # Run keepalive loop - need to wait longer than the interval (0.1s)
+        async def run_keepalive_briefly():
+            await asyncio.sleep(0.15)
+            daemon._running = False
+
+        await asyncio.gather(
+            daemon._keepalive_loop(),
+            run_keepalive_briefly(),
+        )
+
+        # Verify ping was sent (may be called multiple times if loop iterates)
+        assert mock_conn.send.call_count >= 1
+        sent_data = mock_conn.send.call_args[0][0]
+        msg = RasEvent().parse(sent_data)
+        assert msg.pong is not None
+        assert msg.pong.timestamp > 0
+
+    # KA02: Keepalive continues after ping failure
+    @pytest.mark.asyncio
+    async def test_keepalive_continues_after_ping_failure(self, daemon):
+        """Keepalive should continue to other connections if one fails."""
+        import time
+
+        mock_conn1 = AsyncMock()
+        mock_conn1.send.side_effect = Exception("Connection dead")
+        mock_conn1.last_activity = time.time()
+
+        mock_conn2 = AsyncMock()
+        mock_conn2.last_activity = time.time()
+
+        daemon._connection_manager.connections = {
+            "device1": mock_conn1,
+            "device2": mock_conn2,
+        }
+        daemon._running = True
+
+        # Run keepalive loop - need to wait longer than the interval (0.1s)
+        async def run_keepalive_briefly():
+            await asyncio.sleep(0.15)
+            daemon._running = False
+
+        await asyncio.gather(
+            daemon._keepalive_loop(),
+            run_keepalive_briefly(),
+        )
+
+        # First connection tried and failed (may be called multiple times)
+        assert mock_conn1.send.call_count >= 1
+        # Second connection should still get ping
+        assert mock_conn2.send.call_count >= 1
+
+    # KA03: Stale connections are closed
+    @pytest.mark.asyncio
+    async def test_keepalive_closes_stale_connections(self, config, tmp_path):
+        """Keepalive should close connections that exceed timeout."""
+        import time
+
+        # Use short timeout for test
+        config.daemon.keepalive_timeout = 0.01
+        daemon = Daemon(config=config)
+
+        mock_conn = AsyncMock()
+        mock_conn.last_activity = time.time() - 1.0  # 1 second ago (past timeout)
+
+        daemon._connection_manager.connections = {"device1": mock_conn}
+        daemon._running = True
+
+        # Run keepalive loop - need to wait longer than the interval (0.1s)
+        async def run_keepalive_briefly():
+            await asyncio.sleep(0.15)
+            daemon._running = False
+
+        await asyncio.gather(
+            daemon._keepalive_loop(),
+            run_keepalive_briefly(),
+        )
+
+        # Connection should have been closed (may be called multiple times)
+        assert mock_conn.close.call_count >= 1

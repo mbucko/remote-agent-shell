@@ -193,3 +193,118 @@ class TestPeerConnectionIntegration:
 
             assert b"hello from peer2" in received_peer1
             assert b"hello from peer1" in received_peer2
+
+
+class TestPeerConnectionStateCallbacks:
+    """Tests for connection state change triggering close callback."""
+
+    @pytest.mark.asyncio
+    async def test_connection_state_failed_triggers_close_callback(self):
+        """Connection state 'failed' should trigger the close callback."""
+        close_called = False
+
+        def on_close():
+            nonlocal close_called
+            close_called = True
+
+        # Create mock PC that captures handlers
+        mock_pc = AsyncMock()
+        mock_pc.connectionState = "new"
+        mock_pc.iceGatheringState = "complete"
+
+        handlers = {}
+
+        def mock_on(event):
+            def decorator(fn):
+                handlers[event] = fn
+                return fn
+            return decorator
+
+        mock_pc.on = mock_on
+        mock_pc.createDataChannel = Mock(return_value=Mock())
+
+        peer = PeerConnection(pc_factory=lambda cfg: mock_pc)
+        peer.on_close(on_close)
+
+        # Trigger _create_pc to register handlers
+        peer._create_pc()
+
+        # Simulate connection state change to failed
+        mock_pc.connectionState = "failed"
+        await handlers["connectionstatechange"]()
+
+        assert close_called
+        assert peer.state == PeerState.FAILED
+
+    @pytest.mark.asyncio
+    async def test_connection_state_closed_triggers_close_callback(self):
+        """Connection state 'closed' should trigger the close callback."""
+        close_called = False
+
+        def on_close():
+            nonlocal close_called
+            close_called = True
+
+        mock_pc = AsyncMock()
+        mock_pc.connectionState = "new"
+        mock_pc.iceGatheringState = "complete"
+
+        handlers = {}
+
+        def mock_on(event):
+            def decorator(fn):
+                handlers[event] = fn
+                return fn
+            return decorator
+
+        mock_pc.on = mock_on
+        mock_pc.createDataChannel = Mock(return_value=Mock())
+
+        peer = PeerConnection(pc_factory=lambda cfg: mock_pc)
+        peer.on_close(on_close)
+
+        # Trigger _create_pc to register handlers
+        peer._create_pc()
+
+        # Simulate connection state change to closed
+        mock_pc.connectionState = "closed"
+        await handlers["connectionstatechange"]()
+
+        assert close_called
+        assert peer.state == PeerState.CLOSED
+
+    @pytest.mark.asyncio
+    async def test_connection_state_connected_does_not_trigger_close_callback(self):
+        """Connection state 'connected' should NOT trigger the close callback."""
+        close_called = False
+
+        def on_close():
+            nonlocal close_called
+            close_called = True
+
+        mock_pc = AsyncMock()
+        mock_pc.connectionState = "new"
+        mock_pc.iceGatheringState = "complete"
+
+        handlers = {}
+
+        def mock_on(event):
+            def decorator(fn):
+                handlers[event] = fn
+                return fn
+            return decorator
+
+        mock_pc.on = mock_on
+        mock_pc.createDataChannel = Mock(return_value=Mock())
+
+        peer = PeerConnection(pc_factory=lambda cfg: mock_pc)
+        peer.on_close(on_close)
+
+        peer._create_pc()
+
+        # Simulate connection state change to connected
+        mock_pc.connectionState = "connected"
+        await handlers["connectionstatechange"]()
+
+        assert not close_called
+        assert peer.state == PeerState.CONNECTED

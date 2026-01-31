@@ -477,7 +477,7 @@ class Daemon:
             self._unified_server.expire_pairing_session(session_id)
 
     async def _keepalive_loop(self) -> None:
-        """Periodically check for stale connections."""
+        """Monitor connections and send keepalives to prevent SCTP timeout."""
         interval = self._config.daemon.keepalive_interval
         timeout = self._config.daemon.keepalive_timeout
 
@@ -489,6 +489,16 @@ class Daemon:
                 for device_id, conn in list(
                     self._connection_manager.connections.items()
                 ):
+                    # Send ping to keep SCTP data channel alive
+                    # Use Pong message since RasEvent doesn't have Ping field
+                    try:
+                        ping_msg = RasEvent(pong=Pong(timestamp=int(now * 1000)))
+                        await conn.send(bytes(ping_msg))
+                        logger.debug(f"Keepalive ping sent to {device_id[:8]}...")
+                    except Exception as e:
+                        logger.warning(f"Keepalive ping failed for {device_id[:8]}: {e}")
+
+                    # Check for stale connections (no activity from phone)
                     if now - conn.last_activity > timeout:
                         logger.warning(f"Connection stale, closing: {device_id}")
                         await conn.close()
