@@ -25,8 +25,9 @@ import com.ras.signaling.DirectReconnectionClient
 import com.ras.signaling.NtfyClientInterface
 import com.ras.signaling.ReconnectionSignaler
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -204,7 +205,7 @@ internal class HttpDirectReconnectionClient(
         deviceId: String,
         authKey: ByteArray,
         ourCapabilities: com.ras.proto.ConnectionCapabilities
-    ): com.ras.proto.ConnectionCapabilities? = withContext(Dispatchers.IO) {
+    ): com.ras.proto.ConnectionCapabilities? {
         try {
             val body = ourCapabilities.toByteArray()
 
@@ -224,20 +225,21 @@ internal class HttpDirectReconnectionClient(
                 .header("X-RAS-Timestamp", timestamp.toString())
                 .build()
 
-            val response = httpClient.newCall(request).execute()
+            val response = httpClient.newCall(request).await()
 
-            when {
+            return when {
                 response.isSuccessful -> {
                     val responseBody = response.body?.bytes()
                     if (responseBody == null || responseBody.isEmpty()) {
                         Log.w(TAG, "Empty capabilities response")
-                        return@withContext null
-                    }
-                    try {
-                        com.ras.proto.ConnectionCapabilities.parseFrom(responseBody)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Invalid capabilities response format")
                         null
+                    } else {
+                        try {
+                            com.ras.proto.ConnectionCapabilities.parseFrom(responseBody)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Invalid capabilities response format")
+                            null
+                        }
                     }
                 }
                 response.code == 401 -> throw AuthenticationException()
@@ -253,10 +255,10 @@ internal class HttpDirectReconnectionClient(
             throw e
         } catch (e: IOException) {
             Log.d(TAG, "Network error during capabilities: ${e.message}")
-            null
+            return null
         } catch (e: Exception) {
             Log.w(TAG, "Capabilities exchange error: ${e.message}")
-            null
+            return null
         }
     }
 
@@ -267,7 +269,7 @@ internal class HttpDirectReconnectionClient(
         authKey: ByteArray,
         sdpOffer: String,
         deviceName: String
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? {
         try {
             // Build protobuf request
             val signalRequest = SignalRequest.newBuilder()
@@ -295,29 +297,29 @@ internal class HttpDirectReconnectionClient(
                 .header("X-RAS-Timestamp", timestamp.toString())
                 .build()
 
-            val response = httpClient.newCall(request).execute()
+            val response = httpClient.newCall(request).await()
 
-            when {
+            return when {
                 response.isSuccessful -> {
                     val responseBody = response.body?.bytes()
                     if (responseBody == null || responseBody.isEmpty()) {
                         Log.w(TAG, "Empty response from daemon")
-                        return@withContext null
-                    }
+                        null
+                    } else {
+                        val signalResponse = try {
+                            SignalResponse.parseFrom(responseBody)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Invalid response format")
+                            return null
+                        }
 
-                    val signalResponse = try {
-                        SignalResponse.parseFrom(responseBody)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Invalid response format")
-                        return@withContext null
+                        if (signalResponse.sdpAnswer.isBlank()) {
+                            Log.w(TAG, "Empty SDP answer")
+                            null
+                        } else {
+                            signalResponse.sdpAnswer
+                        }
                     }
-
-                    if (signalResponse.sdpAnswer.isBlank()) {
-                        Log.w(TAG, "Empty SDP answer")
-                        return@withContext null
-                    }
-
-                    signalResponse.sdpAnswer
                 }
                 response.code == 401 -> {
                     throw AuthenticationException()
@@ -336,10 +338,32 @@ internal class HttpDirectReconnectionClient(
             throw e
         } catch (e: IOException) {
             Log.d(TAG, "Network error: ${e.message}")
-            null
+            return null
         } catch (e: Exception) {
             Log.w(TAG, "Unexpected error: ${e.message}")
-            null
+            return null
         }
     }
+}
+
+/**
+ * Suspending extension for OkHttp Call that properly supports cancellation.
+ * Unlike execute() which blocks, this suspends and can be cancelled by coroutine timeout.
+ */
+private suspend fun okhttp3.Call.await(): okhttp3.Response = suspendCancellableCoroutine { cont ->
+    cont.invokeOnCancellation {
+        cancel()  // Cancel the HTTP call when coroutine is cancelled
+    }
+    enqueue(object : okhttp3.Callback {
+        override fun onFailure(call: okhttp3.Call, e: IOException) {
+            if (cont.isActive) {
+                cont.resumeWithException(e)
+            }
+        }
+        override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+            if (cont.isActive) {
+                cont.resume(response)
+            }
+        }
+    })
 }
