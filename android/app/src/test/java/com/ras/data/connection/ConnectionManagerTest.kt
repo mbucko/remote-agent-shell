@@ -23,8 +23,9 @@ import io.mockk.slot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -182,11 +183,13 @@ class ConnectionManagerTest {
 
     @Test
     fun `ping loop sends pings periodically to keep connection alive`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+
         // Create a connection manager with short ping interval for testing
         val fastConfig = ConnectionConfig(pingIntervalMs = 50L)
         val fastPingManager = ConnectionManager(
             webRtcClientFactory = webRTCClientFactory,
-            ioDispatcher = Dispatchers.Unconfined,
+            ioDispatcher = testDispatcher,
             config = fastConfig
         )
 
@@ -195,8 +198,8 @@ class ConnectionManagerTest {
         // ConnectionReady is sent synchronously
         sentMessages.clear()
 
-        // Wait using real time (ConnectionManager uses its own scope with real delays)
-        Thread.sleep(100L)
+        // Advance virtual time past the ping interval
+        advanceTimeBy(100L)
 
         // Should have sent at least one ping
         assertTrue("Should send ping after interval", sentMessages.isNotEmpty())
@@ -213,11 +216,13 @@ class ConnectionManagerTest {
 
     @Test
     fun `ping loop stops when disconnected`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+
         // Create a connection manager with short ping interval for testing
         val fastConfig = ConnectionConfig(pingIntervalMs = 50L)
         val fastPingManager = ConnectionManager(
             webRtcClientFactory = webRTCClientFactory,
-            ioDispatcher = Dispatchers.Unconfined,
+            ioDispatcher = testDispatcher,
             config = fastConfig
         )
 
@@ -227,8 +232,8 @@ class ConnectionManagerTest {
         // Disconnect immediately
         fastPingManager.disconnect()
 
-        // Wait past the ping interval using real time
-        Thread.sleep(100L)
+        // Advance virtual time past the ping interval
+        advanceTimeBy(100L)
 
         // Should NOT have sent any pings after disconnect
         assertTrue("Should not send pings after disconnect", sentMessages.isEmpty())
@@ -236,19 +241,21 @@ class ConnectionManagerTest {
 
     @Test
     fun `ping loop disabled when pingIntervalMs is 0`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+
         // Create a connection manager with ping disabled
         val noPingConfig = ConnectionConfig(pingIntervalMs = 0L)
         val noPingManager = ConnectionManager(
             webRtcClientFactory = webRTCClientFactory,
-            ioDispatcher = Dispatchers.Unconfined,
+            ioDispatcher = testDispatcher,
             config = noPingConfig
         )
 
         noPingManager.connect(webRTCClient, authKey)
         sentMessages.clear()
 
-        // Wait a bit using real time
-        Thread.sleep(100L)
+        // Advance virtual time
+        advanceTimeBy(100L)
 
         // Should NOT have sent any pings
         assertTrue("Should not send pings when disabled", sentMessages.isEmpty())

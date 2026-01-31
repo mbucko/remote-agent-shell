@@ -251,7 +251,7 @@ class ConnectionEdgeCaseTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
 
         // Daemon returns empty string, not null
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = "",  // Empty string!
             tailscalePort = 9876,
             supportsWebRTC = true,
@@ -289,7 +289,7 @@ class ConnectionEdgeCaseTest {
     fun `daemon returns port 0`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = "100.125.247.41",
             tailscalePort = 0,  // Invalid port!
             supportsWebRTC = true,
@@ -300,7 +300,7 @@ class ConnectionEdgeCaseTest {
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
         // Should use default port 9876 instead of 0
-        coEvery { TailscaleTransport.connect(any(), any(), eq(9876)) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), eq(9876), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -324,14 +324,14 @@ class ConnectionEdgeCaseTest {
         orchestrator.connect(context) {}
 
         // Should use default port when daemon returns 0
-        coVerify { TailscaleTransport.connect(any(), any(), 9876) }
+        coVerify { TailscaleTransport.connect(any(), any(), 9876, any()) }
     }
 
     @Test
     fun `capability exchange throws exception`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } throws RuntimeException("Network error")
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } throws RuntimeException("Network error")
 
         val tailscaleStrategy = TailscaleStrategy(mockContext)
         val webrtcStrategy = mockk<ConnectionStrategy> {
@@ -370,7 +370,7 @@ class ConnectionEdgeCaseTest {
         val result = strategy.detect()
 
         assertTrue(result is DetectionResult.Unavailable)
-        assertEquals("Tailscale not running", (result as DetectionResult.Unavailable).reason)
+        assertEquals("Tailscale not connected", (result as DetectionResult.Unavailable).reason)
     }
 
     @Test
@@ -418,7 +418,7 @@ class ConnectionEdgeCaseTest {
     fun `very long device ID`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = "100.125.247.41",
             tailscalePort = 9876,
             supportsWebRTC = true,
@@ -428,7 +428,7 @@ class ConnectionEdgeCaseTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
 
         val capturedMessage = slot<ByteArray>()
         coEvery { mockTransport.send(capture(capturedMessage)) } returns Unit
@@ -468,7 +468,7 @@ class ConnectionEdgeCaseTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
 
         val capturedMessage = slot<ByteArray>()
         coEvery { mockTransport.send(capture(capturedMessage)) } returns Unit
@@ -530,7 +530,7 @@ class ConnectionEdgeCaseTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
 
         // Response with extra bytes after success indicator
@@ -562,7 +562,7 @@ class ConnectionEdgeCaseTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
 
         // Unknown status code (not 0x00 or 0x01)
@@ -595,7 +595,7 @@ class ConnectionEdgeCaseTest {
     @Test
     fun `WebRTC createOffer returns empty string`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns ""
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
 
         val webrtcStrategy = WebRTCStrategy(mockWebRTCClientFactory)
         val tailscaleStrategy = mockk<ConnectionStrategy> {
@@ -634,7 +634,7 @@ class ConnectionEdgeCaseTest {
         """.trimIndent()  // No a=candidate lines
 
         coEvery { mockWebRTCClient.createOffer() } returns offerWithNoCandidates
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
         coEvery { mockSignaling.sendOffer(any()) } returns null
 
         val webrtcStrategy = WebRTCStrategy(mockWebRTCClientFactory)
@@ -666,7 +666,7 @@ class ConnectionEdgeCaseTest {
     @Test
     fun `WebRTCClient factory throws`() = runTest {
         every { mockWebRTCClientFactory.create() } throws RuntimeException("Failed to initialize")
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
 
         val webrtcStrategy = WebRTCStrategy(mockWebRTCClientFactory)
         val tailscaleStrategy = mockk<ConnectionStrategy> {
@@ -704,7 +704,7 @@ class ConnectionEdgeCaseTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x00)  // Auth failure
 
@@ -734,7 +734,7 @@ class ConnectionEdgeCaseTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf()  // Empty response
 
@@ -760,7 +760,7 @@ class ConnectionEdgeCaseTest {
     @Test
     fun `WebRTCStrategy closes client on signaling failure`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns "offer"
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
         coEvery { mockSignaling.sendOffer(any()) } returns null  // Failure
 
         val strategy = WebRTCStrategy(mockWebRTCClientFactory)
@@ -782,7 +782,7 @@ class ConnectionEdgeCaseTest {
     @Test
     fun `WebRTCStrategy closes client on ICE failure`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns "offer"
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
         coEvery { mockSignaling.sendOffer(any()) } returns "answer"
         coEvery { mockWebRTCClient.setRemoteDescription(any()) } returns Unit
         coEvery { mockWebRTCClient.waitForDataChannel(any()) } returns false  // ICE failure
@@ -811,7 +811,7 @@ class ConnectionEdgeCaseTest {
     fun `CancellationException propagates correctly`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } throws CancellationException("Cancelled")
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } throws CancellationException("Cancelled")
 
         val tailscaleStrategy = TailscaleStrategy(mockContext)
         val webrtcStrategy = mockk<ConnectionStrategy> {
@@ -926,7 +926,7 @@ class ConnectionEdgeCaseTest {
             coEvery { detect() } returns DetectionResult.Unavailable("Also not available")
         }
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
 
         val orchestrator = ConnectionOrchestrator(setOf(strategy1, strategy2))
         val context = ConnectionContext(
@@ -952,7 +952,7 @@ class ConnectionEdgeCaseTest {
     fun `progress callback throws exception`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = "100.125.247.41",
             tailscalePort = 9876,
             supportsWebRTC = true,
@@ -962,7 +962,7 @@ class ConnectionEdgeCaseTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 

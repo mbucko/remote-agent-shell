@@ -31,6 +31,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -784,6 +786,7 @@ class ConnectionManagerIntegrationTest {
 
     @Test
     fun `health status updates when connection becomes unhealthy`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
         val config = ConnectionConfig(
             pingIntervalMs = 0L,
             heartbeatCheckIntervalMs = 50L,
@@ -791,7 +794,7 @@ class ConnectionManagerIntegrationTest {
         )
         val manager = ConnectionManager(
             webRtcClientFactory = webRTCClientFactory,
-            ioDispatcher = Dispatchers.Unconfined,
+            ioDispatcher = testDispatcher,
             config = config
         )
 
@@ -802,7 +805,8 @@ class ConnectionManagerIntegrationTest {
         // Simulate unhealthy connection
         every { webRTCClient.isHealthy(any()) } returns false
 
-        Thread.sleep(100)
+        // Advance virtual time past heartbeat check interval
+        advanceTimeBy(150L)
 
         assertFalse("Should become unhealthy", manager.isHealthy.value)
 
@@ -811,6 +815,7 @@ class ConnectionManagerIntegrationTest {
 
     @Test
     fun `health recovers when connection becomes healthy again`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
         val config = ConnectionConfig(
             pingIntervalMs = 0L,
             heartbeatCheckIntervalMs = 50L,
@@ -818,7 +823,7 @@ class ConnectionManagerIntegrationTest {
         )
         val manager = ConnectionManager(
             webRtcClientFactory = webRTCClientFactory,
-            ioDispatcher = Dispatchers.Unconfined,
+            ioDispatcher = testDispatcher,
             config = config
         )
 
@@ -826,12 +831,12 @@ class ConnectionManagerIntegrationTest {
 
         // Make unhealthy
         every { webRTCClient.isHealthy(any()) } returns false
-        Thread.sleep(100)
+        advanceTimeBy(150L)
         assertFalse("Should be unhealthy", manager.isHealthy.value)
 
         // Recover
         every { webRTCClient.isHealthy(any()) } returns true
-        Thread.sleep(100)
+        advanceTimeBy(150L)
         assertTrue("Should recover to healthy", manager.isHealthy.value)
 
         manager.disconnect()
@@ -839,6 +844,14 @@ class ConnectionManagerIntegrationTest {
 
     @Test
     fun `transport disconnects mid-session updates state`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val testConfig = ConnectionConfig(pingIntervalMs = 0L)
+        val manager = ConnectionManager(
+            webRtcClientFactory = webRTCClientFactory,
+            ioDispatcher = testDispatcher,
+            config = testConfig
+        )
+
         val mockTransport = mockk<Transport>(relaxed = true)
         every { mockTransport.type } returns TransportType.WEBRTC
         every { mockTransport.isConnected } returns true
@@ -853,13 +866,14 @@ class ConnectionManagerIntegrationTest {
             throw IllegalStateException("timeout")
         }
 
-        connectionManager.connectWithTransport(mockTransport, authKey)
-        assertTrue("Should be connected", connectionManager.isConnected.value)
+        manager.connectWithTransport(mockTransport, authKey)
+        assertTrue("Should be connected", manager.isConnected.value)
 
-        // Wait for the disconnect to be detected
-        Thread.sleep(500)
+        // Advance virtual time to trigger the event listener loop iterations
+        advanceTimeBy(500L)
 
-        assertFalse("Should be disconnected after error", connectionManager.isConnected.value)
+        assertFalse("Should be disconnected after error", manager.isConnected.value)
+        manager.disconnect()
     }
 
     // ============================================================================

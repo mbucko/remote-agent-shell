@@ -75,7 +75,7 @@ class TailscaleTransportRetryTest {
         strategy.detect()
 
         coEvery {
-            TailscaleTransport.connect(any(), any(), any())
+            TailscaleTransport.connect(any(), any(), any(), any())
         } throws IOException("Handshake failed after 3 attempts - daemon may not be listening on Tailscale")
 
         val result = strategy.connect(createContext()) {}
@@ -98,7 +98,7 @@ class TailscaleTransportRetryTest {
 
         val errorMessage = "Handshake failed after 3 attempts - daemon may not be listening on Tailscale"
         coEvery {
-            TailscaleTransport.connect(any(), any(), any())
+            TailscaleTransport.connect(any(), any(), any(), any())
         } throws IOException(errorMessage)
 
         val steps = mutableListOf<ConnectionStep>()
@@ -123,7 +123,7 @@ class TailscaleTransportRetryTest {
         strategy.detect()
 
         val authMessageSent = slot<ByteArray>()
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(capture(authMessageSent)) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)  // Auth success
 
@@ -145,7 +145,7 @@ class TailscaleTransportRetryTest {
         var connectTime: Long = 0
         var sendTime: Long = 0
 
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } answers {
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } answers {
             connectTime = System.currentTimeMillis()
             mockTransport
         }
@@ -173,7 +173,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x00)  // Auth failed
         coEvery { mockTransport.close() } returns Unit
@@ -195,7 +195,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } throws TransportException("Receive timeout", null, true)
 
@@ -212,7 +212,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)  // Success
 
@@ -231,7 +231,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -253,7 +253,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -321,7 +321,7 @@ class TailscaleTransportRetryTest {
             strategy.detect()
 
             coEvery {
-                TailscaleTransport.connect(any(), any(), any())
+                TailscaleTransport.connect(any(), any(), any(), any())
             } throws IOException(errorMsg)
 
             val result = strategy.connect(createContext()) {}
@@ -343,7 +343,7 @@ class TailscaleTransportRetryTest {
         strategy.detect()
 
         coEvery {
-            TailscaleTransport.connect(any(), any(), any())
+            TailscaleTransport.connect(any(), any(), any(), any())
         } throws SocketTimeoutException("Handshake timeout")
 
         val result = strategy.connect(createContext()) {}

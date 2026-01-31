@@ -117,7 +117,7 @@ class TailscaleIntegrationTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
         // Setup: Capability exchange returns daemon's Tailscale info
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -128,7 +128,7 @@ class TailscaleIntegrationTest {
         // Setup: TailscaleTransport.connect succeeds
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), eq(daemonTailscaleIp), eq(daemonTailscalePort)) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), eq(daemonTailscaleIp), eq(daemonTailscalePort), any()) } returns mockTransport
 
         // Setup: Auth succeeds (daemon responds with 0x01)
         coEvery { mockTransport.send(any()) } returns Unit
@@ -174,7 +174,7 @@ class TailscaleIntegrationTest {
         assertEquals("Tailscale Direct", connected?.strategyName)
 
         // Verify: TailscaleTransport.connect was called with daemon's Tailscale IP
-        coVerify { TailscaleTransport.connect(localTailscaleIp, daemonTailscaleIp, daemonTailscalePort) }
+        coVerify { TailscaleTransport.connect(localTailscaleIp, daemonTailscaleIp, daemonTailscalePort, any()) }
 
         // Verify: Auth message was sent
         coVerify { mockTransport.send(any()) }
@@ -184,7 +184,7 @@ class TailscaleIntegrationTest {
     fun `auth message format is correct in full flow`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -194,7 +194,7 @@ class TailscaleIntegrationTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
 
         // Capture the auth message
         val capturedMessage = slot<ByteArray>()
@@ -245,7 +245,7 @@ class TailscaleIntegrationTest {
         // Daemon responds with Tailscale info via capability exchange
         val daemonIp = "100.100.100.100"
         val daemonPort = 5555
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonIp,
             tailscalePort = daemonPort,
             supportsWebRTC = true,
@@ -255,7 +255,7 @@ class TailscaleIntegrationTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), eq(daemonIp), eq(daemonPort)) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), eq(daemonIp), eq(daemonPort), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -275,7 +275,7 @@ class TailscaleIntegrationTest {
 
         // Verify: Connection succeeded using daemon's IP from capability exchange
         assertNotNull(transport)
-        coVerify { TailscaleTransport.connect(localTailscaleIp, daemonIp, daemonPort) }
+        coVerify { TailscaleTransport.connect(localTailscaleIp, daemonIp, daemonPort, any()) }
     }
 
     // ============================================================================
@@ -286,7 +286,7 @@ class TailscaleIntegrationTest {
     fun `TailscaleStrategy is tried first due to priority`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -296,7 +296,7 @@ class TailscaleIntegrationTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -321,7 +321,7 @@ class TailscaleIntegrationTest {
     fun `TailscaleStrategy marked available when local Tailscale detected`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -331,7 +331,7 @@ class TailscaleIntegrationTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -359,7 +359,7 @@ class TailscaleIntegrationTest {
         // No local Tailscale
         every { TailscaleDetector.detect(any()) } returns null
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -383,7 +383,7 @@ class TailscaleIntegrationTest {
         val unavailable = progressUpdates.filterIsInstance<ConnectionProgress.StrategyUnavailable>()
             .find { it.strategyName == "Tailscale Direct" }
         assertNotNull("Tailscale should be marked unavailable", unavailable)
-        assertEquals("Tailscale not running", unavailable?.reason)
+        assertEquals("Tailscale not connected", unavailable?.reason)
     }
 
     // ============================================================================
@@ -394,7 +394,7 @@ class TailscaleIntegrationTest {
     fun `falls back to WebRTC when TailscaleTransport connect fails`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -403,7 +403,7 @@ class TailscaleIntegrationTest {
         )
 
         // Tailscale connection fails
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } throws java.io.IOException("Connection refused")
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } throws java.io.IOException("Connection refused")
 
         // WebRTC would be tried next (but we've mocked it as unavailable)
 
@@ -434,7 +434,7 @@ class TailscaleIntegrationTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
         // Daemon responds WITHOUT Tailscale info
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = null,  // No Tailscale!
             tailscalePort = null,
             supportsWebRTC = true,
@@ -469,7 +469,7 @@ class TailscaleIntegrationTest {
     fun `auth failure returns Failed result`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -479,7 +479,7 @@ class TailscaleIntegrationTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
 
         // Auth fails (daemon responds with 0x00)
@@ -513,7 +513,7 @@ class TailscaleIntegrationTest {
     fun `auth timeout returns Failed result`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -523,7 +523,7 @@ class TailscaleIntegrationTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
 
         // Auth times out
@@ -559,7 +559,7 @@ class TailscaleIntegrationTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
         // Capability exchange fails
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns null
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns null
 
         // Context has stored Tailscale credentials
         val context = ConnectionContext(
@@ -575,7 +575,7 @@ class TailscaleIntegrationTest {
 
         every { mockTransport.type } returns TransportType.TAILSCALE
         every { mockTransport.isConnected } returns true
-        coEvery { TailscaleTransport.connect(any(), eq("100.50.50.50"), eq(9999)) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), eq("100.50.50.50"), eq(9999), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -584,7 +584,7 @@ class TailscaleIntegrationTest {
 
         // Verify: Connection succeeded using stored credentials
         assertNotNull(transport)
-        coVerify { TailscaleTransport.connect(localTailscaleIp, "100.50.50.50", 9999) }
+        coVerify { TailscaleTransport.connect(localTailscaleIp, "100.50.50.50", 9999, any()) }
 
         // Verify: Capability exchange failure was reported
         val capFailed = progressUpdates.filterIsInstance<ConnectionProgress.CapabilityExchangeFailed>()
@@ -601,7 +601,7 @@ class TailscaleIntegrationTest {
 
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
 
-        coEvery { mockSignaling.exchangeCapabilities(any()) } returns ConnectionCapabilities(
+        coEvery { mockSignaling.exchangeCapabilities(any(), any()) } returns ConnectionCapabilities(
             tailscaleIp = daemonTailscaleIp,
             tailscalePort = daemonTailscalePort,
             supportsWebRTC = true,
@@ -616,7 +616,7 @@ class TailscaleIntegrationTest {
         // Auth in TailscaleStrategy succeeds
         coEvery { tailscaleTransport.receive(any()) } returns byteArrayOf(0x01)
 
-        coEvery { TailscaleTransport.connect(any(), any(), any()) } returns tailscaleTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns tailscaleTransport
 
         coEvery { credentialRepository.getCredentials() } returns testCredentials
 
