@@ -29,14 +29,22 @@ def extract_android_ice_gathering_behavior() -> dict:
     # Check if code waits for ICE gathering
     behavior["waits_for_gathering"] = "iceGatheringComplete.await()" in content
 
-    # Check if there's a timeout (handle Kotlin number literals with underscores like 10_000L)
-    timeout_match = re.search(r"withTimeoutOrNull\(([\d_]+)", content)
-    if timeout_match:
-        # Remove underscores from Kotlin number literal
-        timeout_str = timeout_match.group(1).replace("_", "")
+    # Check if there's a timeout constant or inline value
+    # First check for ICE_GATHERING_TIMEOUT_MS constant
+    timeout_const_match = re.search(
+        r"ICE_GATHERING_TIMEOUT_MS\s*=\s*([\d_]+)", content
+    )
+    if timeout_const_match:
+        timeout_str = timeout_const_match.group(1).replace("_", "")
         behavior["gathering_timeout_ms"] = int(timeout_str)
     else:
-        behavior["gathering_timeout_ms"] = None
+        # Fallback: check inline withTimeoutOrNull
+        timeout_match = re.search(r"withTimeoutOrNull\(([\d_]+)", content)
+        if timeout_match:
+            timeout_str = timeout_match.group(1).replace("_", "")
+            behavior["gathering_timeout_ms"] = int(timeout_str)
+        else:
+            behavior["gathering_timeout_ms"] = None
 
     # Check if SDP is validated
     behavior["validates_candidates"] = (
@@ -99,27 +107,28 @@ class TestIceGatheringContract:
         ], "Daemon must wait for ICE gathering to complete before returning SDP"
 
     def test_gathering_timeouts_are_reasonable(self):
-        """Both sides should have similar, reasonable gathering timeouts."""
+        """Both sides should have reasonable gathering timeouts.
+
+        Note: Android uses a shorter timeout (2s) because IceGatheringState.COMPLETE
+        doesn't fire during offer creation - it only fires after setting remote
+        description. Host candidates are gathered immediately, STUN candidates
+        within 1-2 seconds, so a 2s timeout is sufficient.
+
+        Daemon uses a longer timeout (10s) as a safety margin since its ICE
+        implementation (aiortc) fires COMPLETE reliably.
+        """
         android = extract_android_ice_gathering_behavior()
         daemon = extract_daemon_ice_gathering_behavior()
 
         # Android timeout in ms, daemon in seconds
-        android_timeout_s = (android["gathering_timeout_ms"] or 10000) / 1000
+        android_timeout_s = (android["gathering_timeout_ms"] or 2000) / 1000
         daemon_timeout_s = daemon["gathering_timeout_s"] or 10.0
 
-        # Both should be between 5-30 seconds
-        assert 5 <= android_timeout_s <= 30, (
-            f"Android gathering timeout ({android_timeout_s}s) should be 5-30s"
+        # Android: 1-5 seconds (shorter because COMPLETE doesn't fire during offer)
+        assert 1 <= android_timeout_s <= 5, (
+            f"Android gathering timeout ({android_timeout_s}s) should be 1-5s"
         )
+        # Daemon: 5-30 seconds (COMPLETE fires reliably)
         assert 5 <= daemon_timeout_s <= 30, (
             f"Daemon gathering timeout ({daemon_timeout_s}s) should be 5-30s"
-        )
-
-        # Timeouts should be within 2x of each other
-        ratio = max(android_timeout_s, daemon_timeout_s) / min(
-            android_timeout_s, daemon_timeout_s
-        )
-        assert ratio <= 2.0, (
-            f"Gathering timeouts too different: "
-            f"Android={android_timeout_s}s, Daemon={daemon_timeout_s}s"
         )

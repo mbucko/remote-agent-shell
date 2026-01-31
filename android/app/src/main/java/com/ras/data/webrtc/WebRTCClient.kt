@@ -39,6 +39,10 @@ class WebRTCClient(
         private const val MAX_MESSAGE_SIZE = 16 * 1024 * 1024 // 16 MB max message size
         private const val RECEIVE_TIMEOUT_MS = 30_000L // 30 second receive timeout
         private const val HEARTBEAT_INTERVAL_MS = 15_000L // 15 second heartbeat interval
+        // ICE gathering timeout - reduced from 10s because COMPLETE state may not fire
+        // during offer creation on Android. Host candidates are gathered immediately,
+        // STUN candidates within 1-2 seconds.
+        private const val ICE_GATHERING_TIMEOUT_MS = 2_000L
     }
 
     // Lock for thread-safe access to connection state
@@ -60,6 +64,10 @@ class WebRTCClient(
     private val dataChannelOpened = CompletableDeferred<Boolean>()
     private val messageChannel = Channel<ByteArray>(Channel.UNLIMITED)
     private var iceGatheringComplete = CompletableDeferred<Unit>()
+
+    // ICE candidate tracking
+    @Volatile
+    private var gatheredCandidateCount = 0
 
     // Heartbeat tracking
     @Volatile
@@ -85,8 +93,9 @@ class WebRTCClient(
     suspend fun createOffer(): String {
         checkNotClosed()
 
-        // Reset ICE gathering signal for this offer
+        // Reset ICE gathering state for this offer
         iceGatheringComplete = CompletableDeferred()
+        gatheredCandidateCount = 0
 
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
@@ -137,11 +146,21 @@ class WebRTCClient(
         // Wait for local description to be set
         localDescSet.await()
 
-        // Wait for ICE gathering to complete (timeout after 10 seconds)
-        Log.d(TAG, "Waiting for ICE gathering to complete...")
-        withTimeoutOrNull(10_000L) {
+        // Wait for ICE gathering to complete
+        // Note: On Android, IceGatheringState.COMPLETE may not fire during offer creation,
+        // only after setting remote description. Use short timeout since host candidates
+        // are gathered immediately and STUN candidates within 1-2 seconds.
+        Log.d(TAG, "Waiting for ICE gathering (${ICE_GATHERING_TIMEOUT_MS}ms timeout)...")
+        val gatheringCompleted = withTimeoutOrNull(ICE_GATHERING_TIMEOUT_MS) {
             iceGatheringComplete.await()
-        } ?: Log.w(TAG, "ICE gathering timeout, proceeding with available candidates")
+            true
+        } ?: false
+
+        if (gatheringCompleted) {
+            Log.i(TAG, "ICE gathering completed with $gatheredCandidateCount candidates")
+        } else {
+            Log.w(TAG, "ICE gathering timeout after ${ICE_GATHERING_TIMEOUT_MS}ms, proceeding with $gatheredCandidateCount candidates")
+        }
 
         // Return the local description WITH gathered ICE candidates
         val localDesc = peerConnection?.localDescription
@@ -450,7 +469,18 @@ class WebRTCClient(
                 }
             }
             override fun onIceCandidate(candidate: IceCandidate?) {
-                Log.d(TAG, "ICE candidate: ${candidate?.sdp}")
+                if (candidate != null) {
+                    gatheredCandidateCount++
+                    // Log candidate type for debugging (host, srflx, relay)
+                    val candidateType = when {
+                        candidate.sdp.contains("typ host") -> "host"
+                        candidate.sdp.contains("typ srflx") -> "srflx"
+                        candidate.sdp.contains("typ relay") -> "relay"
+                        candidate.sdp.contains("typ prflx") -> "prflx"
+                        else -> "unknown"
+                    }
+                    Log.d(TAG, "ICE candidate #$gatheredCandidateCount ($candidateType): ${candidate.sdp}")
+                }
             }
             override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
             override fun onAddStream(stream: org.webrtc.MediaStream?) {}
