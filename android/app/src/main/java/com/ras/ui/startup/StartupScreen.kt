@@ -21,9 +21,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlin.math.PI
+import kotlin.math.sin
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -124,8 +133,19 @@ private fun ConnectingContent(
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.Start
     ) {
-        // Header with spinner - uses lambda to scope recomposition
-        ConnectionHeader(phaseProvider = { log.phase })
+        // Header with spinner (standard indeterminate)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IndeterminateSpinner(modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = getPhaseTitle(log.phase),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -160,9 +180,83 @@ private fun ConnectingContent(
 }
 
 /**
+ * Simple indeterminate spinner that ignores system animation scale.
+ *
+ * Two animations combined:
+ * 1. ROTATION: Continuous spin (one full rotation every 1.5 seconds)
+ * 2. SWEEP: Arc length oscillates smoothly (min 30°, max 300°, period 2 seconds)
+ */
+@Composable
+private fun IndeterminateSpinner(
+    modifier: Modifier = Modifier,
+    color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
+    strokeWidth: androidx.compose.ui.unit.Dp = 3.dp,
+    trackColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.surfaceVariant
+) {
+    // Time in milliseconds, continuously increasing
+    val timeMs = remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(16L)
+            timeMs.floatValue += 16f
+        }
+    }
+
+    // Animation parameters
+    val rotationPeriodMs = 1500f  // Time for one full rotation
+    val sweepPeriodMs = 2000f     // Time for sweep to go min → max → min
+    val minSweep = 30f            // Minimum arc length in degrees
+    val maxSweep = 300f           // Maximum arc length in degrees
+
+    // Calculate rotation angle (0° to 360°, repeating)
+    val rotationDegrees = (timeMs.floatValue % rotationPeriodMs) / rotationPeriodMs * 360f
+
+    // Calculate sweep angle using sine wave for smooth oscillation
+    val sweepProgress = (timeMs.floatValue % sweepPeriodMs) / sweepPeriodMs
+    val sweepWave = sin(sweepProgress * 2 * PI).toFloat()  // -1 to 1
+    val sweepNormalized = (sweepWave + 1f) / 2f             // 0 to 1
+    val sweepDegrees = minSweep + (maxSweep - minSweep) * sweepNormalized
+
+    // Draw
+    Canvas(modifier = modifier) {
+        val strokeWidthPx = strokeWidth.toPx()
+        val diameter = size.minDimension - strokeWidthPx
+        val topLeft = androidx.compose.ui.geometry.Offset(strokeWidthPx / 2, strokeWidthPx / 2)
+        val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
+        val stroke = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+
+        // Track (background circle)
+        if (trackColor != androidx.compose.ui.graphics.Color.Transparent) {
+            drawArc(
+                color = trackColor,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = stroke
+            )
+        }
+
+        // Spinning arc
+        // Center of arc rotates smoothly; arc expands/contracts symmetrically around center
+        val centerAngle = rotationDegrees - 90f
+        val startAngle = centerAngle - sweepDegrees / 2f
+        drawArc(
+            color = color,
+            startAngle = startAngle,
+            sweepAngle = sweepDegrees,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = stroke
+        )
+    }
+}
+
+/**
  * Small in-progress spinner for attempt cards.
- * Isolated composable with no changing parameters - animation state survives
- * parent recompositions.
  */
 @Composable
 private fun InProgressIndicator(modifier: Modifier = Modifier) {
@@ -176,10 +270,11 @@ private fun InProgressIndicator(modifier: Modifier = Modifier) {
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.tertiary
         )
-        CircularProgressIndicator(
+        IndeterminateSpinner(
             modifier = Modifier.size(10.dp),
+            color = MaterialTheme.colorScheme.tertiary,
             strokeWidth = 1.dp,
-            color = MaterialTheme.colorScheme.tertiary
+            trackColor = androidx.compose.ui.graphics.Color.Transparent
         )
     }
 }
