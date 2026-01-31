@@ -21,21 +21,37 @@ import pytest
 
 
 @asynccontextmanager
-async def run_monitor_with_mocked_sleep(monitor, iterations: int):
-    """Run monitor with mocked sleep, stopping after N iterations."""
-    sleep_count = [0]
+async def run_monitor_with_instant_sleep(monitor, stop_after_polls: int):
+    """Run monitor with instant sleeps, stopping after N poll cycles.
 
-    async def mock_sleep(delay):
-        sleep_count[0] += 1
-        if sleep_count[0] >= iterations:
+    Args:
+        monitor: The IpMonitor to run
+        stop_after_polls: Stop after this many STUN polls complete
+
+    This is the proper pattern for testing async monitors:
+    - All sleeps are instant (no real waiting)
+    - We control duration by number of poll cycles, not sleep counts
+    - The monitor stops deterministically based on how many IPs to check
+    """
+    poll_count = [0]
+    original_get_ip = monitor._stun.get_public_ip
+
+    async def counting_get_ip():
+        """Wrapper that counts polls and stops monitor when done."""
+        poll_count[0] += 1
+        result = await original_get_ip()
+        if poll_count[0] >= stop_after_polls:
             monitor._running = False
+        return result
 
-    with patch("ras.ip_monitor.monitor.asyncio.sleep", side_effect=mock_sleep):
+    # Wrap the STUN client's get_public_ip method
+    monitor._stun.get_public_ip = counting_get_ip
+
+    with patch("ras.ip_monitor.monitor.asyncio.sleep", return_value=None):
         await monitor.start()
         yield
-        pending = asyncio.all_tasks() - {asyncio.current_task()}
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+        if monitor._task:
+            await monitor._task
 
 from cryptography.exceptions import InvalidTag
 
@@ -173,7 +189,7 @@ class TestE2EHappyPath:
         )
 
         # Run the flow with mocked sleep (2 iterations: initial + 1 change)
-        async with run_monitor_with_mocked_sleep(monitor, iterations=2):
+        async with run_monitor_with_instant_sleep(monitor, stop_after_polls=2):
             pass
 
         # Verify message was published
@@ -220,7 +236,7 @@ class TestE2EHappyPath:
         )
 
         # Run with mocked sleep (4 iterations: initial + 3 changes)
-        async with run_monitor_with_mocked_sleep(monitor, iterations=4):
+        async with run_monitor_with_instant_sleep(monitor, stop_after_polls=4):
             pass
 
         # Verify all changes published
@@ -268,7 +284,7 @@ class TestE2EHappyPath:
         )
 
         # Run with mocked sleep (2 iterations: initial + 1 change)
-        async with run_monitor_with_mocked_sleep(monitor, iterations=2):
+        async with run_monitor_with_instant_sleep(monitor, stop_after_polls=2):
             pass
 
         assert published_ips == [("1.2.3.4", 9999)]
@@ -306,7 +322,7 @@ class TestE2EHappyPath:
         )
 
         # Run with mocked sleep (3 iterations: initial + 2 same IPs)
-        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+        async with run_monitor_with_instant_sleep(monitor, stop_after_polls=3):
             pass
 
         callback.assert_not_called()
@@ -324,12 +340,22 @@ class TestE2EErrorHandling:
     @pytest.mark.asyncio
     async def test_stun_failure_doesnt_crash_monitor(self):
         """STUN failure doesn't crash the monitor - it recovers."""
-        stun_client = AsyncMock()
-        stun_client.get_public_ip.side_effect = [
+        poll_count = [0]
+        stun_results = [
             ("1.2.3.4", 8821),  # Initial
             Exception("STUN server unreachable"),  # Failure
             ("1.2.3.4", 8821),  # Recovery
         ]
+
+        async def mock_get_public_ip():
+            result = stun_results[poll_count[0]]
+            poll_count[0] += 1
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        stun_client = AsyncMock()
+        stun_client.get_public_ip.side_effect = mock_get_public_ip
 
         callback = AsyncMock()
         monitor = IpMonitor(
@@ -338,13 +364,13 @@ class TestE2EErrorHandling:
             on_ip_change=callback,
         )
 
-        # Run with mocked sleep (3 iterations to cover all side_effects)
-        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+        # Run with mocked sleep (3 polls to cover all results)
+        async with run_monitor_with_instant_sleep(monitor, stop_after_polls=3):
             pass
 
-        # Should still be running (not crashed)
-        assert stun_client.get_public_ip.call_count >= 3
-        # No IP change callback (IP stayed the same)
+        # Should have polled 3 times (not crashed after exception)
+        assert poll_count[0] == 3
+        # No IP change callback (IP stayed the same before and after failure)
         callback.assert_not_called()
 
     @pytest.mark.asyncio
@@ -411,7 +437,7 @@ class TestE2EErrorHandling:
         )
 
         # Run with mocked sleep (3 iterations: initial + 2 changes)
-        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+        async with run_monitor_with_instant_sleep(monitor, stop_after_polls=3):
             pass
 
         # Both callbacks should have been attempted
@@ -449,10 +475,13 @@ class TestE2EErrorHandling:
     async def test_ntfy_failure_doesnt_stop_ip_monitoring(self):
         """ntfy publish failure doesn't stop IP monitoring."""
         stun_client = AsyncMock()
+        # Provide extra IPs to avoid StopIteration
         stun_client.get_public_ip.side_effect = [
             ("1.1.1.1", 8821),  # Initial
             ("2.2.2.2", 8821),  # Change 1 - ntfy will fail
             ("3.3.3.3", 8821),  # Change 2 - ntfy will succeed
+            ("3.3.3.3", 8821),  # Extra (same IP, no change)
+            ("3.3.3.3", 8821),  # Extra (same IP, no change)
         ]
 
         master_secret = generate_secret()
@@ -481,7 +510,8 @@ class TestE2EErrorHandling:
 
         crypto = NtfyCrypto(ntfy_key)
         publisher = NtfyPublisher(crypto=crypto, topic=topic, http_session=session)
-        publisher.RETRY_DELAYS = [0.001, 0.001, 0.001]
+        # No retry delays - retries happen instantly
+        publisher.RETRY_DELAYS = []
 
         callbacks_received = []
 
@@ -495,20 +525,10 @@ class TestE2EErrorHandling:
             on_ip_change=on_ip_change,
         )
 
-        # Mock both monitor and publisher sleeps
-        sleep_count = [0]
-
-        async def mock_monitor_sleep(delay):
-            sleep_count[0] += 1
-            if sleep_count[0] >= 3:
-                monitor._running = False
-
-        with patch("ras.ip_monitor.monitor.asyncio.sleep", side_effect=mock_monitor_sleep):
-            with patch("ras.ntfy.publisher.asyncio.sleep", return_value=None):
-                await monitor.start()
-                pending = asyncio.all_tasks() - {asyncio.current_task()}
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
+        # Mock both monitor and publisher sleeps to avoid any async timing issues
+        with patch("ras.ntfy.publisher.asyncio.sleep", return_value=None):
+            async with run_monitor_with_instant_sleep(monitor, stop_after_polls=4):
+                pass
 
         # Both IP changes should have been detected
         assert callbacks_received == ["2.2.2.2", "3.3.3.3"]
@@ -820,10 +840,10 @@ class TestE2EConcurrency:
         monitor2 = IpMonitor(stun2, check_interval=0.01, on_ip_change=callback2)
 
         # Run each monitor independently
-        async with run_monitor_with_mocked_sleep(monitor1, iterations=2):
+        async with run_monitor_with_instant_sleep(monitor1, stop_after_polls=2):
             pass
 
-        async with run_monitor_with_mocked_sleep(monitor2, iterations=2):
+        async with run_monitor_with_instant_sleep(monitor2, stop_after_polls=2):
             pass
 
         assert callbacks_called["monitor1"] == 1
@@ -1089,7 +1109,7 @@ class TestE2EEdgeCases:
         )
 
         # Run monitor with mocked sleep for 20 iterations (one per IP change)
-        async with run_monitor_with_mocked_sleep(monitor, iterations=20):
+        async with run_monitor_with_instant_sleep(monitor, stop_after_polls=20):
             pass
 
         # Should have published many changes (20 IPs after initial)
