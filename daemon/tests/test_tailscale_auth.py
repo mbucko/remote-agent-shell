@@ -335,6 +335,36 @@ class TestTimeoutAndErrorHandling:
         # The key is no exception is raised
 
     @pytest.mark.asyncio
+    async def test_auth_timeout_logs_warning(self):
+        """Verify warning is logged when auth times out after handshake.
+
+        Scenario:
+        1. Phone completes handshake
+        2. Phone never sends auth message (or it's lost)
+        3. Daemon should log warning after timeout
+        """
+        from ras.daemon import Daemon
+
+        # Create transport that times out on receive
+        mock_transport = MockTailscaleTransport()
+        mock_transport.receive_data = b""  # Will trigger timeout
+
+        mock_store = MockDeviceStore()
+
+        daemon = Daemon.__new__(Daemon)
+        daemon._device_store = mock_store
+        daemon._connection_manager = Mock()
+
+        # Patch the logger to verify warning
+        with patch("ras.daemon.logger") as mock_logger:
+            await daemon._on_tailscale_connection(mock_transport)
+
+            # Verify warning was logged about timeout
+            mock_logger.warning.assert_called()
+            warning_call = str(mock_logger.warning.call_args)
+            assert "timeout" in warning_call.lower() or "100.64.0.2" in warning_call
+
+    @pytest.mark.asyncio
     async def test_no_store_configured_returns_failure(self):
         """No store configured should return failure."""
         from ras.daemon import Daemon

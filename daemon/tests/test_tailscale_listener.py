@@ -77,6 +77,43 @@ class TestTailscaleListenerBinding:
 class TestHandshakeResponse:
     """Tests for handshake response handling."""
 
+    @pytest.mark.asyncio
+    async def test_handshake_response_sent_immediately(self):
+        """Verify handshake response is sent as soon as handshake is received.
+
+        This is critical for UDP reliability - the faster we respond,
+        the less likely the client will timeout and retry.
+        """
+        from ras.tailscale.listener import TailscaleListener
+
+        response_sent = False
+
+        async def mock_on_connection(transport):
+            pass
+
+        listener = TailscaleListener(port=9876, on_connection=mock_on_connection)
+        listener._running = True
+        listener._connections = {}
+
+        mock_protocol = MagicMock()
+
+        def track_response(addr):
+            nonlocal response_sent
+            response_sent = True
+
+        mock_protocol.send_handshake_response = track_response
+        listener._protocol = mock_protocol
+        listener._transport = MagicMock()
+
+        addr = ("100.64.0.2", 12345)
+
+        # Send handshake packet
+        handshake = struct.pack(">II", HANDSHAKE_MAGIC, 0)
+        await listener._handle_packet(handshake, addr)
+
+        # Verify response was sent (no async waiting or queueing)
+        assert response_sent, "Handshake response should be sent immediately"
+
     def test_handshake_response_format(self):
         """Verify handshake response has correct format."""
         protocol = TailscaleProtocol()

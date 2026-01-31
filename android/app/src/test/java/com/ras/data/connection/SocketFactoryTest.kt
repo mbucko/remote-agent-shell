@@ -185,6 +185,105 @@ class SocketFactoryTest {
         transport.close()
     }
 
+    // ==================== Socket Reuse Tests ====================
+
+    @Test
+    fun `handshake retry uses same socket - factory called only once`() = runTest {
+        /**
+         * Verify that all retry attempts use the same socket instance.
+         * This is critical because:
+         * - UDP sockets get an ephemeral port when created
+         * - The daemon responds to this port
+         * - If we create a new socket for each retry, responses go to wrong port
+         */
+        every { mockSocket.soTimeout = any() } just Runs
+        every { mockSocket.send(any()) } just Runs
+        every { mockSocket.receive(any()) } throws SocketTimeoutException("Timeout")
+        every { mockSocket.close() } just Runs
+        every { mockSocket.localAddress } returns mockk(relaxed = true)
+        every { mockSocket.localPort } returns 54321
+
+        try {
+            TailscaleTransport.connect(
+                localIp = "100.64.0.1",
+                remoteIp = "100.64.0.2",
+                socketFactory = mockSocketFactory
+            )
+        } catch (e: Exception) {
+            // Expected
+        }
+
+        // Factory should only be called ONCE - same socket reused for all retries
+        verify(exactly = 1) { mockSocketFactory.createConnected(any()) }
+
+        // But send should be called 3 times (one per retry)
+        verify(exactly = 3) { mockSocket.send(any()) }
+    }
+
+    @Test
+    fun `socket closed on final failure`() = runTest {
+        /**
+         * Verify socket is properly cleaned up when all retries are exhausted.
+         */
+        every { mockSocket.soTimeout = any() } just Runs
+        every { mockSocket.send(any()) } just Runs
+        every { mockSocket.receive(any()) } throws SocketTimeoutException("Timeout")
+        every { mockSocket.close() } just Runs
+        every { mockSocket.localAddress } returns mockk(relaxed = true)
+        every { mockSocket.localPort } returns 54321
+
+        try {
+            TailscaleTransport.connect(
+                localIp = "100.64.0.1",
+                remoteIp = "100.64.0.2",
+                socketFactory = mockSocketFactory
+            )
+            fail("Should throw IOException")
+        } catch (e: Exception) {
+            assertTrue(e.message?.contains("Handshake failed") == true)
+        }
+
+        // Socket MUST be closed after all retries exhausted
+        verify(exactly = 1) { mockSocket.close() }
+    }
+
+    @Test
+    fun `socket not closed on successful handshake`() = runTest {
+        /**
+         * On success, socket should remain open for the transport to use.
+         */
+        val handshakeMagic = 0x52415354
+        val responseBytes = ByteBuffer.allocate(8)
+            .putInt(handshakeMagic)
+            .putInt(0)
+            .array()
+
+        every { mockSocket.soTimeout = any() } just Runs
+        every { mockSocket.send(any()) } just Runs
+        every { mockSocket.receive(any()) } answers {
+            val packet = firstArg<DatagramPacket>()
+            System.arraycopy(responseBytes, 0, packet.data, 0, responseBytes.size)
+            packet.length = responseBytes.size
+        }
+        every { mockSocket.localAddress } returns mockk(relaxed = true)
+        every { mockSocket.localPort } returns 54321
+
+        val transport = TailscaleTransport.connect(
+            localIp = "100.64.0.1",
+            remoteIp = "100.64.0.2",
+            socketFactory = mockSocketFactory
+        )
+
+        // Socket should NOT be closed yet - transport is using it
+        verify(exactly = 0) { mockSocket.close() }
+
+        // Now close the transport
+        transport.close()
+
+        // Now socket should be closed
+        verify(exactly = 1) { mockSocket.close() }
+    }
+
     // ==================== Strategy with Mock Socket Tests ====================
 
     @Test
