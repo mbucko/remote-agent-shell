@@ -119,15 +119,17 @@ class ConnectionOrchestrator @Inject constructor(
             ))
             Log.i(TAG, "Daemon capabilities: tailscale=${daemonCapabilities.tailscaleIp}:${daemonCapabilities.tailscalePort}")
 
-            // Enrich context with fresh daemon Tailscale info
+            // Enrich context with fresh daemon Tailscale info and local Tailscale status
             context.copy(
                 daemonTailscaleIp = daemonCapabilities.tailscaleIp,
-                daemonTailscalePort = daemonCapabilities.tailscalePort
+                daemonTailscalePort = daemonCapabilities.tailscalePort,
+                localTailscaleAvailable = localTailscale != null
             )
         } else {
             onProgress(ConnectionProgress.CapabilityExchangeFailed("Could not reach daemon"))
             Log.w(TAG, "Capability exchange failed, proceeding with stored credentials")
-            context // Use original context with any stored credentials
+            // Still set localTailscaleAvailable
+            context.copy(localTailscaleAvailable = localTailscale != null)
         }
 
         // =================================================================

@@ -126,4 +126,60 @@ object VpnCandidateInjector {
         val match = udpCandidateRegex.find(sdp)
         return match?.groupValues?.get(1)?.toIntOrNull()
     }
+
+    /**
+     * Filter out Tailscale/VPN IP candidates from SDP.
+     *
+     * Use this when Tailscale isn't available - those IPs won't route
+     * properly and just add noise/confusion to ICE negotiation.
+     *
+     * @param sdp The original SDP
+     * @return Modified SDP with Tailscale candidates removed
+     */
+    fun filterTailscaleCandidates(sdp: String): String {
+        val lines = sdp.lines()
+        val filtered = lines.filter { line ->
+            if (!line.startsWith("a=candidate:")) {
+                true // Keep non-candidate lines
+            } else {
+                // Check if this candidate contains a Tailscale IP (100.64.0.0/10)
+                !isTailscaleCandidate(line)
+            }
+        }
+
+        val removedCount = lines.size - filtered.size
+        if (removedCount > 0) {
+            Log.i(TAG, "Filtered $removedCount Tailscale candidates from SDP")
+        }
+
+        return filtered.joinToString("\r\n")
+    }
+
+    /**
+     * Check if a candidate line contains a Tailscale IP (100.64.0.0/10 range).
+     */
+    private fun isTailscaleCandidate(candidateLine: String): Boolean {
+        // Extract IP from candidate line
+        // Format: a=candidate:foundation component protocol priority ip port typ type ...
+        val parts = candidateLine.split(Regex("\\s+"))
+        if (parts.size < 6) return false
+
+        val ip = parts[4]
+        return isTailscaleIp(ip)
+    }
+
+    /**
+     * Check if an IP is in the Tailscale range (100.64.0.0/10).
+     * This is CGNAT space that Tailscale uses for its addresses.
+     */
+    fun isTailscaleIp(ip: String): Boolean {
+        val parts = ip.split(".")
+        if (parts.size != 4) return false
+
+        val firstOctet = parts[0].toIntOrNull() ?: return false
+        val secondOctet = parts[1].toIntOrNull() ?: return false
+
+        // 100.64.0.0/10 means first octet is 100, second octet is 64-127
+        return firstOctet == 100 && secondOctet in 64..127
+    }
 }

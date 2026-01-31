@@ -1,6 +1,7 @@
 package com.ras.data.connection
 
 import android.util.Log
+import com.ras.data.webrtc.VpnCandidateInjector
 import com.ras.data.webrtc.WebRTCClient
 import javax.inject.Inject
 
@@ -39,8 +40,15 @@ class WebRTCStrategy @Inject constructor(
             Log.d(TAG, "Creating WebRTC offer...")
 
             webRTCClient = webRTCClientFactory.create()
-            val offer = webRTCClient.createOffer()
+            var offer = webRTCClient.createOffer()
             Log.d(TAG, "Offer created with ${countCandidates(offer)} candidates")
+
+            // Filter out Tailscale candidates if local Tailscale isn't available
+            // (those IPs won't route properly and just add noise)
+            if (!context.localTailscaleAvailable) {
+                offer = VpnCandidateInjector.filterTailscaleCandidates(offer)
+                Log.d(TAG, "After filtering: ${countCandidates(offer)} candidates")
+            }
 
             // Step 2: Send offer via signaling
             onProgress(ConnectionStep("Signaling", "Sending offer to daemon"))
