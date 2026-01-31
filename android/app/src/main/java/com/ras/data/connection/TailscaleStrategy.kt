@@ -1,6 +1,8 @@
 package com.ras.data.connection
 
+import android.content.Context
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
 /**
@@ -11,7 +13,9 @@ import javax.inject.Inject
  *
  * This is the fastest and most reliable option when available.
  */
-class TailscaleStrategy @Inject constructor() : ConnectionStrategy {
+class TailscaleStrategy @Inject constructor(
+    @ApplicationContext private val appContext: Context
+) : ConnectionStrategy {
 
     companion object {
         private const val TAG = "TailscaleStrategy"
@@ -24,12 +28,12 @@ class TailscaleStrategy @Inject constructor() : ConnectionStrategy {
     private var detectedInfo: TailscaleInfo? = null
 
     override suspend fun detect(): DetectionResult {
-        detectedInfo = TailscaleDetector.detect()
+        detectedInfo = TailscaleDetector.detect(appContext)
 
         return if (detectedInfo != null) {
             DetectionResult.Available(detectedInfo!!.ip)
         } else {
-            DetectionResult.Unavailable("Tailscale not running")
+            DetectionResult.Unavailable("Tailscale not connected")
         }
     }
 
@@ -41,39 +45,22 @@ class TailscaleStrategy @Inject constructor() : ConnectionStrategy {
             ?: return ConnectionResult.Failed("Tailscale not detected", canRetry = false)
 
         try {
-            // Step 1: Exchange Tailscale capabilities
-            onProgress(ConnectionStep("Exchanging info", "Checking if daemon has Tailscale"))
-            Log.d(TAG, "Sending Tailscale capabilities...")
+            // Step 1: Get daemon Tailscale info from context (stored credentials)
+            onProgress(ConnectionStep("Checking", "Looking for daemon Tailscale info"))
 
-            val ourCapabilities = ConnectionCapabilities(
-                tailscaleIp = localInfo.ip,
-                tailscalePort = DEFAULT_PORT,
-                supportsWebRTC = true,
-                supportsTurn = false
-            )
+            val daemonTailscaleIp = context.daemonTailscaleIp
+            // Treat port 0 or null as "use default" - port 0 is not a valid server port
+            val daemonTailscalePort = context.daemonTailscalePort?.takeIf { it > 0 } ?: DEFAULT_PORT
 
-            val daemonCapabilities = context.signaling.sendCapabilities(ourCapabilities)
-
-            if (daemonCapabilities == null) {
-                Log.w(TAG, "Daemon did not respond to capabilities request")
+            if (daemonTailscaleIp == null) {
+                Log.i(TAG, "Daemon Tailscale IP not stored in credentials")
                 return ConnectionResult.Failed(
-                    "Daemon not responding",
+                    "Daemon Tailscale IP unknown",
                     canRetry = false
                 )
             }
 
-            if (daemonCapabilities.tailscaleIp == null) {
-                Log.i(TAG, "Daemon is not on Tailscale")
-                return ConnectionResult.Failed(
-                    "Daemon not on Tailscale network",
-                    canRetry = false
-                )
-            }
-
-            val daemonTailscaleIp = daemonCapabilities.tailscaleIp
-            val daemonTailscalePort = daemonCapabilities.tailscalePort ?: DEFAULT_PORT
-
-            Log.i(TAG, "Daemon Tailscale: $daemonTailscaleIp:$daemonTailscalePort")
+            Log.i(TAG, "Daemon Tailscale from credentials: $daemonTailscaleIp:$daemonTailscalePort")
 
             // Step 2: Establish direct connection
             onProgress(ConnectionStep(
@@ -82,28 +69,42 @@ class TailscaleStrategy @Inject constructor() : ConnectionStrategy {
             ))
             Log.d(TAG, "Connecting to Tailscale endpoint...")
 
-            val transport = TailscaleTransport.connect(
-                localIp = localInfo.ip,
-                remoteIp = daemonTailscaleIp,
-                remotePort = daemonTailscalePort
-            )
+            var transport: TailscaleTransport? = null
+            try {
+                transport = TailscaleTransport.connect(
+                    localIp = localInfo.ip,
+                    remoteIp = daemonTailscaleIp,
+                    remotePort = daemonTailscalePort
+                )
 
-            // Step 3: Authenticate
-            onProgress(ConnectionStep("Authenticating", "Verifying connection"))
-            Log.d(TAG, "Sending authentication...")
+                // Step 3: Authenticate
+                onProgress(ConnectionStep("Authenticating", "Verifying connection"))
+                Log.d(TAG, "Sending authentication...")
 
-            // Send auth token
-            transport.send(context.authToken)
+                // Send device_id (length-prefixed) + auth token
+                // Format: [device_id_len: 4 bytes BE][device_id: N bytes UTF-8][auth: 32 bytes]
+                val deviceIdBytes = context.deviceId.toByteArray(Charsets.UTF_8)
+                val authMessage = java.nio.ByteBuffer.allocate(4 + deviceIdBytes.size + context.authToken.size)
+                    .putInt(deviceIdBytes.size)
+                    .put(deviceIdBytes)
+                    .put(context.authToken)
+                    .array()
+                transport.send(authMessage)
 
-            // Wait for auth response
-            val response = transport.receive(timeoutMs = 5000)
-            if (response.isEmpty() || response[0] != 0x01.toByte()) {
-                transport.close()
-                return ConnectionResult.Failed("Authentication failed", canRetry = false)
+                // Wait for auth response
+                val response = transport.receive(timeoutMs = 5000)
+                if (response.isEmpty() || response[0] != 0x01.toByte()) {
+                    transport.close()
+                    return ConnectionResult.Failed("Authentication failed", canRetry = false)
+                }
+
+                Log.i(TAG, "Tailscale connection established!")
+                return ConnectionResult.Success(transport)
+
+            } catch (e: Exception) {
+                transport?.close()
+                throw e
             }
-
-            Log.i(TAG, "Tailscale connection established!")
-            return ConnectionResult.Success(transport)
 
         } catch (e: Exception) {
             Log.e(TAG, "Tailscale connection failed", e)
