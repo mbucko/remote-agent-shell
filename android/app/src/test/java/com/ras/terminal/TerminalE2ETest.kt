@@ -1016,26 +1016,39 @@ class TerminalE2ETest {
     }
 
     // ==========================================================================
-    // Scenario 36: Attach While Already Attached
+    // Scenario 36: Attach While Already Attached (Session Switching)
     // ==========================================================================
 
     @Test
-    fun `E2E - attach to different session while attached throws`() = runTest(testDispatcher, timeout = 1.seconds) {
+    fun `E2E - attach to different session while attached switches sessions`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
         assertTrue(repository.state.value.isAttached)
         assertEquals("abc123def456", repository.state.value.sessionId)
 
-        // Attempting to attach to different session while already attached should throw
-        try {
-            repository.attach("xyz789uvw012")
-            fail("Should throw IllegalStateException when attaching to different session while already attached")
-        } catch (e: IllegalStateException) {
-            assertTrue(e.message?.contains("attached") == true)
-        }
+        // Clear commands to track new ones
+        sentCommands.clear()
 
-        // State should remain unchanged
+        // Attach to different session - should detach from old and attach to new
+        val switchJob = launch { repository.attach("xyz789uvw012") }
+        testDispatcher.scheduler.runCurrent()
+
+        // Verify detach command was sent for old session
+        val detachCmd = sentCommands.find { it.hasDetach() }
+        assertNotNull("Should send detach command", detachCmd)
+        assertEquals("abc123def456", detachCmd?.detach?.sessionId)
+
+        // Verify attach command was sent for new session
+        val attachCmd = sentCommands.find { it.hasAttach() }
+        assertNotNull("Should send attach command", attachCmd)
+        assertEquals("xyz789uvw012", attachCmd?.attach?.sessionId)
+
+        // Simulate successful attach to new session
+        terminalEventsFlow.emit(createAttachedEvent("xyz789uvw012"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Verify state switched to new session
         assertTrue(repository.state.value.isAttached)
-        assertEquals("abc123def456", repository.state.value.sessionId)
+        assertEquals("xyz789uvw012", repository.state.value.sessionId)
     }
 
     @Test
