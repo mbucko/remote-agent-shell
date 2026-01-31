@@ -124,23 +124,8 @@ private fun ConnectingContent(
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.Start
     ) {
-        // Header with spinner
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 2.dp
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = getPhaseTitle(log.phase),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
+        // Header with spinner - uses lambda to scope recomposition
+        ConnectionHeader(phaseProvider = { log.phase })
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -171,6 +156,61 @@ private fun ConnectingContent(
                 currentAttempt = log.currentAttempt
             )
         }
+    }
+}
+
+/**
+ * Small in-progress spinner for attempt cards.
+ * Isolated composable with no changing parameters - animation state survives
+ * parent recompositions.
+ */
+@Composable
+private fun InProgressIndicator(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "  * ",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.tertiary
+        )
+        CircularProgressIndicator(
+            modifier = Modifier.size(10.dp),
+            strokeWidth = 1.dp,
+            color = MaterialTheme.colorScheme.tertiary
+        )
+    }
+}
+
+/**
+ * Header with spinner and phase title.
+ * Uses lambda-based state reading to scope recomposition - the spinner
+ * never recomposes, only the Text updates when phase changes.
+ */
+@Composable
+private fun ConnectionHeader(
+    phaseProvider: () -> ConnectionPhase,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Spinner has no dependencies on changing state - stays stable
+        CircularProgressIndicator(
+            modifier = Modifier.size(20.dp),
+            color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 3.dp
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        // Only this Text recomposes when phase changes
+        Text(
+            text = getPhaseTitle(phaseProvider()),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -494,19 +534,7 @@ private fun AttemptCard(
                     )
                 }
                 isCurrent -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "  * ",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(10.dp),
-                            strokeWidth = 1.dp,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
+                    InProgressIndicator()
                 }
             }
         }
