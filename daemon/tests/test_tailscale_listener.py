@@ -49,8 +49,8 @@ class TestTailscaleListenerBinding:
                 mock_loop_instance.create_datagram_endpoint = capture_endpoint
                 mock_loop.return_value = mock_loop_instance
 
-                # Also prevent the receive loop from running
-                with patch.object(listener, "_receive_loop", return_value=asyncio.sleep(0)):
+                # Also prevent the receive loop from running (use AsyncMock)
+                with patch.object(listener, "_receive_loop", new=AsyncMock()):
                     await listener.start()
 
                     # Verify it bound to Tailscale IP, not 0.0.0.0

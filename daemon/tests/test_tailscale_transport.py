@@ -6,7 +6,7 @@ These tests ensure transport correctness for data framing and statistics.
 import asyncio
 import struct
 import time
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -154,8 +154,19 @@ class TestSendReceive:
         """Receive should raise TimeoutError when no data arrives."""
         transport = create_test_transport(mock_udp_transport, mock_protocol)
 
-        with pytest.raises(TimeoutError):
-            await transport.receive(timeout=0.1)
+        # Mock wait_for to cancel the coroutine and raise TimeoutError
+        async def mock_wait_for(coro, timeout):
+            task = asyncio.create_task(coro)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            raise asyncio.TimeoutError()
+
+        with patch("ras.tailscale.transport.asyncio.wait_for", side_effect=mock_wait_for):
+            with pytest.raises(TimeoutError):
+                await transport.receive(timeout=1.0)
 
     @pytest.mark.asyncio
     async def test_receive_invalid_length_prefix(
@@ -242,12 +253,13 @@ class TestStatsTracking:
         """last_activity should update on send."""
         transport = create_test_transport(mock_udp_transport, mock_protocol)
 
-        initial_activity = transport.get_stats().last_activity
-        await asyncio.sleep(0.01)
+        # Set last_activity to a past time to ensure any update is detectable
+        past_time = transport.get_stats().last_activity - 1.0
+        transport._stats.last_activity = past_time
 
         await transport.send(b"hello")
 
-        assert transport.get_stats().last_activity > initial_activity
+        assert transport.get_stats().last_activity > past_time
 
     @pytest.mark.asyncio
     async def test_last_activity_updates_on_receive(
@@ -256,14 +268,15 @@ class TestStatsTracking:
         """last_activity should update on receive."""
         transport = create_test_transport(mock_udp_transport, mock_protocol)
 
-        initial_activity = transport.get_stats().last_activity
-        await asyncio.sleep(0.01)
+        # Set last_activity to a past time to ensure any update is detectable
+        past_time = transport.get_stats().last_activity - 1.0
+        transport._stats.last_activity = past_time
 
         packet = struct.pack(">I", 5) + b"hello"
         await transport.enqueue(packet, ("100.64.0.2", 12345))
         await transport.receive(timeout=1.0)
 
-        assert transport.get_stats().last_activity > initial_activity
+        assert transport.get_stats().last_activity > past_time
 
 
 class TestCloseBehavior:
@@ -344,10 +357,7 @@ class TestTailscalePeer:
 
         peer.on_message(handler)
 
-        # Give the receive loop time to start
-        await asyncio.sleep(0.01)
-
-        # Verify receive task was created
+        # Verify receive task was created (happens synchronously)
         assert peer._receive_task is not None
 
         # Clean up
@@ -408,23 +418,22 @@ class TestTailscalePeer:
         peer.on_close(close_handler)
         peer.on_message(message_handler)
 
-        # Give receive loop time to start
-        await asyncio.sleep(0.01)
+        # Verify receive task was created
+        assert peer._receive_task is not None
 
         # Close the transport (simulates disconnect)
         transport.close()
 
-        # Wait for close handler to be called
+        # Wait briefly for close handler - use short timeout since
+        # close handler may not be called depending on timing
         try:
-            await asyncio.wait_for(close_called.wait(), timeout=2.0)
-            close_was_called = True
+            await asyncio.wait_for(close_called.wait(), timeout=0.05)
         except asyncio.TimeoutError:
-            close_was_called = False
+            pass  # Close handler may not be called, that's ok
 
         # Clean up
         await peer.close()
 
-        # Close handler may or may not be called depending on timing
         # The important thing is no exceptions are raised
 
     @pytest.mark.asyncio
@@ -439,7 +448,6 @@ class TestTailscalePeer:
             pass
 
         peer.on_message(handler)
-        await asyncio.sleep(0.01)
 
         receive_task = peer._receive_task
         assert receive_task is not None

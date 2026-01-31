@@ -188,24 +188,36 @@ class TestDaemonReconnectionCallback:
         # Mock peer connection
         mock_peer = AsyncMock()
         mock_peer.send = AsyncMock()
-        mock_peer.receive = AsyncMock()
         mock_peer.close = AsyncMock()
+        # on_message is called with a callback function, not awaited
+        mock_peer.on_message = MagicMock()
 
-        # Make auth fail to verify it's being called
-        mock_peer.receive.side_effect = Exception("Auth should be attempted")
+        # Make wait_connected succeed, but we'll patch the AuthHandler
+        # to fail immediately to avoid waiting for auth timeout
+        mock_peer.wait_connected = AsyncMock()
 
         auth_key = bytes(range(32))
 
-        # Should attempt auth and fail gracefully
-        await daemon._on_device_reconnected(
-            device_id="test-device",
-            device_name="Test Phone",
-            peer=mock_peer,
-            auth_key=auth_key
-        )
+        # Patch AuthHandler.run_handshake to return False immediately
+        # This tests that auth is attempted and failure is handled
+        with patch("ras.daemon.AuthHandler") as MockAuthHandler:
+            mock_handler = MagicMock()
+            mock_handler.run_handshake = AsyncMock(return_value=False)
+            MockAuthHandler.return_value = mock_handler
 
-        # Verify send was called (challenge sent)
-        mock_peer.send.assert_called()
+            # Should attempt auth and fail gracefully
+            await daemon._on_device_reconnected(
+                device_id="test-device",
+                device_name="Test Phone",
+                peer=mock_peer,
+                auth_key=auth_key
+            )
+
+            # Verify AuthHandler was created with correct args
+            MockAuthHandler.assert_called_once_with(auth_key, "test-device")
+
+            # Verify run_handshake was called
+            mock_handler.run_handshake.assert_called_once()
 
         # Verify peer was closed on auth failure
         mock_peer.close.assert_called()

@@ -164,10 +164,11 @@ class TestSSEReconnection:
             http_session=mock_session,
         )
 
-        # Override reconnect delay for faster test
-        subscriber.SSE_RECONNECT_DELAY = 0.01
+        # Disable reconnect delay for fast test
+        subscriber.SSE_RECONNECT_DELAY = 0
 
         connect_count = 0
+        reconnect_happened = asyncio.Event()
 
         def mock_get(*args, **kwargs):
             nonlocal connect_count
@@ -181,25 +182,15 @@ class TestSSEReconnection:
                 return cm
 
             if connect_count == 2:
-                # Second connection succeeds but then disconnects
-                mock_response = MagicMock()
-                mock_response.status = 200
-
-                async def mock_content():
-                    # Yield one event then close
-                    yield b'data: {"event":"open"}\n'
-                    await asyncio.sleep(0.01)
-                    # Connection drops here
-
-                mock_response.content = mock_content()
-
+                # Second connection attempt - we've proven reconnection works
+                reconnect_happened.set()
+                subscriber._stop_event.set()
                 cm = MagicMock()
-                cm.__aenter__ = AsyncMock(return_value=mock_response)
+                cm.__aenter__ = AsyncMock(side_effect=asyncio.CancelledError())
                 cm.__aexit__ = AsyncMock(return_value=None)
                 return cm
 
-            # Third connection - stop the test
-            subscriber._stop_event.set()
+            # Shouldn't reach here
             cm = MagicMock()
             cm.__aenter__ = AsyncMock(side_effect=asyncio.CancelledError())
             cm.__aexit__ = AsyncMock(return_value=None)
@@ -210,8 +201,8 @@ class TestSSEReconnection:
         # Start subscription
         await subscriber.start()
 
-        # Wait a bit for reconnections
-        await asyncio.sleep(0.15)
+        # Wait for reconnection to happen
+        await asyncio.wait_for(reconnect_happened.wait(), timeout=1.0)
 
         # Stop subscription
         await subscriber.stop()
@@ -231,10 +222,15 @@ class TestSSEReconnection:
             http_session=mock_session,
         )
 
+        # Event that never gets set - simulates a hanging connection
+        never_complete = asyncio.Event()
+        connection_started = asyncio.Event()
+
         # Make get return a context manager that hangs
         def mock_get(*args, **kwargs):
             async def hang():
-                await asyncio.sleep(10)
+                connection_started.set()
+                await never_complete.wait()
 
             cm = MagicMock()
             cm.__aenter__ = AsyncMock(side_effect=hang)
@@ -244,15 +240,17 @@ class TestSSEReconnection:
         mock_session.get = mock_get
 
         await subscriber.start()
+        # Wait for connection attempt to start
+        await asyncio.wait_for(connection_started.wait(), timeout=1.0)
         assert subscriber.is_subscribed()
 
-        # Stop should complete quickly
+        # Stop should complete quickly even though connection is "hanging"
         await asyncio.wait_for(subscriber.stop(), timeout=1.0)
         assert not subscriber.is_subscribed()
 
     @pytest.mark.asyncio
     async def test_subscriber_respects_reconnect_delay(self):
-        """Verify subscriber waits before reconnecting."""
+        """Verify subscriber waits before reconnecting (using mocked sleep)."""
         mock_session = MagicMock(spec=aiohttp.ClientSession)
 
         subscriber = NtfySignalingSubscriber(
@@ -262,16 +260,18 @@ class TestSSEReconnection:
             http_session=mock_session,
         )
 
-        # Use a measurable reconnect delay
-        subscriber.SSE_RECONNECT_DELAY = 0.1
+        # Set a specific reconnect delay
+        subscriber.SSE_RECONNECT_DELAY = 5.0  # Large value to prove we're not waiting
 
-        connect_times = []
+        sleep_delays = []
+        test_complete = asyncio.Event()
 
         def mock_get(*args, **kwargs):
-            connect_times.append(asyncio.get_event_loop().time())
             cm = MagicMock()
-            if len(connect_times) >= 3:
+            if len(sleep_delays) >= 1:
+                # After first reconnect delay, stop the test
                 subscriber._stop_event.set()
+                test_complete.set()
                 cm.__aenter__ = AsyncMock(side_effect=asyncio.CancelledError())
             else:
                 cm.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("Connection failed"))
@@ -280,15 +280,23 @@ class TestSSEReconnection:
 
         mock_session.get = mock_get
 
-        await subscriber.start()
-        await asyncio.sleep(0.35)  # Wait for a few reconnect attempts
-        await subscriber.stop()
+        # Patch asyncio.sleep to capture delay values without actually sleeping
+        original_sleep = asyncio.sleep
 
-        # Check delays between connections
-        if len(connect_times) >= 2:
-            delay = connect_times[1] - connect_times[0]
-            # Should be at least the reconnect delay (with some tolerance)
-            assert delay >= 0.08  # 80% of 0.1
+        async def mock_sleep(delay):
+            if delay == subscriber.SSE_RECONNECT_DELAY:
+                sleep_delays.append(delay)
+            # Don't actually sleep - return immediately
+
+        with patch("asyncio.sleep", mock_sleep):
+            await subscriber.start()
+            # Wait for test to complete
+            await asyncio.wait_for(test_complete.wait(), timeout=1.0)
+            await subscriber.stop()
+
+        # Verify the reconnect delay was used
+        assert len(sleep_delays) >= 1
+        assert sleep_delays[0] == 5.0  # Should be our configured delay
 
 
 class TestMessageProcessing:

@@ -514,9 +514,7 @@ class TestCallbackNotBlocking:
         handshake_task = asyncio.create_task(listener._handle_handshake(addr))
 
         # Wait for callback to start
-        await asyncio.sleep(0.01)
-        if not callback_started.is_set():
-            await asyncio.wait_for(callback_started.wait(), timeout=2.0)
+        await asyncio.wait_for(callback_started.wait(), timeout=2.0)
 
         # Now send a data packet while callback is still running
         # If bug exists: receive loop is blocked, this won't be processed
@@ -551,12 +549,12 @@ class TestCallbackNotBlocking:
         self, mock_tailscale_info, mock_protocol, mock_transport
     ):
         """Verify _handle_handshake returns quickly (doesn't await callback)."""
-        callback_duration = 1.0  # Callback will take 1 second
         callback_started = asyncio.Event()
+        callback_can_finish = asyncio.Event()
 
         async def slow_callback(transport):
             callback_started.set()
-            await asyncio.sleep(callback_duration)
+            await callback_can_finish.wait()
 
         listener = TailscaleListener(on_connection=slow_callback)
         listener._protocol = mock_protocol
@@ -571,18 +569,19 @@ class TestCallbackNotBlocking:
         task = await listener._handle_handshake(addr)
         elapsed = asyncio.get_event_loop().time() - start
 
-        # If _handle_handshake awaited the callback, it would take ~1 second
+        # If _handle_handshake awaited the callback, it would block forever
         # If it spawns a task, it should return almost immediately
-        assert elapsed < 0.5, (
+        assert elapsed < 0.1, (
             f"_handle_handshake took {elapsed:.2f}s but should return immediately. "
             "It's awaiting the callback instead of spawning it as a task."
         )
 
-        # Callback should have started (or be about to start)
-        await asyncio.sleep(0.1)
+        # Wait for callback to confirm it started
+        await asyncio.wait_for(callback_started.wait(), timeout=1.0)
         assert callback_started.is_set(), "Callback should have started"
 
-        # Await the returned task to properly clean up
+        # Let callback finish and await the returned task to properly clean up
+        callback_can_finish.set()
         if task:
             await task
 
@@ -591,18 +590,19 @@ class TestCallbackNotBlocking:
         self, mock_tailscale_info, mock_protocol, mock_transport
     ):
         """Verify multiple handshakes don't serialize on slow callbacks."""
-        callback_count = 0
         callbacks_running = []
+        all_callbacks_started = asyncio.Event()
+        release_callbacks = asyncio.Event()
 
-        async def slow_callback(transport):
-            nonlocal callback_count
-            callback_count += 1
-            my_id = callback_count
+        async def blocking_callback(transport):
+            my_id = len(callbacks_running) + 1
             callbacks_running.append(my_id)
-            await asyncio.sleep(0.5)  # Slow callback
+            if len(callbacks_running) == 3:
+                all_callbacks_started.set()
+            await release_callbacks.wait()  # Block until released
             callbacks_running.remove(my_id)
 
-        listener = TailscaleListener(on_connection=slow_callback)
+        listener = TailscaleListener(on_connection=blocking_callback)
         listener._protocol = mock_protocol
         listener._transport = mock_transport
         listener._tailscale_info = mock_tailscale_info
@@ -626,21 +626,22 @@ class TestCallbackNotBlocking:
 
         elapsed = asyncio.get_event_loop().time() - start
 
-        # If callbacks were awaited inline, this would take 1.5s (3 × 0.5s)
-        # With task spawning, it should be nearly instant
-        assert elapsed < 0.3, (
+        # If callbacks were awaited inline, they would block forever
+        # With task spawning, it should return almost immediately
+        assert elapsed < 0.1, (
             f"Processing 3 handshakes took {elapsed:.2f}s. "
             "Callbacks should be spawned as tasks, not awaited inline."
         )
 
-        # Give callbacks time to start
-        await asyncio.sleep(0.1)
+        # Wait for all 3 callbacks to start
+        await asyncio.wait_for(all_callbacks_started.wait(), timeout=1.0)
 
-        # All 3 callbacks should be running concurrently
+        # All 3 callbacks should be running concurrently (blocked on event)
         assert len(callbacks_running) == 3, (
             f"Expected 3 concurrent callbacks, got {len(callbacks_running)}. "
             "Callbacks are serializing instead of running concurrently."
         )
 
-        # Await all tasks to properly clean up
+        # Release callbacks and await tasks
+        release_callbacks.set()
         await asyncio.gather(*tasks)

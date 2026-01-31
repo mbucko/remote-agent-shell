@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import betterproto
 import pytest
@@ -11,6 +11,15 @@ from ras.proto.ras.ras import SessionStatus
 from ras.sessions.agents import AgentInfo
 from ras.sessions.manager import SessionData, SessionManager
 from ras.sessions.persistence import SessionPersistence
+
+
+# Auto-patch asyncio.sleep for all tests in this module
+# The SessionManager has a 0.5s sleep in kill_session for graceful exit
+@pytest.fixture(autouse=True)
+def mock_asyncio_sleep():
+    """Mock asyncio.sleep to run instantly in tests."""
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        yield
 
 
 def which_event(event):

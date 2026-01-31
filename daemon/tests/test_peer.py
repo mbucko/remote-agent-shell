@@ -1,7 +1,7 @@
 """Tests for WebRTC peer connection module."""
 
 import asyncio
-from unittest.mock import AsyncMock, Mock, MagicMock
+from unittest.mock import AsyncMock, Mock, MagicMock, patch
 
 import pytest
 
@@ -136,8 +136,10 @@ class TestPeerConnection:
         """wait_connected raises on timeout."""
         peer = PeerConnection()
 
-        with pytest.raises(PeerConnectionError, match="Connection timeout"):
-            await peer.wait_connected(timeout=0.1)
+        # Mock wait_for to raise TimeoutError immediately
+        with patch("ras.peer.asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+            with pytest.raises(PeerConnectionError, match="Connection timeout"):
+                await peer.wait_connected(timeout=1.0)
 
     def test_on_message_registers_callback(self):
         """on_message registers callback."""

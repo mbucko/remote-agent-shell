@@ -26,6 +26,9 @@ from ras.config import Config, DaemonConfig
 from ras.crypto import compute_signaling_hmac, derive_key
 from ras.proto.ras import SignalRequest, SignalResponse, SignalError
 
+# Mark all tests in this module as integration tests
+pytestmark = pytest.mark.integration
+
 
 # =============================================================================
 # Test Fixtures
@@ -458,8 +461,8 @@ class TestPairingTimeouts:
                     data = await resp.json()
                     session_id = data["session_id"]
 
-                # Wait for expiration
-                await asyncio.sleep(0.2)
+                # Manually expire the session instead of waiting
+                daemon._expire_pairing_session(session_id)
 
                 # Session should be expired
                 async with http.get(f"http://127.0.0.1:{port}/api/pair/{session_id}") as resp:
@@ -780,9 +783,6 @@ class TestConcurrentOperations:
                     ) as resp:
                         assert resp.status == 200
 
-                # Allow first connection to establish
-                await asyncio.sleep(0.1)
-
                 # Second connection (should close first)
                 timestamp2 = int(time.time())
                 body2 = bytes(SignalRequest(
@@ -810,9 +810,11 @@ class TestConcurrentOperations:
                     ) as resp:
                         assert resp.status == 200
 
-                # First peer should have been closed
-                await asyncio.sleep(0.1)
-                # Note: This depends on implementation - may need adjustment
+                # First peer should have been closed (close is called during request handling)
+                # Gather any pending tasks to ensure close completed
+                pending = asyncio.all_tasks() - {asyncio.current_task()}
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
         finally:
             await daemon.stop()
 

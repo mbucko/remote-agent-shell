@@ -1,7 +1,8 @@
 """Tests for authentication handler."""
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch, MagicMock
+from contextlib import asynccontextmanager
 
 import pytest
 
@@ -78,7 +79,8 @@ class TestAuthHandlerSuccess:
                 raise asyncio.CancelledError()
 
         async def receive():
-            await asyncio.sleep(10)
+            # Never called - send raises first
+            raise RuntimeError("Should not be called")
 
         try:
             await handler.run_handshake(send, receive)
@@ -104,7 +106,8 @@ class TestAuthHandlerSuccess:
                 raise asyncio.CancelledError()
 
             async def receive():
-                await asyncio.sleep(10)
+                # Never called - send raises first
+                raise RuntimeError("Should not be called")
 
             try:
                 await handler.run_handshake(send, receive)
@@ -223,7 +226,6 @@ class TestAuthHandlerErrors:
     async def test_timeout_fails(self, auth_key):
         """Timeout fails authentication."""
         handler = AuthHandler(auth_key, "test-device")
-        handler.TIMEOUT = 0.1  # Short timeout for test
 
         messages_sent = []
 
@@ -231,10 +233,15 @@ class TestAuthHandlerErrors:
             messages_sent.append(data)
 
         async def receive():
-            # Never return
-            await asyncio.sleep(10)
+            raise asyncio.TimeoutError()
 
-        result = await handler.run_handshake(send, receive)
+        # Mock asyncio.timeout to raise immediately
+        @asynccontextmanager
+        async def mock_timeout(seconds):
+            yield
+
+        with patch("ras.pairing.auth_handler.asyncio.timeout", mock_timeout):
+            result = await handler.run_handshake(send, receive)
 
         assert result is False
         # Should send error on timeout

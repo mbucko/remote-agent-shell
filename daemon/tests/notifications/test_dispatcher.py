@@ -9,7 +9,7 @@ Covers:
 
 import asyncio
 import time
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -157,14 +157,19 @@ class TestDeduplication:
         """DD02: Same pattern after cooldown triggers 2 notifications."""
         match = make_match(pattern="p1")
 
-        # First dispatch
-        await dispatcher.dispatch("s1", "name", match)
+        # Mock time to control cooldown
+        base_time = 1000.0
+        with patch("ras.notifications.dispatcher.time.time") as mock_time:
+            mock_time.return_value = base_time
 
-        # Wait for cooldown
-        await asyncio.sleep(0.15)
+            # First dispatch
+            await dispatcher.dispatch("s1", "name", match)
 
-        # Second dispatch
-        result = await dispatcher.dispatch("s1", "name", match)
+            # Advance time past cooldown (0.1s cooldown configured in fixture)
+            mock_time.return_value = base_time + 0.15
+
+            # Second dispatch
+            result = await dispatcher.dispatch("s1", "name", match)
 
         assert result is True
         assert broadcast_mock.call_count == 2
@@ -216,14 +221,19 @@ class TestDeduplication:
         """DD06: Match within partial cooldown still suppressed."""
         match = make_match(pattern="p1")
 
-        # First dispatch
-        await dispatcher.dispatch("s1", "name", match)
+        # Mock time to control cooldown
+        base_time = 1000.0
+        with patch("ras.notifications.dispatcher.time.time") as mock_time:
+            mock_time.return_value = base_time
 
-        # Wait 50ms (half of 100ms cooldown)
-        await asyncio.sleep(0.05)
+            # First dispatch
+            await dispatcher.dispatch("s1", "name", match)
 
-        # Second dispatch - should still be suppressed
-        result = await dispatcher.dispatch("s1", "name", match)
+            # Advance time partially (half of 100ms cooldown)
+            mock_time.return_value = base_time + 0.05
+
+            # Second dispatch - should still be suppressed
+            result = await dispatcher.dispatch("s1", "name", match)
 
         assert result is False
         assert broadcast_mock.call_count == 1
@@ -280,15 +290,20 @@ class TestSessionManagement:
         # No session yet
         assert dispatcher.get_cooldown_remaining("s1") == 0.0
 
-        # After dispatch
-        await dispatcher.dispatch("s1", "name", make_match())
-        remaining = dispatcher.get_cooldown_remaining("s1")
-        assert 0 < remaining <= 0.1  # Should be within cooldown
+        # Mock time to control cooldown
+        base_time = 1000.0
+        with patch("ras.notifications.dispatcher.time.time") as mock_time:
+            mock_time.return_value = base_time
 
-        # After cooldown expires
-        await asyncio.sleep(0.15)
-        remaining = dispatcher.get_cooldown_remaining("s1")
-        assert remaining == 0.0
+            # After dispatch
+            await dispatcher.dispatch("s1", "name", make_match())
+            remaining = dispatcher.get_cooldown_remaining("s1")
+            assert 0 < remaining <= 0.1  # Should be within cooldown
+
+            # After cooldown expires
+            mock_time.return_value = base_time + 0.15
+            remaining = dispatcher.get_cooldown_remaining("s1")
+            assert remaining == 0.0
 
 
 # ============================================================================

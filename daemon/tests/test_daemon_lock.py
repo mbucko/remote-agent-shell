@@ -241,28 +241,41 @@ class TestDaemonLockRaceCondition:
 
     def test_concurrent_acquire_only_one_succeeds(self, tmp_path):
         """When multiple processes try to acquire, only one should succeed."""
+        import threading
+
         lock_file = tmp_path / "daemon.lock"
 
         results = []
+        results_lock = threading.Lock()
+        all_threads_tried = threading.Barrier(5)
+        winner_can_release = threading.Event()
 
         def try_acquire():
             lock = DaemonLock(lock_file)
             try:
                 lock.acquire()
-                results.append("acquired")
-                # Hold for a bit
-                import time
-                time.sleep(0.1)
+                with results_lock:
+                    results.append("acquired")
+                # Wait for all other threads to try (and fail)
+                all_threads_tried.wait(timeout=1.0)
+                # Now release
+                winner_can_release.wait(timeout=1.0)
                 lock.release()
-                results.append("released")
+                with results_lock:
+                    results.append("released")
             except DaemonAlreadyRunningError:
-                results.append("failed")
+                with results_lock:
+                    results.append("failed")
+                all_threads_tried.wait(timeout=1.0)
 
-        import threading
         threads = [threading.Thread(target=try_acquire) for _ in range(5)]
 
         for t in threads:
             t.start()
+
+        # Let winner release after barrier is passed
+        winner_can_release.set()
+
         for t in threads:
             t.join()
 
@@ -280,32 +293,21 @@ class TestDaemonLockIntegration:
         """Simulate two daemon instances - second should fail to start."""
         lock_file = tmp_path / "daemon.lock"
 
-        async def fake_daemon_start(lock: DaemonLock, name: str) -> str:
-            """Simulate daemon startup."""
-            try:
-                lock.acquire()
-                # Simulate daemon running
-                await asyncio.sleep(0.5)
-                return f"{name}: started"
-            except DaemonAlreadyRunningError:
-                return f"{name}: failed - daemon already running"
-            finally:
-                lock.release()
-
-        # Start first daemon
+        # First daemon acquires lock synchronously
         lock1 = DaemonLock(lock_file)
-        task1 = asyncio.create_task(fake_daemon_start(lock1, "daemon1"))
+        lock1.acquire()
 
-        # Give first daemon time to acquire lock
-        await asyncio.sleep(0.1)
-
-        # Try to start second daemon while first is running
+        # Second daemon tries to acquire - should fail immediately
         lock2 = DaemonLock(lock_file)
-        task2 = asyncio.create_task(fake_daemon_start(lock2, "daemon2"))
+        try:
+            lock2.acquire()
+            result2 = "daemon2: started"
+        except DaemonAlreadyRunningError:
+            result2 = "daemon2: failed - daemon already running"
 
-        result1, result2 = await asyncio.gather(task1, task2)
+        # First daemon releases
+        lock1.release()
 
-        assert "started" in result1
         assert "failed" in result2
         assert "already running" in result2
 
@@ -317,7 +319,6 @@ class TestDaemonLockIntegration:
         # First daemon runs and stops
         lock1 = DaemonLock(lock_file)
         lock1.acquire()
-        await asyncio.sleep(0.1)
         lock1.release()
 
         # Second daemon should now succeed

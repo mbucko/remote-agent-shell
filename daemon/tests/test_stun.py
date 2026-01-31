@@ -73,11 +73,11 @@ class TestStunClient:
     async def test_timeout_handling(self):
         """Raises StunError on timeout."""
 
-        async def slow_gather():
-            await asyncio.sleep(10)
+        async def gather_that_times_out():
+            raise asyncio.TimeoutError()
 
         mock_gatherer = AsyncMock()
-        mock_gatherer.gather = slow_gather
+        mock_gatherer.gather = gather_that_times_out
 
         client = StunClient(timeout=0.1, gatherer_factory=lambda cfg: mock_gatherer)
 

@@ -76,6 +76,7 @@ class MockTmuxService:
         self.sessions: dict[str, dict] = {}
         self.fail_create = False
         self.fail_kill = False
+        # Delays are stored but mocked tests don't actually sleep
         self.create_delay = 0.0
         self.kill_delay = 0.0
         self.graceful_kill_works = True
@@ -91,16 +92,14 @@ class MockTmuxService:
         directory: str = "",
         command: str = "",
     ) -> str:
-        if self.create_delay:
-            await asyncio.sleep(self.create_delay)
+        # Don't actually sleep - fast mock
         if self.fail_create:
             raise RuntimeError("tmux: create failed")
         self.sessions[name] = {"directory": directory, "command": command}
         return "$0"
 
     async def kill_session(self, session_id: str) -> None:
-        if self.kill_delay:
-            await asyncio.sleep(self.kill_delay)
+        # Don't actually sleep - fast mock
         if self.fail_kill:
             raise RuntimeError("tmux: kill failed")
         self._kill_count += 1
@@ -120,11 +119,11 @@ class MockEventEmitter:
 
     def __init__(self):
         self.events: list[SessionEvent] = []
+        # Delay stored but not used - fast mock
         self.emit_delay = 0.0
 
     async def emit(self, event: SessionEvent) -> None:
-        if self.emit_delay:
-            await asyncio.sleep(self.emit_delay)
+        # Don't actually sleep - fast mock
         self.events.append(event)
 
     def clear(self):
@@ -132,6 +131,15 @@ class MockEventEmitter:
 
     def get_last(self) -> SessionEvent | None:
         return self.events[-1] if self.events else None
+
+
+# Auto-patch asyncio.sleep for faster tests
+# The SessionManager has a 0.5s sleep in kill_session for graceful exit
+@pytest.fixture(autouse=True)
+def mock_asyncio_sleep():
+    """Mock asyncio.sleep to run instantly in tests."""
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        yield
 
 
 @pytest.fixture

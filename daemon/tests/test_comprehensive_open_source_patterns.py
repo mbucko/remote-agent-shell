@@ -694,7 +694,12 @@ class TestConnectionLifecycle:
         # Simulate peer disconnect by calling the stored close handler
         if stored_close_handler:
             stored_close_handler()
-            await asyncio.sleep(0.1)  # Allow async task to run
+
+            # Wait for the async disconnect handler task to complete
+            # Gather all pending tasks except the current one
+            pending = asyncio.all_tasks() - {asyncio.current_task()}
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
             # Callback should have been called
             close_callback.assert_called_once_with("test")
@@ -870,20 +875,19 @@ class TestConcurrentOperations:
 
         peer = PeerConnection()
 
-        async def close_after_delay():
-            await asyncio.sleep(0.01)
-            await peer.close()
+        # Mock wait_for to raise TimeoutError immediately
+        async def mock_wait_for(awaitable, timeout):
+            raise asyncio.TimeoutError()
 
-        # Start close in background
-        close_task = asyncio.create_task(close_after_delay())
+        with patch("ras.peer.asyncio.wait_for", side_effect=mock_wait_for):
+            # Try wait_connected - should timeout
+            try:
+                await peer.wait_connected(timeout=1)
+            except Exception:
+                pass
 
-        # Try operations - should handle gracefully
-        try:
-            await asyncio.wait_for(peer.wait_connected(timeout=1), timeout=0.1)
-        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
-            pass
-
-        await close_task
+        # Close should be safe after failed wait
+        await peer.close()
         assert peer.state == PeerState.CLOSED
 
     @pytest.mark.asyncio

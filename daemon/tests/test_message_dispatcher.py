@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -75,18 +75,29 @@ class TestMessageDispatcher:
     async def test_handler_timeout(self, caplog):
         """Slow handler is timed out."""
         caplog.set_level(logging.ERROR, logger="ras.message_dispatcher")
-        dispatcher = MessageDispatcher(handler_timeout=0.1)
+        dispatcher = MessageDispatcher(handler_timeout=1.0)
 
-        async def slow_handler(device_id, message):
-            await asyncio.sleep(1.0)
+        handler = AsyncMock()
 
-        dispatcher.register("session", slow_handler)
+        dispatcher.register("session", handler)
 
-        await dispatcher.dispatch(
-            device_id="device1",
-            message_type="session",
-            message={"test": "data"},
-        )
+        # Mock wait_for to cancel the coroutine and raise TimeoutError
+        async def mock_wait_for(coro, timeout):
+            # Cancel the coroutine to prevent "never awaited" warning
+            task = asyncio.create_task(coro)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            raise asyncio.TimeoutError()
+
+        with patch("ras.message_dispatcher.asyncio.wait_for", side_effect=mock_wait_for):
+            await dispatcher.dispatch(
+                device_id="device1",
+                message_type="session",
+                message={"test": "data"},
+            )
 
         assert "Handler timeout for session" in caplog.text
 

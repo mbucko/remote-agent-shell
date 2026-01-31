@@ -57,7 +57,7 @@ class MockTailscaleTransport:
 
     async def receive(self, timeout: float = 10.0) -> bytes:
         if not self.receive_data:
-            await asyncio.sleep(timeout)
+            # Don't actually sleep - just raise immediately
             raise TimeoutError("No data")
         return self.receive_data
 
@@ -189,17 +189,20 @@ class TestCancellationPropagation:
     async def test_cancelled_error_during_async_task(self):
         """asyncio.CancelledError should propagate through async tasks."""
         cancelled = False
+        task_started = asyncio.Event()
+        never_set = asyncio.Event()
 
         async def async_operation():
             nonlocal cancelled
             try:
-                await asyncio.sleep(10)  # Long sleep
+                task_started.set()
+                await never_set.wait()  # Wait forever until cancelled
             except asyncio.CancelledError:
                 cancelled = True
                 raise
 
         task = asyncio.create_task(async_operation())
-        await asyncio.sleep(0.01)  # Let it start
+        await task_started.wait()  # Wait for task to start
         task.cancel()
 
         with pytest.raises(asyncio.CancelledError):
@@ -213,10 +216,12 @@ class TestCancellationPropagation:
         from ras.peer import PeerConnection
 
         peer = PeerConnection()
+        task_started = asyncio.Event()
 
         async def wait_and_cancel():
             task = asyncio.create_task(peer.wait_connected(timeout=10))
-            await asyncio.sleep(0.01)
+            task_started.set()
+            # Cancel immediately - we don't need to wait for it to "start"
             task.cancel()
             await task
 
@@ -227,16 +232,23 @@ class TestCancellationPropagation:
     async def test_multiple_tasks_cancellation(self):
         """Multiple async tasks should all be cancellable."""
         tasks_cancelled = []
+        all_tasks_started = asyncio.Event()
+        never_set = asyncio.Event()
+        started_count = 0
 
         async def cancelable_task(idx: int):
+            nonlocal started_count
             try:
-                await asyncio.sleep(10)
+                started_count += 1
+                if started_count == 5:
+                    all_tasks_started.set()
+                await never_set.wait()  # Wait forever until cancelled
             except asyncio.CancelledError:
                 tasks_cancelled.append(idx)
                 raise
 
         tasks = [asyncio.create_task(cancelable_task(i)) for i in range(5)]
-        await asyncio.sleep(0.01)
+        await all_tasks_started.wait()  # Wait for all tasks to start
 
         for task in tasks:
             task.cancel()

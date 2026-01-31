@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from ras.output_streamer import OutputStreamer
 
@@ -73,22 +73,26 @@ class TestOutputStreamerThrottle:
     async def test_throttle_batches_rapid_writes(self):
         """Rapid writes are batched within throttle window."""
         callback = AsyncMock()
-        streamer = OutputStreamer(callback=callback, throttle_ms=50)
 
-        await streamer.start()
+        # Mock asyncio.sleep in the output_streamer module to run instantly
+        with patch("ras.output_streamer.asyncio.sleep", new_callable=AsyncMock):
+            streamer = OutputStreamer(callback=callback, throttle_ms=50)
 
-        # Write rapidly
-        for i in range(10):
-            streamer.write(f"line{i}\n".encode())
+            await streamer.start()
 
-        # Wait for throttle window + a bit more
-        await asyncio.sleep(0.1)
+            # Write rapidly
+            for i in range(10):
+                streamer.write(f"line{i}\n".encode())
 
-        # Should have batched into fewer calls than writes
-        # (exact number depends on timing, but should be less than 10)
-        assert callback.call_count < 10
+            # Force flush to ensure all data is sent
+            await streamer.flush()
 
-        await streamer.stop()
+            # Should have batched into fewer calls than writes
+            # With mocked sleep, all writes happen before any throttle delay
+            # so they should all be batched into one call
+            assert callback.call_count <= 2  # Initial flush + final flush
+
+            await streamer.stop()
 
     @pytest.mark.asyncio
     async def test_flush_sends_immediately(self):
@@ -165,11 +169,11 @@ class TestOutputStreamerErrors:
 
         await streamer.start()
         streamer.write(b"data1")
-        await asyncio.sleep(0.05)
+        await streamer.flush()
 
         # Should still be able to write more
         streamer.write(b"data2")
-        await asyncio.sleep(0.05)
+        await streamer.flush()
 
         # Callback was called multiple times despite errors
         assert callback.call_count >= 1

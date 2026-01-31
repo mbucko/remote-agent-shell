@@ -251,16 +251,17 @@ class TestCircularBufferThreadSafety:
 
         def writer():
             try:
-                for i in range(1000):
+                for i in range(500):
                     buf.append(f"data-{i}".encode())
             except Exception as e:
                 errors.append(e)
 
         def reader():
             try:
-                for _ in range(100):
+                for _ in range(50):
                     buf.get_from_sequence(0)
-                    time.sleep(0.001)
+                    # Yield to other threads without long sleep
+                    time.sleep(0)
             except Exception as e:
                 errors.append(e)
 

@@ -6,6 +6,9 @@ These tests use real aiortc peer connections to verify ICE works correctly.
 import asyncio
 
 import pytest
+
+# Mark all tests in this module as integration tests
+pytestmark = pytest.mark.integration
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection
 
 from ras.sdp_validator import extract_candidates, validate_sdp

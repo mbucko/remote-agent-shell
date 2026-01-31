@@ -278,11 +278,14 @@ class TestNtfySignalingSubscriberPublish:
 
     @pytest.fixture
     def subscriber(self, master_secret):
-        return NtfySignalingSubscriber(
+        sub = NtfySignalingSubscriber(
             master_secret=master_secret,
             session_id="test-session-123",
             ntfy_topic="test-topic",
         )
+        # Override retry delays for fast tests
+        sub.PUBLISH_RETRY_DELAYS = [0, 0, 0]
+        return sub
 
     @pytest.mark.asyncio
     async def test_publish_success(self, subscriber):
