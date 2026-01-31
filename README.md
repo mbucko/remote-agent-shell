@@ -11,6 +11,34 @@ A mobile app to remotely control your AI coding agents (Claude Code, Cursor, Cli
 - **QR Code Pairing** - Secure device pairing with mutual authentication
 - **P2P Connection** - Direct WebRTC connection, no cloud required
 - **NAT Traversal** - ntfy signaling relay when direct connection fails
+- **Tailscale Direct** - Fastest connection when both devices are on Tailscale
+
+## Connection Methods
+
+The app tries multiple connection strategies in order of preference:
+
+### Working
+
+| Method | Scenario | Status |
+|--------|----------|--------|
+| **Tailscale Direct** | Both devices on same Tailscale network | ✅ Works |
+| **Local Network** | Same WiFi/LAN, direct HTTP signaling | ✅ Works |
+| **WebRTC + STUN** | Different networks, typical home NAT | ✅ Works |
+| **WebRTC + ntfy** | Signaling relay when direct fails | ✅ Works |
+
+### TODO
+
+| Method | Scenario | Status |
+|--------|----------|--------|
+| **TURN Relay** | Fallback when P2P fails completely | 🚧 Not implemented |
+| **Hairpin NAT** | Both devices behind same public IP | 🚧 Detected but no workaround |
+| **Symmetric NAT** | Both on commercial VPN (NordVPN, etc.) | 🚧 Detected but no workaround |
+
+### Connection Priority
+
+1. **Tailscale** (if both on Tailscale) - Direct UDP, lowest latency
+2. **Local HTTP** (same network) - Direct WebRTC signaling
+3. **ntfy relay** (cross-NAT) - WebRTC via encrypted relay
 
 ## Quick Start
 
