@@ -67,6 +67,9 @@ class WebRTCClient(
     @Volatile
     private var lastReceiveTime: Long = 0
 
+    // Callback for when connection is lost (data channel closed or ICE failed)
+    private var onDisconnect: (() -> Unit)? = null
+
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
         PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer()
@@ -297,6 +300,14 @@ class WebRTCClient(
     fun getOwner(): ConnectionOwnership = owner
 
     /**
+     * Set callback for when connection is lost.
+     * Called when data channel closes or ICE connection fails.
+     */
+    fun onDisconnect(callback: () -> Unit) {
+        onDisconnect = callback
+    }
+
+    /**
      * Transfer ownership of this connection to a new owner.
      *
      * @param newOwner The new owner to transfer to
@@ -412,6 +423,8 @@ class WebRTCClient(
                     PeerConnection.IceConnectionState.DISCONNECTED,
                     PeerConnection.IceConnectionState.FAILED -> {
                         Log.w(TAG, "ICE connection lost: $state")
+                        // Notify listener that connection is lost
+                        onDisconnect?.invoke()
                     }
                     else -> {}
                 }
@@ -451,6 +464,10 @@ class WebRTCClient(
                     }
                     DataChannel.State.CLOSED -> {
                         Log.w(TAG, "Data channel closed")
+                        // Close message channel so receive() doesn't hang
+                        messageChannel.close()
+                        // Notify listener that connection is lost
+                        onDisconnect?.invoke()
                     }
                     else -> {}
                 }

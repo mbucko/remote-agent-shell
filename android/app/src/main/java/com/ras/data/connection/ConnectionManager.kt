@@ -161,6 +161,15 @@ class ConnectionManager @Inject constructor(
             codec = BytesCodec(authKey.copyOf())  // Copy to avoid external mutation
             _isConnected.value = true
             _isHealthy.value = true
+
+            // Set up disconnect callback to handle connection loss
+            client.onDisconnect {
+                Log.w(TAG, "WebRTC connection lost (callback)")
+                scope.launch {
+                    handleConnectionLost("WebRTC connection lost")
+                }
+            }
+
             startEventListener()
             startHeartbeatMonitor()
             startPingLoop()
@@ -210,6 +219,15 @@ class ConnectionManager @Inject constructor(
             codec = BytesCodec(authKey.copyOf())
             _isConnected.value = true
             _isHealthy.value = true
+
+            // Set up disconnect callback for WebRTC transports
+            webRtcClient?.onDisconnect {
+                Log.w(TAG, "WebRTC transport connection lost (callback)")
+                scope.launch {
+                    handleConnectionLost("WebRTC connection lost")
+                }
+            }
+
             startTransportEventListener()
             startHeartbeatMonitor()
             startPingLoop()
@@ -317,6 +335,35 @@ class ConnectionManager @Inject constructor(
         codec?.zeroKey()
         codec = null
         Log.i(TAG, "Disconnected from daemon")
+    }
+
+    /**
+     * Handle unexpected connection loss (WebRTC channel closed, ICE failed, etc).
+     * Cleans up and emits error so UI can show reconnection prompt.
+     */
+    private fun handleConnectionLost(reason: String) {
+        synchronized(connectionLock) {
+            if (!_isConnected.value) {
+                // Already disconnected, ignore
+                return
+            }
+            Log.w(TAG, "Connection lost: $reason")
+            _isConnected.value = false
+            _isHealthy.value = false
+            _connectionErrors.tryEmit(ConnectionError.Disconnected(reason))
+            // Don't close the client here - it's already closed/broken
+            // Just clean up our state
+            eventListenerJob?.cancel()
+            eventListenerJob = null
+            heartbeatJob?.cancel()
+            heartbeatJob = null
+            pingJob?.cancel()
+            pingJob = null
+            webRtcClient = null
+            transport = null
+            codec?.zeroKey()
+            codec = null
+        }
     }
 
     /**
