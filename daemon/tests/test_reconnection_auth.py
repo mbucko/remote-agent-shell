@@ -281,22 +281,22 @@ class TestNtfyReconnectionManagerAuth:
             on_reconnection=mock_callback,
         )
 
-        # Mock peer
+        # Mock peer with callback pattern (peer uses on_message, not receive)
         mock_peer = AsyncMock()
         mock_peer.wait_connected = AsyncMock()
         mock_peer.close = AsyncMock()
         messages_sent = []
+        message_callback = None
+
+        def capture_on_message(callback):
+            nonlocal message_callback
+            message_callback = callback
+
+        mock_peer.on_message = capture_on_message
 
         async def mock_send(data):
             messages_sent.append(data)
-
-        mock_peer.send = mock_send
-
-        # Simulate client auth response
-        auth_key = bytes(range(32))  # Must match device's master_secret derived key
-
-        async def mock_receive():
-            # Wait for challenge to be sent
+            # When challenge is sent, simulate client response
             if len(messages_sent) == 1:
                 from ras.proto.ras import AuthEnvelope, AuthResponse
                 from ras.crypto import compute_hmac, derive_key
@@ -319,10 +319,11 @@ class TestNtfyReconnectionManagerAuth:
                         nonce=client_nonce
                     )
                 )
-                return bytes(response)
-            raise Exception("Unexpected receive call")
+                # Send response via callback
+                if message_callback:
+                    await message_callback(bytes(response))
 
-        mock_peer.receive = mock_receive
+        mock_peer.send = mock_send
 
         # Call _on_offer_received (simulates ntfy OFFER processed)
         await manager._on_offer_received(
@@ -363,22 +364,29 @@ class TestNtfyReconnectionManagerAuth:
         mock_peer = AsyncMock()
         mock_peer.wait_connected = AsyncMock()
         mock_peer.close = AsyncMock()
-        mock_peer.send = AsyncMock()
+        message_callback = None
 
-        # Simulate invalid auth response
-        async def mock_receive():
+        def capture_on_message(callback):
+            nonlocal message_callback
+            message_callback = callback
+
+        mock_peer.on_message = capture_on_message
+
+        # When challenge is sent, respond with invalid HMAC
+        async def mock_send(data):
             from ras.proto.ras import AuthEnvelope, AuthResponse
             import secrets
-            # Return WRONG HMAC
+            # Return WRONG HMAC via callback
             response = AuthEnvelope(
                 response=AuthResponse(
                     hmac=secrets.token_bytes(32),  # Wrong HMAC
                     nonce=secrets.token_bytes(32)
                 )
             )
-            return bytes(response)
+            if message_callback:
+                await message_callback(bytes(response))
 
-        mock_peer.receive = mock_receive
+        mock_peer.send = mock_send
 
         await manager._on_offer_received(
             device_id="test-device-123",

@@ -217,6 +217,14 @@ class NtfyReconnectionManager:
         from ras.crypto import derive_key
         auth_key = derive_key(device.master_secret, "auth")
 
+        # Set up message queue for auth (peer uses callback pattern, not receive())
+        auth_queue: asyncio.Queue[bytes] = asyncio.Queue()
+
+        async def on_message(message: bytes) -> None:
+            await auth_queue.put(message)
+
+        peer.on_message(on_message)
+
         # Wait for WebRTC connection before auth
         try:
             await peer.wait_connected(timeout=30.0)
@@ -234,7 +242,7 @@ class NtfyReconnectionManager:
             await peer.send(data)
 
         async def receive_message() -> bytes:
-            return await asyncio.wait_for(peer.receive(), timeout=10.0)
+            return await asyncio.wait_for(auth_queue.get(), timeout=10.0)
 
         try:
             success = await auth_handler.run_handshake(send_message, receive_message)
