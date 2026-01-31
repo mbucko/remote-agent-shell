@@ -52,47 +52,47 @@ install-dev:
 # =============================================================================
 
 test:
-	cd daemon && python -m pytest tests/ -q
+	cd daemon && uv run pytest tests/ -q
 
 test-quick:
-	cd daemon && python -m pytest tests/ -q -m "not integration"
+	cd daemon && uv run pytest tests/ -q -m "not integration"
 
 test-verbose:
-	cd daemon && python -m pytest tests/ -v
+	cd daemon && uv run pytest tests/ -v
 
 test-pairing:
-	cd daemon && python -m pytest tests/pairing/ -v
+	cd daemon && uv run pytest tests/pairing/ -v
 
 test-crypto:
-	cd daemon && python -m pytest tests/crypto/ -v
+	cd daemon && uv run pytest tests/crypto/ -v
 
 test-e2e:
-	cd daemon && python -m pytest tests/pairing/test_e2e_pairing.py -v
+	cd daemon && uv run pytest tests/pairing/test_e2e_pairing.py -v
 
 test-vectors:
-	cd daemon && python -m pytest tests/pairing/test_vectors.py -v
+	cd daemon && uv run pytest tests/pairing/test_vectors.py -v
 
 test-cov:
-	cd daemon && python -m pytest tests/ --cov=src/ras --cov-report=term-missing --cov-report=html
+	cd daemon && uv run pytest tests/ --cov=src/ras --cov-report=term-missing --cov-report=html
 
 test-cov-pairing:
-	cd daemon && python -m pytest tests/pairing/ --cov=src/ras/pairing --cov-report=term-missing
+	cd daemon && uv run pytest tests/pairing/ --cov=src/ras/pairing --cov-report=term-missing
 
 # =============================================================================
 # Code Quality
 # =============================================================================
 
 lint:
-	cd daemon && ruff check src/ tests/
+	cd daemon && uv run ruff check src/ tests/
 
 format:
-	cd daemon && ruff format src/ tests/
+	cd daemon && uv run ruff format src/ tests/
 
 format-check:
-	cd daemon && ruff format --check src/ tests/
+	cd daemon && uv run ruff format --check src/ tests/
 
 typecheck:
-	cd daemon && mypy src/ras --ignore-missing-imports
+	cd daemon && uv run mypy src/ras --ignore-missing-imports
 
 # =============================================================================
 # Proto Generation
@@ -107,7 +107,7 @@ PROTO_OUT := daemon/src/ras/proto/ras
 proto:
 	@echo "Generating Python code from proto files..."
 	@mkdir -p $(PROTO_OUT)
-	cd daemon && python -m grpc_tools.protoc \
+	cd daemon && uv run python -m grpc_tools.protoc \
 		-I../$(PROTO_DIR) \
 		--python_betterproto_out=src/ras/proto/ras \
 		../$(PROTO_DIR)/*.proto
@@ -125,7 +125,7 @@ proto-clean:
 # =============================================================================
 
 build:
-	cd daemon && python -m build
+	cd daemon && uv run python -m build
 
 clean:
 	rm -rf daemon/dist daemon/build daemon/*.egg-info
@@ -139,10 +139,10 @@ clean:
 # =============================================================================
 
 run-pair:
-	cd daemon && PYTHONPATH=src python -c "from ras.cli import main; main()" pair --help
+	cd daemon && uv run ras pair --help
 
 shell:
-	cd daemon && PYTHONPATH=src python -i -c "from ras import *; print('ras module loaded')"
+	cd daemon && uv run python -i -c "from ras import *; print('ras module loaded')"
 
 # =============================================================================
 # Docker (placeholder for future)
@@ -159,10 +159,10 @@ docker-run:
 # =============================================================================
 
 ci-test:
-	cd daemon && python -m pytest tests/ -q --tb=short
+	cd daemon && uv run pytest tests/ -q --tb=short
 
 ci-lint:
-	cd daemon && ruff check src/ tests/ --output-format=github
+	cd daemon && uv run ruff check src/ tests/ --output-format=github
 
 check-all: lint typecheck test
 	@echo "All checks passed!"
