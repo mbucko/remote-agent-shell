@@ -1069,11 +1069,11 @@ class TestE2EEdgeCases:
             on_ip_change=on_ip_change,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.3)  # Wait for many cycles
-        await monitor.stop()
+        # Run monitor with mocked sleep for 20 iterations (one per IP change)
+        async with run_monitor_with_mocked_sleep(monitor, iterations=20):
+            pass
 
-        # Should have published many changes
+        # Should have published many changes (20 IPs after initial)
         assert published_count >= 15  # Allow some timing slack
 
     @pytest.mark.asyncio

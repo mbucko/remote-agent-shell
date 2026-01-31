@@ -283,16 +283,16 @@ class TestMockClipboard:
     @pytest.mark.asyncio
     async def test_simulate_delay(self):
         """MockClipboard can simulate delay."""
+        from unittest.mock import patch, AsyncMock
         from ras.clipboard_platform import MockClipboard
 
         backend = MockClipboard()
-        backend.delay_seconds = 0.1
+        backend.delay_seconds = 0.5
 
-        start = asyncio.get_event_loop().time()
-        await backend.set_text("test")
-        elapsed = asyncio.get_event_loop().time() - start
-
-        assert elapsed >= 0.1
+        # Mock asyncio.sleep to verify it's called with correct delay
+        with patch("ras.clipboard_platform.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await backend.set_text("test")
+            mock_sleep.assert_called_once_with(0.5)
 
     @pytest.mark.asyncio
     async def test_reset(self):
