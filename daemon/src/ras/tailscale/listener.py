@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import struct
-from typing import Awaitable, Callable, Optional, Tuple
+from typing import Awaitable, Callable, Optional, Tuple, Union
 
 from ras.tailscale.detector import detect_tailscale, TailscaleInfo
 from ras.tailscale.transport import (
@@ -166,18 +166,23 @@ class TailscaleListener:
             # No established connection for this address - might be a late handshake or error
             logger.warning(f"Received {len(data)} bytes from unknown address {addr}")
 
-    async def _handle_handshake(self, addr: Tuple[str, int]) -> None:
+    async def _handle_handshake(self, addr: Tuple[str, int]) -> Optional[asyncio.Task]:
         """Handle handshake from phone.
 
         Args:
             addr: Remote (ip, port) tuple
+
+        Returns:
+            Task running the on_connection callback, or None if no callback
+            or re-handshake from existing connection. Callers can await this
+            task if they need to wait for the callback to complete.
         """
         # Check if we already have a connection from this address
         if addr in self._connections:
             logger.debug(f"Re-handshake from existing connection {addr}")
             # Send response but don't create new transport
             self._protocol.send_handshake_response(addr)
-            return
+            return None
 
         logger.info(f"Received Tailscale handshake from {addr}")
 
@@ -192,7 +197,12 @@ class TailscaleListener:
                 addr
             )
             self._connections[addr] = transport
-            await self._on_connection(transport)
+            # Spawn callback as a task and return it.
+            # The callback may wait for data (auth) from the transport,
+            # which requires the receive loop to keep running to route packets.
+            # Returning the task allows callers to await it if needed (e.g., tests).
+            return asyncio.create_task(self._on_connection(transport))
+        return None
 
     def get_capabilities(self) -> dict:
         """Get capabilities for signaling exchange.

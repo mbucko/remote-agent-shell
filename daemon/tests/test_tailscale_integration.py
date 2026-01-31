@@ -114,6 +114,9 @@ class TestFullConnectionFlow:
         # Verify handshake response sent
         mock_protocol.send_handshake_response.assert_called_once_with(phone_addr)
 
+        # Allow callback task to run (it's spawned as a task, not awaited)
+        await asyncio.sleep(0)
+
         # Verify connection created and tracked
         assert phone_addr in listener._connections
         assert len(connections_created) == 1
@@ -194,6 +197,9 @@ class TestTwoClientsFlow:
         handshake = struct.pack(">II", HANDSHAKE_MAGIC, 0)
         await listener._handle_packet(handshake, phone1_addr)
         await listener._handle_packet(handshake, phone2_addr)
+
+        # Allow callback tasks to run (they're spawned as tasks, not awaited)
+        await asyncio.sleep(0)
 
         # Verify separate connections
         assert len(listener._connections) == 2
@@ -314,11 +320,15 @@ class TestEdgeCases:
         # First handshake
         handshake = struct.pack(">II", HANDSHAKE_MAGIC, 0)
         await listener._handle_packet(handshake, phone_addr)
+        # Allow callback task to run
+        await asyncio.sleep(0)
         first_transport = listener._connections[phone_addr]
         assert connection_count[0] == 1
 
         # Re-handshake
         await listener._handle_packet(handshake, phone_addr)
+        # Allow any callback task to run
+        await asyncio.sleep(0)
 
         # Should still be same connection, callback not called again
         assert len(listener._connections) == 1

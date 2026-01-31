@@ -453,3 +453,188 @@ class TestIntegrationStyle:
 
         # Still only one connection
         assert len(listener._connections) == 1
+
+
+class TestCallbackNotBlocking:
+    """Tests that on_connection callback doesn't block the receive loop.
+
+    Critical bug discovered: The listener was awaiting the on_connection
+    callback inline, which blocked the receive loop. This prevented auth
+    messages from being received while the callback was waiting for them.
+
+    Flow that caused deadlock:
+    1. Phone sends handshake
+    2. Daemon receives, creates transport, awaits on_connection callback
+    3. Callback (daemon._on_tailscale_connection) waits for auth via transport.receive()
+    4. Phone sends auth packet
+    5. BUG: Listener's receive loop is blocked in callback, can't receive auth
+    6. After 10s timeout, callback returns
+    7. Only NOW does listener receive the auth packet that was waiting in kernel buffer
+    """
+
+    @pytest.mark.asyncio
+    async def test_callback_should_not_block_receive_loop(
+        self, mock_tailscale_info, mock_protocol, mock_transport
+    ):
+        """Verify receive loop continues while callback is processing.
+
+        This is the critical test for the deadlock bug.
+        """
+        # Track callback execution
+        callback_started = asyncio.Event()
+        callback_received_signal = asyncio.Event()
+        callback_data_received = []
+
+        async def slow_callback(transport):
+            """Callback that waits for data from transport."""
+            callback_started.set()
+            try:
+                # Try to receive data from transport (like daemon does for auth)
+                # This should work if receive loop isn't blocked
+                data = await asyncio.wait_for(
+                    transport._queue.get(),
+                    timeout=1.0
+                )
+                callback_data_received.append(data)
+                callback_received_signal.set()
+            except asyncio.TimeoutError:
+                pass  # Expected if bug exists
+
+        listener = TailscaleListener(on_connection=slow_callback)
+        listener._protocol = mock_protocol
+        listener._transport = mock_transport
+        listener._tailscale_info = mock_tailscale_info
+        listener._running = True
+
+        addr = ("100.64.0.2", 12345)
+
+        # Start handshake (this will create transport and call callback)
+        handshake_task = asyncio.create_task(listener._handle_handshake(addr))
+
+        # Wait for callback to start
+        await asyncio.sleep(0.01)
+        if not callback_started.is_set():
+            await asyncio.wait_for(callback_started.wait(), timeout=2.0)
+
+        # Now send a data packet while callback is still running
+        # If bug exists: receive loop is blocked, this won't be processed
+        # If fixed: receive loop processes this and enqueues to transport
+        auth_data = struct.pack(">I", 4) + b"test"
+        await listener._handle_packet(auth_data, addr)
+
+        # Wait a bit to see if callback gets the data
+        try:
+            await asyncio.wait_for(callback_received_signal.wait(), timeout=0.5)
+            # Success! Callback received data while it was running
+            assert len(callback_data_received) == 1
+        except asyncio.TimeoutError:
+            # Bug exists - callback didn't receive data
+            # Let handshake task finish to avoid hanging
+            handshake_task.cancel()
+            try:
+                await handshake_task
+            except asyncio.CancelledError:
+                pass
+
+            pytest.fail(
+                "Callback timed out waiting for data. "
+                "This indicates the receive loop is blocked by the callback. "
+                "Fix: Use asyncio.create_task() instead of await for the callback."
+            )
+
+        await handshake_task
+
+    @pytest.mark.asyncio
+    async def test_handle_handshake_spawns_callback_as_task(
+        self, mock_tailscale_info, mock_protocol, mock_transport
+    ):
+        """Verify _handle_handshake returns quickly (doesn't await callback)."""
+        callback_duration = 1.0  # Callback will take 1 second
+        callback_started = asyncio.Event()
+
+        async def slow_callback(transport):
+            callback_started.set()
+            await asyncio.sleep(callback_duration)
+
+        listener = TailscaleListener(on_connection=slow_callback)
+        listener._protocol = mock_protocol
+        listener._transport = mock_transport
+        listener._tailscale_info = mock_tailscale_info
+        listener._running = True
+
+        addr = ("100.64.0.2", 12345)
+
+        # _handle_handshake should return quickly, not wait for slow callback
+        start = asyncio.get_event_loop().time()
+        await listener._handle_handshake(addr)
+        elapsed = asyncio.get_event_loop().time() - start
+
+        # If _handle_handshake awaited the callback, it would take ~1 second
+        # If it spawns a task, it should return almost immediately
+        assert elapsed < 0.5, (
+            f"_handle_handshake took {elapsed:.2f}s but should return immediately. "
+            "It's awaiting the callback instead of spawning it as a task."
+        )
+
+        # Callback should have started (or be about to start)
+        await asyncio.sleep(0.1)
+        assert callback_started.is_set(), "Callback should have started"
+
+        # Wait for callback to complete to avoid warnings
+        await asyncio.sleep(callback_duration)
+
+    @pytest.mark.asyncio
+    async def test_multiple_handshakes_can_process_concurrently(
+        self, mock_tailscale_info, mock_protocol, mock_transport
+    ):
+        """Verify multiple handshakes don't serialize on slow callbacks."""
+        callback_count = 0
+        callbacks_running = []
+
+        async def slow_callback(transport):
+            nonlocal callback_count
+            callback_count += 1
+            my_id = callback_count
+            callbacks_running.append(my_id)
+            await asyncio.sleep(0.5)  # Slow callback
+            callbacks_running.remove(my_id)
+
+        listener = TailscaleListener(on_connection=slow_callback)
+        listener._protocol = mock_protocol
+        listener._transport = mock_transport
+        listener._tailscale_info = mock_tailscale_info
+        listener._running = True
+
+        # Handle multiple handshakes rapidly
+        addrs = [
+            ("100.64.0.2", 12345),
+            ("100.64.0.3", 12346),
+            ("100.64.0.4", 12347),
+        ]
+
+        start = asyncio.get_event_loop().time()
+
+        # All handshakes should complete quickly
+        for addr in addrs:
+            await listener._handle_handshake(addr)
+
+        elapsed = asyncio.get_event_loop().time() - start
+
+        # If callbacks were awaited inline, this would take 1.5s (3 × 0.5s)
+        # With task spawning, it should be nearly instant
+        assert elapsed < 0.3, (
+            f"Processing 3 handshakes took {elapsed:.2f}s. "
+            "Callbacks should be spawned as tasks, not awaited inline."
+        )
+
+        # Give callbacks time to start
+        await asyncio.sleep(0.1)
+
+        # All 3 callbacks should be running concurrently
+        assert len(callbacks_running) == 3, (
+            f"Expected 3 concurrent callbacks, got {len(callbacks_running)}. "
+            "Callbacks are serializing instead of running concurrently."
+        )
+
+        # Wait for all callbacks to complete
+        await asyncio.sleep(0.6)
