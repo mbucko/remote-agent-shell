@@ -192,7 +192,8 @@ private fun CapabilitySection(
     daemonCapabilities: DaemonCapabilitiesInfo?,
     exchangeError: String?,
     exchangeSteps: List<String>,
-    isExchanging: Boolean
+    isExchanging: Boolean,
+    isFinalFailure: Boolean = false
 ) {
     Box(
         modifier = Modifier
@@ -221,7 +222,13 @@ private fun CapabilitySection(
             CapabilityRow(
                 label = "Daemon",
                 value = when {
-                    exchangeError != null -> "Failed: $exchangeError"
+                    exchangeError != null -> {
+                        if (isFinalFailure) {
+                            "Failed: $exchangeError"
+                        } else {
+                            "Skipped (using ntfy)"
+                        }
+                    }
                     daemonCapabilities != null -> {
                         if (daemonCapabilities.tailscaleIp != null) {
                             "Tailscale ${daemonCapabilities.tailscaleIp}:${daemonCapabilities.tailscalePort}"
@@ -233,7 +240,8 @@ private fun CapabilitySection(
                     else -> "Pending"
                 },
                 isComplete = daemonCapabilities != null,
-                isError = exchangeError != null
+                isError = exchangeError != null && isFinalFailure,
+                isSkipped = exchangeError != null && !isFinalFailure
             )
 
             // Detailed exchange steps
@@ -260,14 +268,20 @@ private fun CapabilityRow(
     label: String,
     value: String,
     isComplete: Boolean,
-    isError: Boolean = false
+    isError: Boolean = false,
+    isSkipped: Boolean = false
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = if (isError) "x" else if (isComplete) "+" else "-",
+            text = when {
+                isError -> "x"
+                isSkipped -> "~"
+                isComplete -> "+"
+                else -> "-"
+            },
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
             color = when {
@@ -333,7 +347,7 @@ private fun StrategyRow(strategy: StrategyInfo) {
         val (symbol, color) = when (strategy.status) {
             StrategyStatus.DETECTING -> "-" to MaterialTheme.colorScheme.onSurfaceVariant
             StrategyStatus.AVAILABLE -> "+" to MaterialTheme.colorScheme.primary
-            StrategyStatus.UNAVAILABLE -> "x" to MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+            StrategyStatus.UNAVAILABLE -> "-" to MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             StrategyStatus.CONNECTING -> "*" to MaterialTheme.colorScheme.tertiary
             StrategyStatus.FAILED -> "x" to MaterialTheme.colorScheme.error
             StrategyStatus.SUCCEEDED -> "+" to MaterialTheme.colorScheme.primary
@@ -540,7 +554,8 @@ private fun ConnectionFailedContent(
                     daemonCapabilities = log.daemonCapabilities,
                     exchangeError = log.capabilityExchangeError,
                     exchangeSteps = log.capabilityExchangeSteps,
-                    isExchanging = false
+                    isExchanging = false,
+                    isFinalFailure = true
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
