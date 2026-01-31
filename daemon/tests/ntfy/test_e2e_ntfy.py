@@ -172,10 +172,9 @@ class TestE2EHappyPath:
             on_ip_change=on_ip_change,
         )
 
-        # Run the flow
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        # Run the flow with mocked sleep (2 iterations: initial + 1 change)
+        async with run_monitor_with_mocked_sleep(monitor, iterations=2):
+            pass
 
         # Verify message was published
         messages = mock_server.get_messages(topic)
@@ -220,9 +219,9 @@ class TestE2EHappyPath:
             on_ip_change=on_ip_change,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.1)
-        await monitor.stop()
+        # Run with mocked sleep (4 iterations: initial + 3 changes)
+        async with run_monitor_with_mocked_sleep(monitor, iterations=4):
+            pass
 
         # Verify all changes published
         messages = mock_server.get_messages(topic)
@@ -268,9 +267,9 @@ class TestE2EHappyPath:
             on_ip_change=on_ip_change,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        # Run with mocked sleep (2 iterations: initial + 1 change)
+        async with run_monitor_with_mocked_sleep(monitor, iterations=2):
+            pass
 
         assert published_ips == [("1.2.3.4", 9999)]
 
@@ -306,9 +305,9 @@ class TestE2EHappyPath:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        # Run with mocked sleep (3 iterations: initial + 2 same IPs)
+        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+            pass
 
         callback.assert_not_called()
         assert len(mock_server.messages) == 0
@@ -339,9 +338,9 @@ class TestE2EErrorHandling:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        # Run with mocked sleep (3 iterations to cover all side_effects)
+        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+            pass
 
         # Should still be running (not crashed)
         assert stun_client.get_public_ip.call_count >= 3
@@ -411,9 +410,9 @@ class TestE2EErrorHandling:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        # Run with mocked sleep (3 iterations: initial + 2 changes)
+        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+            pass
 
         # Both callbacks should have been attempted
         assert callback.call_count == 2
@@ -496,9 +495,20 @@ class TestE2EErrorHandling:
             on_ip_change=on_ip_change,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.08)
-        await monitor.stop()
+        # Mock both monitor and publisher sleeps
+        sleep_count = [0]
+
+        async def mock_monitor_sleep(delay):
+            sleep_count[0] += 1
+            if sleep_count[0] >= 3:
+                monitor._running = False
+
+        with patch("ras.ip_monitor.monitor.asyncio.sleep", side_effect=mock_monitor_sleep):
+            with patch("ras.ntfy.publisher.asyncio.sleep", return_value=None):
+                await monitor.start()
+                pending = asyncio.all_tasks() - {asyncio.current_task()}
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
 
         # Both IP changes should have been detected
         assert callbacks_received == ["2.2.2.2", "3.3.3.3"]
@@ -784,20 +794,20 @@ class TestE2EConcurrency:
     """Test concurrent operations."""
 
     @pytest.mark.asyncio
-    async def test_concurrent_ip_monitors(self):
-        """Multiple IP monitors can run concurrently."""
+    async def test_multiple_ip_monitors_work_independently(self):
+        """Multiple IP monitors work independently with different STUN clients."""
         callbacks_called = {"monitor1": 0, "monitor2": 0}
 
         stun1 = AsyncMock()
         stun1.get_public_ip.side_effect = [
-            ("1.1.1.1", 8821),
-            ("2.2.2.2", 8821),
+            ("1.1.1.1", 8821),  # Initial
+            ("2.2.2.2", 8821),  # Change
         ]
 
         stun2 = AsyncMock()
         stun2.get_public_ip.side_effect = [
-            ("3.3.3.3", 8821),
-            ("4.4.4.4", 8821),
+            ("3.3.3.3", 8821),  # Initial
+            ("4.4.4.4", 8821),  # Change
         ]
 
         async def callback1(ip, port):
@@ -809,9 +819,12 @@ class TestE2EConcurrency:
         monitor1 = IpMonitor(stun1, check_interval=0.01, on_ip_change=callback1)
         monitor2 = IpMonitor(stun2, check_interval=0.01, on_ip_change=callback2)
 
-        await asyncio.gather(monitor1.start(), monitor2.start())
-        await asyncio.sleep(0.05)
-        await asyncio.gather(monitor1.stop(), monitor2.stop())
+        # Run each monitor independently
+        async with run_monitor_with_mocked_sleep(monitor1, iterations=2):
+            pass
+
+        async with run_monitor_with_mocked_sleep(monitor2, iterations=2):
+            pass
 
         assert callbacks_called["monitor1"] == 1
         assert callbacks_called["monitor2"] == 1
@@ -926,17 +939,23 @@ class TestE2ELifecycle:
             callback2_calls.append(ip)
 
         monitor = IpMonitor(stun, check_interval=0.02, on_ip_change=callback1)
-        await monitor.start()
 
-        # Wait for first change
-        await asyncio.sleep(0.03)
+        # Mock sleep to change callback after first iteration
+        iteration = [0]
 
-        # Change callback
-        monitor.set_callback(callback2)
+        async def mock_sleep(delay):
+            iteration[0] += 1
+            if iteration[0] == 2:
+                # After first change detected, switch callback
+                monitor.set_callback(callback2)
+            elif iteration[0] >= 3:
+                monitor._running = False
 
-        # Wait for second change
-        await asyncio.sleep(0.03)
-        await monitor.stop()
+        with patch("ras.ip_monitor.monitor.asyncio.sleep", side_effect=mock_sleep):
+            await monitor.start()
+            pending = asyncio.all_tasks() - {asyncio.current_task()}
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
         assert callback1_calls == ["2.2.2.2"]
         assert callback2_calls == ["3.3.3.3"]

@@ -27,6 +27,12 @@ from ras.ntfy_signaling.validation import NONCE_SIZE
 from ras.proto.ras.ras import NtfySignalMessage, NtfySignalMessageMessageType
 from ras.server import UnifiedServer
 
+# Helper to let async tasks process
+async def yield_to_pending_tasks():
+    """Yield to pending async tasks briefly."""
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
 
 class MockIpProvider:
     """Mock IP provider for testing."""
@@ -204,7 +210,7 @@ class TestNtfyOfferProcessing:
         await pairing_session._ntfy_subscriber._process_message(encrypted)
 
         # Wait for processing
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
 
         # Verify answer was published
         assert len(published) == 1
@@ -286,7 +292,7 @@ class TestNtfyAnswerCreation:
 
         # Process offer
         await pairing_session._ntfy_subscriber._process_message(encrypted_offer)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
 
         # Decrypt answer with same key
         signaling_key = derive_signaling_key(master_secret)
@@ -334,7 +340,7 @@ class TestNtfyAnswerCreation:
 
         before = int(time.time())
         await pairing_session._ntfy_subscriber._process_message(encrypted_offer)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
         after = int(time.time())
 
         # Decrypt and check timestamp
@@ -445,7 +451,7 @@ class TestNtfyClockSkewBoundary:
         )
 
         await pairing_session._ntfy_subscriber._process_message(encrypted)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
 
         # Should be accepted (exactly at boundary)
         assert len(published) == 1
@@ -514,7 +520,7 @@ class TestNtfyClockSkewBoundary:
         )
 
         await pairing_session._ntfy_subscriber._process_message(encrypted)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
 
         # Should be accepted (exactly at boundary)
         assert len(published) == 1
@@ -597,7 +603,7 @@ class TestNtfyLargeSdp:
         )
 
         await pairing_session._ntfy_subscriber._process_message(encrypted)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
 
         # Should handle large SDP successfully
         assert len(published) == 1
@@ -644,7 +650,7 @@ class TestNtfyUnicodeDeviceName:
         )
 
         await pairing_session._ntfy_subscriber._process_message(encrypted)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
 
         # Should succeed
         assert len(published) == 1
@@ -741,7 +747,7 @@ class TestNtfyDuplicateMessage:
         await pairing_session._ntfy_subscriber._process_message(encrypted)
         await pairing_session._ntfy_subscriber._process_message(encrypted)
         await pairing_session._ntfy_subscriber._process_message(encrypted)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
 
         # Should only respond once (nonce replay protection)
         assert publish_count == 1
@@ -791,6 +797,7 @@ class TestNtfySessionTimeoutCleanup:
     """Tests for session timeout cleanup."""
 
     @pytest.mark.asyncio
+    @pytest.mark.integration  # Uses real time for timeout
     async def test_session_timeout_cleans_up_subscriber(self, device_store):
         """Session expiration cleans up ntfy subscriber."""
         # Create server with very short timeout for testing
@@ -798,7 +805,7 @@ class TestNtfySessionTimeoutCleanup:
             device_store=device_store,
             ip_provider=MockIpProvider(),
             stun_servers=[],
-            pairing_timeout=0.5,  # 500ms timeout
+            pairing_timeout=0.1,  # 100ms timeout for faster test
         )
         await server.start(host="127.0.0.1", port=0)
 
@@ -816,8 +823,8 @@ class TestNtfySessionTimeoutCleanup:
 
             assert subscriber.is_subscribed()
 
-            # Wait for timeout
-            await asyncio.sleep(1.0)
+            # Wait for timeout (slightly longer than pairing_timeout)
+            await asyncio.sleep(0.2)
 
             # Verify cleanup
             assert not subscriber.is_subscribed()
@@ -868,12 +875,12 @@ class TestNtfySecurityRequirements:
 
         # First message should succeed
         await pairing_session._ntfy_subscriber._process_message(encrypted)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
         assert publish_count == 1
 
         # Replay should be rejected
         await pairing_session._ntfy_subscriber._process_message(encrypted)
-        await asyncio.sleep(0.1)
+        await yield_to_pending_tasks()
         assert publish_count == 1  # Still 1, replay rejected
 
     @pytest.mark.asyncio
