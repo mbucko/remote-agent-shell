@@ -104,13 +104,21 @@ class ConnectionOrchestrator @Inject constructor(
             protocolVersion = 1
         )
 
-        // Exchange capabilities with daemon (parallel racing inside)
-        val daemonCapabilities = try {
-            context.signaling.exchangeCapabilities(ourCapabilities, onProgress)
-        } catch (e: CancellationException) {
-            throw e  // Never swallow CancellationException - it breaks coroutine cancellation
-        } catch (e: Exception) {
-            Log.w(TAG, "Capability exchange error: ${e.message}")
+        // Exchange capabilities with daemon - but SKIP if we don't have local Tailscale
+        // because we can't use TailscaleStrategy anyway, and WebRTC doesn't need daemon's
+        // Tailscale info. This saves ~4 seconds when Tailscale isn't available.
+        val daemonCapabilities = if (localTailscale != null) {
+            try {
+                context.signaling.exchangeCapabilities(ourCapabilities, onProgress)
+            } catch (e: CancellationException) {
+                throw e  // Never swallow CancellationException - it breaks coroutine cancellation
+            } catch (e: Exception) {
+                Log.w(TAG, "Capability exchange error: ${e.message}")
+                null
+            }
+        } else {
+            Log.i(TAG, "Skipping capability exchange - no local Tailscale available")
+            onProgress(ConnectionProgress.CapabilityExchangeSkipped("No local Tailscale"))
             null
         }
 
@@ -129,13 +137,16 @@ class ConnectionOrchestrator @Inject constructor(
             context.copy(
                 daemonTailscaleIp = daemonCapabilities.tailscaleIp,
                 daemonTailscalePort = daemonCapabilities.tailscalePort,
-                localTailscaleAvailable = localTailscale != null
+                localTailscaleAvailable = true
             )
+        } else if (localTailscale == null) {
+            // No local Tailscale - skip capability exchange entirely
+            context.copy(localTailscaleAvailable = false)
         } else {
             onProgress(ConnectionProgress.CapabilityExchangeFailed("Could not reach daemon"))
             Log.w(TAG, "Capability exchange failed, proceeding with stored credentials")
             // Still set localTailscaleAvailable
-            context.copy(localTailscaleAvailable = localTailscale != null)
+            context.copy(localTailscaleAvailable = true)
         }
 
         // =================================================================

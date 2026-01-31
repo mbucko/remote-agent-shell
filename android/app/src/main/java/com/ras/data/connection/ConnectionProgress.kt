@@ -88,6 +88,11 @@ sealed class ConnectionProgress {
      */
     data class CapabilityExchangeFailed(val reason: String) : ConnectionProgress()
 
+    /**
+     * Capability exchange was skipped (e.g., no local Tailscale available).
+     */
+    data class CapabilityExchangeSkipped(val reason: String) : ConnectionProgress()
+
     // ==================== Strategy Detection Phase ====================
 
     /**

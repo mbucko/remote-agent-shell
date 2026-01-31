@@ -91,6 +91,10 @@ data class ConnectionProgressInfo(
                     step = "Discovery",
                     detail = "Capability exchange failed: ${progress.reason}"
                 )
+                is ConnectionProgress.CapabilityExchangeSkipped -> ConnectionProgressInfo(
+                    step = "Discovery",
+                    detail = "Skipped capability exchange: ${progress.reason}"
+                )
 
                 // Capability exchange detailed events
                 is ConnectionProgress.CapabilityTryingDirect -> ConnectionProgressInfo(

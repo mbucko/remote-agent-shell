@@ -118,6 +118,9 @@ data class ConnectionLog(
             is ConnectionProgress.CapabilityExchangeFailed -> copy(
                 capabilityExchangeError = progress.reason
             )
+            is ConnectionProgress.CapabilityExchangeSkipped -> copy(
+                capabilityExchangeError = "Skipped: ${progress.reason}"
+            )
 
             // Strategy Detection
             is ConnectionProgress.Detecting -> copy(
