@@ -17,14 +17,19 @@ class MockControlModeClient:
         self._event_index = 0
         self._started = False
         self._stopped = False
+        self._event_available = asyncio.Event()
 
     def add_event(self, event):
         """Add event to be returned by get_event."""
         self.events.append(event)
+        self._event_available.set()
 
     async def start(self):
         """Start the mock client."""
         self._started = True
+        # Signal if events were added before start
+        if self.events:
+            self._event_available.set()
 
     async def stop(self):
         """Stop the mock client."""
@@ -33,9 +38,12 @@ class MockControlModeClient:
     async def get_event(self):
         """Get next event."""
         while self._event_index >= len(self.events):
-            await asyncio.sleep(0.01)  # Wait for more events
+            await self._event_available.wait()
         event = self.events[self._event_index]
         self._event_index += 1
+        # Clear if we've consumed all events
+        if self._event_index >= len(self.events):
+            self._event_available.clear()
         return event
 
 

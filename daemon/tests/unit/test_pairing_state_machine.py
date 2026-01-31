@@ -335,8 +335,7 @@ class TestConcurrentCleanup:
         async def slow_on_connected(device_id, device_name, peer, auth_key):
             nonlocal handed_off_peer
             handed_off_peer = peer
-            # Simulate some work being done with the peer
-            await asyncio.sleep(0.01)
+            # No sleep needed - just set the peer
 
         server = UnifiedServer(
             device_store=device_store,
@@ -367,21 +366,21 @@ class TestConcurrentCleanup:
 
         server._pairing_sessions[session.session_id] = session
 
+        auth_completed = asyncio.Event()
+
         async def complete_auth():
             with patch("ras.server.AuthHandler") as mock_auth_handler_class:
                 mock_handler = MagicMock()
                 mock_handler.run_handshake = AsyncMock(return_value=True)
                 mock_auth_handler_class.return_value = mock_handler
                 await server._run_pairing_auth(session.session_id)
+            auth_completed.set()
 
         async def cleanup_when_completed():
-            # Wait until state shows completed (simulating CLI polling)
-            for _ in range(1000):
-                if session.state == "completed":
-                    break
-                await asyncio.sleep(0.001)
+            # Wait for auth to complete via event
+            await auth_completed.wait()
 
-            # Immediately try cleanup
+            # Immediately try cleanup after auth completes
             await server._cleanup_session(session)
 
         # Run both concurrently

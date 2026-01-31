@@ -26,7 +26,7 @@ class MockTailscaleTransport:
 
     async def receive(self, timeout: float = 10.0) -> bytes:
         if not self.receive_data:
-            await asyncio.sleep(timeout)
+            # Raise immediately instead of sleeping
             raise TimeoutError("No data")
         return self.receive_data
 

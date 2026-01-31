@@ -1,7 +1,7 @@
 """Tests for ClipboardManager."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -998,27 +998,31 @@ class TestTimeout:
         # Use short timeout for test
         config = ClipboardConfig(transfer_timeout=0.02)
 
-        manager = ClipboardManager(
-            config=config,
-            send_message=send_message,
-            send_keys=send_keys,
-            platform_info=platform_info,
-            clipboard_backend=mock_clipboard,
-        )
-
-        # Start transfer
-        msg = ClipboardMessage(
-            image_start=ImageStart(
-                transfer_id="test-123",
-                total_size=1000,
-                format=ImageFormat.PNG,
-                total_chunks=10,
+        # Mock asyncio.sleep in clipboard_manager to return immediately
+        with patch("ras.clipboard_manager.asyncio.sleep", return_value=None):
+            manager = ClipboardManager(
+                config=config,
+                send_message=send_message,
+                send_keys=send_keys,
+                platform_info=platform_info,
+                clipboard_backend=mock_clipboard,
             )
-        )
-        await manager.handle_message(msg)
 
-        # Wait for timeout
-        await asyncio.sleep(0.05)
+            # Start transfer
+            msg = ClipboardMessage(
+                image_start=ImageStart(
+                    transfer_id="test-123",
+                    total_size=1000,
+                    format=ImageFormat.PNG,
+                    total_chunks=10,
+                )
+            )
+            await manager.handle_message(msg)
+
+            # Wait for timeout task to complete
+            pending = asyncio.all_tasks() - {asyncio.current_task()}
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
         # Should have sent timeout error
         error_msgs = [
@@ -1042,6 +1046,7 @@ class TestTimeout:
 
         config = ClipboardConfig(transfer_timeout=0.05)
 
+        # Track timeout cancellations to verify timeout was reset
         manager = ClipboardManager(
             config=config,
             send_message=send_message,
@@ -1050,7 +1055,18 @@ class TestTimeout:
             clipboard_backend=mock_clipboard,
         )
 
-        # Start transfer
+        # Track timeout task cancellations
+        cancel_count = [0]
+        original_cancel_timeout = manager._cancel_timeout
+
+        def tracking_cancel():
+            if manager._timeout_task is not None:
+                cancel_count[0] += 1
+            original_cancel_timeout()
+
+        manager._cancel_timeout = tracking_cancel
+
+        # Start transfer - starts first timeout
         start_msg = ClipboardMessage(
             image_start=ImageStart(
                 transfer_id="test-123",
@@ -1061,10 +1077,10 @@ class TestTimeout:
         )
         await manager.handle_message(start_msg)
 
-        # Wait partial timeout
-        await asyncio.sleep(0.03)
+        # First timeout task should be created
+        assert manager._timeout_task is not None
 
-        # Send chunk (resets timeout)
+        # Send chunk - should cancel old timeout and start new one
         chunk_msg = ClipboardMessage(
             image_chunk=ImageChunk(
                 transfer_id="test-123",
@@ -1074,10 +1090,10 @@ class TestTimeout:
         )
         await manager.handle_message(chunk_msg)
 
-        # Wait another partial timeout
-        await asyncio.sleep(0.03)
+        # Timeout was cancelled and restarted (cancel_count should be 1)
+        assert cancel_count[0] >= 1, "Timeout should have been cancelled and reset"
 
-        # Should NOT have timed out (timeout was reset)
+        # Should NOT have timed out (no error events)
         error_msgs = [
             call[0][0] for call in send_message.call_args_list
             if betterproto.which_one_of(call[0][0], "payload")[0] == "error"

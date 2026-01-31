@@ -148,7 +148,9 @@ class TestE2ETerminalAttach:
                 await managers.terminal.handle_command("device-1", parsed_cmd.terminal)
 
         # Wait for async send
-        await asyncio.sleep(0.02)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify event was sent
         assert len(conn.sent_data) >= 1
@@ -205,7 +207,9 @@ class TestE2ETerminalError:
 
         # Handle
         await managers.terminal.handle_command("device-1", parsed_cmd.terminal)
-        await asyncio.sleep(0.02)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify error event
         assert len(conn.sent_data) >= 1
@@ -260,7 +264,9 @@ class TestE2ETerminalOutput:
         # Simulate output callback (like OutputCapture would call)
         managers.terminal._on_output("abcd12345678", b"$ ls -la\n")
 
-        await asyncio.sleep(0.02)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify output event
         assert len(conn.sent_data) >= 1
@@ -386,7 +392,9 @@ class TestE2EDetach:
 
         # Handle
         await managers.terminal.handle_command("device-1", parsed_cmd.terminal)
-        await asyncio.sleep(0.02)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify detached event
         assert len(conn.sent_data) >= 1

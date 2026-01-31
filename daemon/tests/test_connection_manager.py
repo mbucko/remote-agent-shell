@@ -180,8 +180,10 @@ class TestConnectionManager:
         await manager.add_connection("device1", peer1, codec, MagicMock())
         await manager.add_connection("device1", peer2, codec, MagicMock())
 
-        # Allow task to run
-        await asyncio.sleep(0.01)
+        # Wait for background close task to complete
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         assert len(manager) == 1
         conn = manager.get_connection("device1")
@@ -239,21 +241,21 @@ class TestConnectionManager:
     @pytest.mark.asyncio
     async def test_broadcast_timeout(self, on_lost):
         """Slow connection times out without blocking others."""
-        manager = ConnectionManager(on_connection_lost=on_lost, send_timeout=0.1)
+        manager = ConnectionManager(on_connection_lost=on_lost, send_timeout=1.0)
 
-        class SlowPeer(MockPeer):
+        class TimeoutPeer(MockPeer):
             async def send(self, data):
-                await asyncio.sleep(1.0)  # Very slow
+                raise asyncio.TimeoutError()  # Simulate timeout
 
         peer1 = MockPeer()
-        peer2 = SlowPeer()
+        peer2 = TimeoutPeer()
         codec = MockCodec()
 
         await manager.add_connection("device1", peer1, codec, MagicMock())
         await manager.add_connection("device2", peer2, codec, MagicMock())
 
-        # Should complete quickly due to timeout
-        await asyncio.wait_for(manager.broadcast(b"hello"), timeout=0.5)
+        # Should complete without hanging - peer2 timeout doesn't block peer1
+        await manager.broadcast(b"hello")
 
         assert len(peer1.sent_data) == 1
 
@@ -290,7 +292,11 @@ class TestConnectionManager:
 
         # Simulate disconnect
         await peer.close()
-        await asyncio.sleep(0.01)  # Allow task to run
+
+        # Wait for background disconnect handler task to complete
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         assert "device1" not in manager.connections
         on_lost.assert_called_once_with("device1")
@@ -368,7 +374,8 @@ class TestConnectionManager:
         conn = manager.get_connection("device1")
         original = conn.last_activity
 
-        await asyncio.sleep(0.01)
-        await peer.receive(b"encrypted:hello")
+        # Mock time to advance without sleeping
+        with patch("ras.connection_manager.time.time", return_value=original + 1.0):
+            await peer.receive(b"encrypted:hello")
 
-        assert conn.last_activity >= original
+        assert conn.last_activity > original

@@ -134,7 +134,9 @@ class TestAttachTerminalFlow:
                 await managers.terminal.handle_command("device-1", command)
 
         # Wait for async send to complete
-        await asyncio.sleep(0.02)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify attached event was sent
         assert len(conn.sent_data) >= 1
@@ -248,7 +250,9 @@ class TestDetachTerminalFlow:
         await managers.terminal.handle_command("device-1", command)
 
         # Wait for async send
-        await asyncio.sleep(0.02)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify detached event was sent
         assert len(conn.sent_data) >= 1
@@ -337,7 +341,9 @@ class TestErrorHandling:
         await managers.terminal.handle_command("device-1", command)
 
         # Wait for async send
-        await asyncio.sleep(0.02)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify error event was sent
         assert len(conn.sent_data) >= 1
@@ -389,7 +395,9 @@ class TestErrorHandling:
         await managers.terminal.handle_command("device-1", command)
 
         # Wait for async send
-        await asyncio.sleep(0.02)
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify error event was sent
         assert len(conn.sent_data) >= 1

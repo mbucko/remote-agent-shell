@@ -556,8 +556,9 @@ class TestEndToEndAuthenticationFlow:
     @pytest.mark.asyncio
     async def test_authentication_timeout(self, auth_key):
         """Authentication fails on timeout."""
+        from contextlib import asynccontextmanager
+
         handler = AuthHandler(auth_key, "server-device-id")
-        handler.TIMEOUT = 0.1  # Very short timeout
 
         messages_sent = []
 
@@ -565,10 +566,17 @@ class TestEndToEndAuthenticationFlow:
             messages_sent.append(data)
 
         async def receive():
-            # Never return - simulate timeout
-            await asyncio.sleep(10)
+            # Never return - will be cancelled by timeout
+            await asyncio.Event().wait()
 
-        result = await handler.run_handshake(send, receive)
+        # Mock asyncio.timeout to immediately raise TimeoutError
+        @asynccontextmanager
+        async def instant_timeout(seconds):
+            raise TimeoutError()
+            yield  # Never reached
+
+        with patch("ras.pairing.auth_handler.asyncio.timeout", instant_timeout):
+            result = await handler.run_handshake(send, receive)
 
         assert result is False
         assert not handler.is_authenticated

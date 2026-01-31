@@ -113,8 +113,10 @@ class TestTerminalEventSender:
         # Verify get_connection was called
         mock_connection_manager.get_connection.assert_called_once_with("device-123")
 
-        # Give event loop a chance to process the task
-        await asyncio.sleep(0.01)
+        # Wait for background task to complete
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify send was called
         mock_connection.send.assert_awaited_once()
@@ -138,8 +140,10 @@ class TestTerminalEventSender:
         # Send and wait for the async task
         sender.send("device-123", event)
 
-        # Give the event loop a chance to process the task
-        await asyncio.sleep(0.01)
+        # Wait for background task to complete
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify send was called with RasEvent-wrapped data
         assert mock_connection.send.await_count == 1
@@ -186,8 +190,10 @@ class TestTerminalEventSender:
         # Should not raise
         sender.send("device-123", event)
 
-        # Give the event loop a chance to process
-        await asyncio.sleep(0.01)
+        # Wait for background task to complete
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
         # Verify send was attempted
         assert mock_connection.send.await_count == 1

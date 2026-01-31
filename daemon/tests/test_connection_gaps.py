@@ -101,11 +101,12 @@ class TestConnectionRecovery:
         # Connection should track last activity
         if hasattr(conn, 'last_activity'):
             initial_activity = conn.last_activity
-            await asyncio.sleep(0.01)
 
             # After update, activity should change
             if hasattr(conn, 'update_activity'):
-                conn.update_activity()
+                # Mock time advancing instead of sleeping
+                with patch("time.time", return_value=time.time() + 0.01):
+                    conn.update_activity()
                 assert conn.last_activity > initial_activity
 
         await manager.close_all()
@@ -401,22 +402,16 @@ class TestConcurrentOperations:
         peer = PeerConnection()
 
         # Start connecting and immediately close
-        async def connect_and_close():
-            try:
-                # Don't await - start then close
-                task = asyncio.create_task(peer.wait_connected(timeout=5))
-                await asyncio.sleep(0.01)
-                await peer.close()
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-            except Exception:
-                pass  # Any exception is acceptable during race
+        task = asyncio.create_task(peer.wait_connected(timeout=5))
+        # Close immediately - the race condition is the test
+        await peer.close()
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass  # Any exception is acceptable during race
 
-        # Should not hang or crash
-        await asyncio.wait_for(connect_and_close(), timeout=2)
+        # Should reach here without hanging or crashing
 
     @pytest.mark.asyncio
     async def test_multiple_close_calls_idempotent(self):

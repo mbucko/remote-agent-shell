@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from ras.control_mode import ControlModeClient
 from ras.protocols import (
@@ -81,9 +81,7 @@ class TestControlModeClientLifecycle:
         client = ControlModeClient(session_id="$0", process=process)
 
         await client.start()
-        # Give the reader task time to start
-        await asyncio.sleep(0.01)
-
+        # start() awaits process.start(), so _start_called is already True
         assert process._start_called
 
         await client.stop()
@@ -262,9 +260,19 @@ class TestControlModeEventQueue:
 
         await client.start()
 
-        # This should timeout since no events
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(client.get_event(), timeout=0.1)
+        # Create task - it should not complete immediately since no events
+        task = asyncio.create_task(client.get_event())
+
+        # Use wait with timeout=0 to check if task is done without blocking
+        done, pending = await asyncio.wait({task}, timeout=0)
+        assert task in pending, "get_event should block when no events"
+
+        # Cancel and cleanup
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
         await client.stop()
 

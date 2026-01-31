@@ -1,11 +1,48 @@
 """Tests for IP monitor."""
 
 import asyncio
-from unittest.mock import AsyncMock
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from ras.ip_monitor.monitor import IpMonitor
+
+
+def make_stun_with_repeat(ip_sequence):
+    """Create a stun mock that returns values from sequence, repeating last value."""
+    call_idx = [0]
+
+    async def get_ip():
+        idx = min(call_idx[0], len(ip_sequence) - 1)
+        result = ip_sequence[idx]
+        call_idx[0] += 1
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    stun = AsyncMock()
+    stun.get_public_ip.side_effect = get_ip
+    return stun
+
+
+@asynccontextmanager
+async def run_monitor_with_mocked_sleep(monitor, iterations: int):
+    """Run monitor with mocked sleep, stopping after N iterations."""
+    sleep_count = [0]
+
+    async def mock_sleep(delay):
+        sleep_count[0] += 1
+        if sleep_count[0] >= iterations:
+            monitor._running = False
+
+    with patch("ras.ip_monitor.monitor.asyncio.sleep", side_effect=mock_sleep):
+        await monitor.start()
+        yield
+        # Wait for background task to complete
+        pending = asyncio.all_tasks() - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
 class TestIpMonitorInit:
@@ -100,11 +137,7 @@ class TestIpMonitorDetection:
     @pytest.mark.asyncio
     async def test_detects_ip_change(self):
         """Detects when IP changes."""
-        stun = AsyncMock()
-        stun.get_public_ip.side_effect = [
-            ("1.2.3.4", 8821),  # Initial
-            ("5.6.7.8", 8821),  # Changed
-        ]
+        stun = make_stun_with_repeat([("1.2.3.4", 8821), ("5.6.7.8", 8821)])
 
         callback = AsyncMock()
         monitor = IpMonitor(
@@ -113,20 +146,15 @@ class TestIpMonitorDetection:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        async with run_monitor_with_mocked_sleep(monitor, iterations=2):
+            pass
 
         callback.assert_called_once_with("5.6.7.8", 8821)
 
     @pytest.mark.asyncio
     async def test_detects_port_change(self):
         """Detects when port changes."""
-        stun = AsyncMock()
-        stun.get_public_ip.side_effect = [
-            ("1.2.3.4", 8821),  # Initial
-            ("1.2.3.4", 9999),  # Port changed
-        ]
+        stun = make_stun_with_repeat([("1.2.3.4", 8821), ("1.2.3.4", 9999)])
 
         callback = AsyncMock()
         monitor = IpMonitor(
@@ -135,21 +163,19 @@ class TestIpMonitorDetection:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        async with run_monitor_with_mocked_sleep(monitor, iterations=2):
+            pass
 
         callback.assert_called_once_with("1.2.3.4", 9999)
 
     @pytest.mark.asyncio
     async def test_no_callback_on_same_ip(self):
         """No callback when IP stays the same."""
-        stun = AsyncMock()
-        stun.get_public_ip.side_effect = [
+        stun = make_stun_with_repeat([
             ("1.2.3.4", 8821),  # Initial
             ("1.2.3.4", 8821),  # Same
             ("1.2.3.4", 8821),  # Same
-        ]
+        ])
 
         callback = AsyncMock()
         monitor = IpMonitor(
@@ -158,21 +184,19 @@ class TestIpMonitorDetection:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+            pass
 
         callback.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handles_stun_failure(self):
         """Handles STUN query failure gracefully."""
-        stun = AsyncMock()
-        stun.get_public_ip.side_effect = [
+        stun = make_stun_with_repeat([
             ("1.2.3.4", 8821),  # Initial
             Exception("STUN timeout"),  # Failure
             ("1.2.3.4", 8821),  # Recovery
-        ]
+        ])
 
         callback = AsyncMock()
         monitor = IpMonitor(
@@ -181,9 +205,8 @@ class TestIpMonitorDetection:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+            pass
 
         # Should not crash, callback not called (no change)
         callback.assert_not_called()
@@ -191,13 +214,12 @@ class TestIpMonitorDetection:
     @pytest.mark.asyncio
     async def test_multiple_ip_changes(self):
         """Detects multiple IP changes."""
-        stun = AsyncMock()
-        stun.get_public_ip.side_effect = [
+        stun = make_stun_with_repeat([
             ("1.2.3.4", 8821),  # Initial
             ("5.6.7.8", 8821),  # First change
             ("5.6.7.8", 8821),  # Same
             ("9.10.11.12", 8821),  # Second change
-        ]
+        ])
 
         callback = AsyncMock()
         monitor = IpMonitor(
@@ -206,9 +228,8 @@ class TestIpMonitorDetection:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.08)
-        await monitor.stop()
+        async with run_monitor_with_mocked_sleep(monitor, iterations=4):
+            pass
 
         assert callback.call_count == 2
         callback.assert_any_call("5.6.7.8", 8821)
@@ -276,11 +297,11 @@ class TestIpMonitorCallbackError:
     async def test_callback_error_doesnt_crash_monitor(self):
         """Callback error doesn't crash the monitor."""
         stun = AsyncMock()
-        stun.get_public_ip.side_effect = [
+        stun = make_stun_with_repeat([
             ("1.2.3.4", 8821),  # Initial
             ("5.6.7.8", 8821),  # Changed
             ("9.10.11.12", 8821),  # Changed again
-        ]
+        ])
 
         callback = AsyncMock(side_effect=[Exception("Callback failed"), None])
         monitor = IpMonitor(
@@ -289,9 +310,8 @@ class TestIpMonitorCallbackError:
             on_ip_change=callback,
         )
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        async with run_monitor_with_mocked_sleep(monitor, iterations=3):
+            pass
 
         # Should have called callback twice despite first failure
         assert callback.call_count == 2
@@ -303,11 +323,10 @@ class TestIpMonitorSetCallback:
     @pytest.mark.asyncio
     async def test_set_callback_changes_callback(self):
         """set_callback changes the callback."""
-        stun = AsyncMock()
-        stun.get_public_ip.side_effect = [
+        stun = make_stun_with_repeat([
             ("1.2.3.4", 8821),  # Initial
             ("5.6.7.8", 8821),  # Changed
-        ]
+        ])
 
         callback1 = AsyncMock()
         callback2 = AsyncMock()
@@ -320,9 +339,8 @@ class TestIpMonitorSetCallback:
 
         monitor.set_callback(callback2)
 
-        await monitor.start()
-        await asyncio.sleep(0.05)
-        await monitor.stop()
+        async with run_monitor_with_mocked_sleep(monitor, iterations=2):
+            pass
 
         callback1.assert_not_called()
         callback2.assert_called_once()
