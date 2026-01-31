@@ -311,6 +311,65 @@ class TerminalRepositoryTest {
     }
 
     @Test
+    fun `attach resets state when sendTerminalCommand throws unexpected exception`() = runTest(testDispatcher, timeout = 1.seconds) {
+        // Simulate connection lost - sendTerminalCommand throws
+        coEvery { connectionManager.sendTerminalCommand(any()) } throws
+            IllegalStateException("No encryption codec available")
+
+        try {
+            repository.attach("abc123def456")
+            fail("Expected IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("No encryption codec available", e.message)
+        }
+
+        // Verify state is properly reset, not stuck in isAttaching
+        val state = repository.state.value
+        assertFalse(state.isAttached)
+        assertFalse(state.isAttaching)  // Key assertion - must not be stuck
+        assertNotNull(state.error)
+        assertEquals("ATTACH_FAILED", state.error?.code)
+    }
+
+    @Test
+    fun `attach allows retry after sendTerminalCommand throws`() = runTest(testDispatcher, timeout = 1.seconds) {
+        // First attempt - connection lost
+        coEvery { connectionManager.sendTerminalCommand(any()) } throws
+            IllegalStateException("No encryption codec available")
+
+        try {
+            repository.attach("abc123def456")
+        } catch (e: IllegalStateException) {
+            // Expected
+        }
+
+        // Verify we can retry (not stuck in isAttaching)
+        assertFalse(repository.state.value.isAttaching)
+
+        // Second attempt - succeeds
+        coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
+
+        val attachJob = launch {
+            repository.attach("abc123def456")
+        }
+
+        // Simulate daemon response
+        val attachedEvent = ProtoTerminalEvent.newBuilder()
+            .setAttached(TerminalAttached.newBuilder()
+                .setSessionId("abc123def456")
+                .setCols(80)
+                .setRows(24)
+                .build())
+            .build()
+        terminalEventsFlow.emit(attachedEvent)
+
+        attachJob.join()
+
+        // Verify successful attach after retry
+        assertTrue(repository.state.value.isAttached)
+    }
+
+    @Test
     fun `concurrent attach calls to same session are no-op`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
 

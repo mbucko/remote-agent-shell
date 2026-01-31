@@ -372,6 +372,26 @@ class TerminalRepository @Inject constructor(
                 pendingAttach = null
                 // State already updated in handleError
                 throw e
+            } catch (e: Exception) {
+                // Handle unexpected errors (e.g., connection lost, no encryption codec)
+                Log.e(TAG, "Attach failed unexpectedly for session: $sessionId - ${e.message}")
+                pendingAttach = null
+                _state.update { it.copy(
+                    isAttaching = false,
+                    error = TerminalErrorInfo(
+                        code = "ATTACH_FAILED",
+                        message = e.message ?: "Failed to connect to terminal",
+                        sessionId = sessionId
+                    )
+                )}
+                _events.emit(
+                    TerminalEvent.Error(
+                        sessionId = sessionId,
+                        code = "ATTACH_FAILED",
+                        message = e.message ?: "Failed to connect to terminal"
+                    )
+                )
+                throw e
             } finally {
                 pendingAttach = null
             }
