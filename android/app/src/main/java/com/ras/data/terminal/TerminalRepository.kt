@@ -309,11 +309,31 @@ class TerminalRepository @Inject constructor(
                 return
             }
 
-            // Already attaching or attached to different session - error
-            if (current.isAttaching || current.isAttached) {
-                val status = if (current.isAttached) "attached" else "attaching"
-                Log.w(TAG, "Already $status to session: ${current.sessionId}")
-                throw IllegalStateException("Already $status to session: ${current.sessionId}")
+            // Already attached to different session - detach first
+            if (current.isAttached && current.sessionId != null) {
+                Log.d(TAG, "Switching sessions: detaching from ${current.sessionId} before attaching to $sessionId")
+                // Send detach command for previous session
+                val detachCommand = TerminalCommand.newBuilder()
+                    .setDetach(
+                        DetachTerminal.newBuilder()
+                            .setSessionId(current.sessionId)
+                            .build()
+                    )
+                    .build()
+                try {
+                    connectionManager.sendTerminalCommand(detachCommand)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send detach for session switch: ${e.message}")
+                    // Continue with attach anyway - daemon will handle it
+                }
+                // Reset state for new attach
+                _state.value = TerminalState()
+            }
+
+            // Still attaching to different session - wait or error
+            if (current.isAttaching) {
+                Log.w(TAG, "Already attaching to session: ${current.sessionId}")
+                throw IllegalStateException("Already attaching to session: ${current.sessionId}")
             }
 
             // Mark as attaching

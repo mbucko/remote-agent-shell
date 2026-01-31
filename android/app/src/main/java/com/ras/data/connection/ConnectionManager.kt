@@ -52,8 +52,8 @@ import javax.inject.Singleton
  * Allows DI of timing parameters for testing.
  */
 data class ConnectionConfig(
-    val pingIntervalMs: Long = 45_000L, // Send ping every 45s to keep connection alive
-    val heartbeatCheckIntervalMs: Long = 30_000L, // Check health every 30s
+    val pingIntervalMs: Long = 15_000L, // Send ping every 15s (must be < SCTP ~30s timeout)
+    val heartbeatCheckIntervalMs: Long = 15_000L, // Check health every 15s
     val maxIdleMs: Long = 90_000L, // Consider unhealthy after 90s idle
     val receiveTimeoutMs: Long = 60_000L, // 60 second timeout for receive
     val connectionReadyTimeoutMs: Long = 10_000L // 10 second timeout for ConnectionReady
@@ -520,7 +520,7 @@ class ConnectionManager @Inject constructor(
      * closed due to inactivity. The daemon has a keepalive timeout (default 60s)
      * and will close connections that don't send any messages.
      *
-     * CONTRACT: pingIntervalMs (default 45s) < daemon keepalive_timeout (default 60s)
+     * CONTRACT: pingIntervalMs (default 15s) < SCTP timeout (~30s)
      */
     private fun startPingLoop() {
         if (config.pingIntervalMs <= 0) {

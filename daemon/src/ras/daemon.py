@@ -673,7 +673,7 @@ class Daemon:
                 logger.warning(f"Unknown device connected: {device_id} - should use pairing flow")
 
         # Add to connection manager
-        await self._connection_manager.add_connection(
+        conn = await self._connection_manager.add_connection(
             device_id=device_id,
             peer=peer,
             codec=codec,
@@ -681,6 +681,14 @@ class Daemon:
                 self._on_message(device_id, data)
             ),
         )
+
+        # Send immediate keepalive to prevent SCTP timeout before loop runs
+        try:
+            ping_msg = RasEvent(pong=Pong(timestamp=int(time.time() * 1000)))
+            await conn.send(bytes(ping_msg))
+            logger.debug(f"Initial keepalive sent to {device_id[:8]}...")
+        except Exception as e:
+            logger.warning(f"Initial keepalive failed for {device_id[:8]}: {e}")
 
         # Mark as pending - wait for ConnectionReady before sending InitialState
         # This ensures the phone's event listener is set up before we send

@@ -57,7 +57,7 @@ class DaemonConfig:
     send_timeout: float = 5.0  # Max time to send a message
     handler_timeout: float = 10.0  # Max time for handler to complete
     keepalive_timeout: float = 60.0  # Close connection if idle this long
-    keepalive_interval: float = 30.0  # How often to check for stale connections
+    keepalive_interval: float = 15.0  # How often to send keepalives (must be < SCTP ~30s timeout)
 
     # Storage
     devices_file: str = "~/.config/ras/devices.json"
