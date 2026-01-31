@@ -217,6 +217,41 @@ class NtfyReconnectionManager:
         from ras.crypto import derive_key
         auth_key = derive_key(device.master_secret, "auth")
 
+        # Wait for WebRTC connection before auth
+        try:
+            await peer.wait_connected(timeout=30.0)
+            logger.info(f"Data channel open for reconnect {device_id[:8]}...")
+        except Exception as e:
+            logger.warning(f"Data channel failed for {device_id[:8]}...: {e}")
+            await peer.close()
+            return
+
+        # Run authentication handshake
+        from ras.pairing.auth_handler import AuthHandler
+        auth_handler = AuthHandler(auth_key, device_id)
+
+        async def send_message(data: bytes) -> None:
+            await peer.send(data)
+
+        async def receive_message() -> bytes:
+            return await asyncio.wait_for(peer.receive(), timeout=10.0)
+
+        try:
+            success = await auth_handler.run_handshake(send_message, receive_message)
+            if not success:
+                logger.warning(f"Ntfy reconnection auth failed for {device_id[:8]}...")
+                await peer.close()
+                return
+            logger.info(f"Authentication successful for device {device_id}")
+        except asyncio.TimeoutError:
+            logger.warning(f"Ntfy reconnection auth timeout for {device_id[:8]}...")
+            await peer.close()
+            return
+        except Exception as e:
+            logger.error(f"Ntfy reconnection auth error for {device_id[:8]}...: {e}")
+            await peer.close()
+            return
+
         logger.info(f"Ntfy reconnection successful for {device_id[:8]}...")
 
         # Notify callback

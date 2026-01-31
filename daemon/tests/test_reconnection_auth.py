@@ -241,6 +241,192 @@ class TestDaemonReconnectionCallback:
         mock_peer.close.assert_called_once()
 
 
+class TestNtfyReconnectionManagerAuth:
+    """Tests that NtfyReconnectionManager runs auth before calling callback."""
+
+    @pytest.fixture
+    def device_store(self):
+        """Mock device store with a test device."""
+        from ras.device_store import PairedDevice
+        store = MagicMock()
+        device = PairedDevice(
+            device_id="test-device-123",
+            name="Test Phone",
+            master_secret=bytes(range(32)),
+            paired_at="2024-01-01T00:00:00Z"
+        )
+        store.get.return_value = device
+        return store
+
+    @pytest.mark.asyncio
+    async def test_ntfy_reconnection_runs_auth_before_callback(self, device_store):
+        """NtfyReconnectionManager should run auth handshake before calling callback.
+
+        This test guards against the bug where ntfy reconnection path was
+        skipping authentication entirely, causing the Android app's auth
+        attempt to timeout while daemon thought connection was established.
+        """
+        from ras.ntfy_signaling.reconnection_manager import NtfyReconnectionManager
+
+        callback_called = False
+        callback_args = None
+
+        async def mock_callback(device_id, device_name, peer, auth_key):
+            nonlocal callback_called, callback_args
+            callback_called = True
+            callback_args = (device_id, device_name, peer, auth_key)
+
+        manager = NtfyReconnectionManager(
+            device_store=device_store,
+            on_reconnection=mock_callback,
+        )
+
+        # Mock peer
+        mock_peer = AsyncMock()
+        mock_peer.wait_connected = AsyncMock()
+        mock_peer.close = AsyncMock()
+        messages_sent = []
+
+        async def mock_send(data):
+            messages_sent.append(data)
+
+        mock_peer.send = mock_send
+
+        # Simulate client auth response
+        auth_key = bytes(range(32))  # Must match device's master_secret derived key
+
+        async def mock_receive():
+            # Wait for challenge to be sent
+            if len(messages_sent) == 1:
+                from ras.proto.ras import AuthEnvelope, AuthResponse
+                from ras.crypto import compute_hmac, derive_key
+
+                # Parse the challenge
+                envelope = AuthEnvelope().parse(messages_sent[0])
+                challenge_nonce = envelope.challenge.nonce
+
+                # Derive auth key same way manager does
+                derived_auth_key = derive_key(bytes(range(32)), "auth")
+
+                # Compute valid HMAC response
+                import secrets
+                response_hmac = compute_hmac(derived_auth_key, challenge_nonce)
+                client_nonce = secrets.token_bytes(32)
+
+                response = AuthEnvelope(
+                    response=AuthResponse(
+                        hmac=response_hmac,
+                        nonce=client_nonce
+                    )
+                )
+                return bytes(response)
+            raise Exception("Unexpected receive call")
+
+        mock_peer.receive = mock_receive
+
+        # Call _on_offer_received (simulates ntfy OFFER processed)
+        await manager._on_offer_received(
+            device_id="test-device-123",
+            device_name="Test Phone",
+            peer=mock_peer,
+            is_reconnection=True,
+        )
+
+        # Verify auth was run (challenge was sent)
+        assert len(messages_sent) >= 1, "Auth challenge should have been sent"
+
+        # Verify first message was a challenge
+        from ras.proto.ras import AuthEnvelope
+        first_envelope = AuthEnvelope().parse(messages_sent[0])
+        assert first_envelope.challenge is not None, "First message should be auth challenge"
+
+        # Verify callback was called after auth succeeded
+        assert callback_called, "Callback should be called after successful auth"
+        assert callback_args[0] == "test-device-123"
+
+    @pytest.mark.asyncio
+    async def test_ntfy_reconnection_closes_peer_on_auth_failure(self, device_store):
+        """NtfyReconnectionManager should close peer if auth fails."""
+        from ras.ntfy_signaling.reconnection_manager import NtfyReconnectionManager
+
+        callback_called = False
+
+        async def mock_callback(device_id, device_name, peer, auth_key):
+            nonlocal callback_called
+            callback_called = True
+
+        manager = NtfyReconnectionManager(
+            device_store=device_store,
+            on_reconnection=mock_callback,
+        )
+
+        mock_peer = AsyncMock()
+        mock_peer.wait_connected = AsyncMock()
+        mock_peer.close = AsyncMock()
+        mock_peer.send = AsyncMock()
+
+        # Simulate invalid auth response
+        async def mock_receive():
+            from ras.proto.ras import AuthEnvelope, AuthResponse
+            import secrets
+            # Return WRONG HMAC
+            response = AuthEnvelope(
+                response=AuthResponse(
+                    hmac=secrets.token_bytes(32),  # Wrong HMAC
+                    nonce=secrets.token_bytes(32)
+                )
+            )
+            return bytes(response)
+
+        mock_peer.receive = mock_receive
+
+        await manager._on_offer_received(
+            device_id="test-device-123",
+            device_name="Test Phone",
+            peer=mock_peer,
+            is_reconnection=True,
+        )
+
+        # Verify peer was closed due to auth failure
+        mock_peer.close.assert_called()
+
+        # Verify callback was NOT called
+        assert not callback_called, "Callback should not be called on auth failure"
+
+    @pytest.mark.asyncio
+    async def test_ntfy_reconnection_closes_peer_on_connection_failure(self, device_store):
+        """NtfyReconnectionManager should close peer if WebRTC connection fails."""
+        from ras.ntfy_signaling.reconnection_manager import NtfyReconnectionManager
+
+        callback_called = False
+
+        async def mock_callback(device_id, device_name, peer, auth_key):
+            nonlocal callback_called
+            callback_called = True
+
+        manager = NtfyReconnectionManager(
+            device_store=device_store,
+            on_reconnection=mock_callback,
+        )
+
+        mock_peer = AsyncMock()
+        mock_peer.wait_connected = AsyncMock(side_effect=Exception("ICE failed"))
+        mock_peer.close = AsyncMock()
+
+        await manager._on_offer_received(
+            device_id="test-device-123",
+            device_name="Test Phone",
+            peer=mock_peer,
+            is_reconnection=True,
+        )
+
+        # Verify peer was closed due to connection failure
+        mock_peer.close.assert_called()
+
+        # Verify callback was NOT called
+        assert not callback_called
+
+
 class TestTailscaleCapabilities:
     """Tests that Tailscale capabilities are included in ANSWER."""
 
