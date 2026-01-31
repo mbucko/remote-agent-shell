@@ -23,6 +23,7 @@ class QrGenerator:
     - Master secret (32 bytes)
     - Session ID
     - ntfy topic
+    - Tailscale IP/port (optional)
     """
 
     def __init__(
@@ -32,6 +33,8 @@ class QrGenerator:
         master_secret: bytes,
         session_id: str,
         ntfy_topic: str,
+        tailscale_ip: str | None = None,
+        tailscale_port: int | None = None,
     ):
         """Initialize QR generator.
 
@@ -41,12 +44,16 @@ class QrGenerator:
             master_secret: 32-byte master secret.
             session_id: Pairing session ID.
             ntfy_topic: ntfy topic for IP change notifications.
+            tailscale_ip: Optional Tailscale IP for direct VPN connection.
+            tailscale_port: Optional Tailscale port (defaults to 9876).
         """
         self.ip = ip
         self.port = port
         self.master_secret = master_secret
         self.session_id = session_id
         self.ntfy_topic = ntfy_topic
+        self.tailscale_ip = tailscale_ip
+        self.tailscale_port = tailscale_port
 
     def _create_payload(self) -> bytes:
         """Create protobuf payload.
@@ -61,6 +68,8 @@ class QrGenerator:
             master_secret=self.master_secret,
             session_id=self.session_id,
             ntfy_topic=self.ntfy_topic,
+            tailscale_ip=self.tailscale_ip or "",
+            tailscale_port=self.tailscale_port or 0,
         )
         return bytes(payload)
 

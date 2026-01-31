@@ -2,6 +2,7 @@ package com.ras.ui.startup
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ras.data.connection.ConnectionLog
 import com.ras.domain.startup.AttemptReconnectionUseCase
 import com.ras.domain.startup.CheckCredentialsUseCase
 import com.ras.domain.startup.ClearCredentialsUseCase
@@ -38,8 +39,8 @@ class StartupViewModel @Inject constructor(
     private fun checkCredentialsAndConnect() {
         viewModelScope.launch {
             try {
-                when (val status = checkCredentialsUseCase()) {
-                    is CredentialStatus.NoCredentials -> {
+                when (checkCredentialsUseCase()) {
+                    CredentialStatus.NoCredentials -> {
                         _state.value = StartupState.NavigateToPairing
                     }
                     is CredentialStatus.HasCredentials -> {
@@ -55,18 +56,29 @@ class StartupViewModel @Inject constructor(
     }
 
     private suspend fun attemptReconnection() {
+        var currentLog = ConnectionLog()
+
         try {
-            when (val result = attemptReconnectionUseCase()) {
+            val result = attemptReconnectionUseCase { progress ->
+                // Accumulate progress into connection log
+                currentLog = currentLog.apply(progress)
+                _state.value = StartupState.Connecting(log = currentLog)
+            }
+            when (result) {
                 is ReconnectionResult.Success -> {
                     _state.value = StartupState.NavigateToSessions
                 }
                 is ReconnectionResult.Failure -> {
-                    _state.value = StartupState.ConnectionFailed(result)
+                    _state.value = StartupState.ConnectionFailed(
+                        reason = result,
+                        log = currentLog
+                    )
                 }
             }
         } catch (e: Exception) {
             _state.value = StartupState.ConnectionFailed(
-                ReconnectionResult.Failure.Unknown(e.message ?: "Unknown error")
+                reason = ReconnectionResult.Failure.Unknown(e.message ?: "Unknown error"),
+                log = currentLog
             )
         }
     }

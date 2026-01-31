@@ -123,6 +123,7 @@ class UnifiedServer:
         on_pairing_complete: Optional[
             Callable[[str, str], Awaitable[None]]
         ] = None,
+        tailscale_capabilities_provider: Optional[Callable[[], dict]] = None,
     ):
         """Initialize unified server.
 
@@ -135,6 +136,7 @@ class UnifiedServer:
             ntfy_server: ntfy server URL for signaling relay.
             on_device_connected: Callback when device connects (paired or new).
             on_pairing_complete: Callback when pairing completes.
+            tailscale_capabilities_provider: Callable that returns Tailscale info dict.
         """
         self.device_store = device_store
         self.ip_provider = ip_provider
@@ -142,6 +144,7 @@ class UnifiedServer:
         self.pairing_timeout = pairing_timeout
         self.max_pairing_sessions = max_pairing_sessions
         self.ntfy_server = ntfy_server
+        self.tailscale_capabilities_provider = tailscale_capabilities_provider
         self._on_device_connected = on_device_connected
         self._on_pairing_complete = on_pairing_complete
 
@@ -179,6 +182,9 @@ class UnifiedServer:
 
         # Reconnection (for paired phone)
         self.app.router.add_post("/reconnect/{device_id}", self._handle_reconnect)
+
+        # Capability exchange (for paired phone, before connection)
+        self.app.router.add_post("/capabilities/{device_id}", self._handle_capabilities)
 
     # =========================================================================
     # Health
@@ -240,6 +246,14 @@ class UnifiedServer:
                 status=500,
             )
 
+        # Get Tailscale info if available
+        tailscale_ip = ""
+        tailscale_port = 0
+        if self.tailscale_capabilities_provider:
+            ts_caps = self.tailscale_capabilities_provider()
+            tailscale_ip = ts_caps.get("tailscale_ip", "")
+            tailscale_port = ts_caps.get("tailscale_port", 0)
+
         return web.json_response({
             "session_id": session_id,
             "expires_at": session.expires_at,
@@ -249,6 +263,8 @@ class UnifiedServer:
                 "master_secret": master_secret.hex(),
                 "session_id": session_id,
                 "ntfy_topic": ntfy_topic,
+                "tailscale_ip": tailscale_ip,
+                "tailscale_port": tailscale_port,
             },
         })
 
@@ -658,6 +674,116 @@ class UnifiedServer:
         finally:
             self._pending_reconnections.pop(device_id, None)
             self._auth_queues.pop(device_id, None)
+
+    # =========================================================================
+    # Capability Exchange (for strategy selection before connection)
+    # =========================================================================
+
+    async def _handle_capabilities(self, request: web.Request) -> web.Response:
+        """Handle capability exchange from paired device.
+
+        This is a quick pre-flight request to discover what connection methods
+        the daemon supports (Tailscale IP, WebRTC, etc.) before the phone
+        decides which strategy to use.
+        """
+        device_id = request.match_info["device_id"]
+        client_ip = request.remote or "unknown"
+
+        # Rate limiting (same limits as reconnect)
+        if not self._ip_limiter.is_allowed(client_ip):
+            return self._error_response(SignalErrorErrorCode.RATE_LIMITED, status=429)
+
+        if not self._device_limiter.is_allowed(device_id):
+            return self._error_response(SignalErrorErrorCode.RATE_LIMITED, status=429)
+
+        # Look up device
+        device = self.device_store.get(device_id)
+        if device is None:
+            logger.warning(f"Unknown device capability request: {device_id[:8]}...")
+            return self._error_response(SignalErrorErrorCode.INVALID_SESSION)
+
+        # Derive auth key
+        auth_key = derive_key(device.master_secret, "auth")
+
+        # Validate timestamp
+        timestamp_str = request.headers.get("X-RAS-Timestamp")
+        if not timestamp_str:
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        try:
+            timestamp = int(timestamp_str)
+        except ValueError:
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        now = int(time.time())
+        if abs(now - timestamp) > self.TIMESTAMP_TOLERANCE:
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        # Read body
+        try:
+            body = await request.read()
+        except Exception:
+            return self._error_response(SignalErrorErrorCode.INVALID_REQUEST)
+
+        # Validate HMAC
+        signature_hex = request.headers.get("X-RAS-Signature")
+        if not signature_hex:
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        try:
+            signature = bytes.fromhex(signature_hex)
+        except ValueError:
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        expected_hmac = compute_signaling_hmac(
+            auth_key,
+            device_id,
+            timestamp,
+            body,
+        )
+
+        if not hmac_module.compare_digest(signature, expected_hmac):
+            logger.warning(f"HMAC failed for capability request {device_id[:8]}...")
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        # Parse client capabilities (optional - we respond with ours regardless)
+        try:
+            from ras.proto.ras import ConnectionCapabilities as ProtoCapabilities
+            client_caps = ProtoCapabilities().parse(body)
+            logger.debug(f"Client capabilities: tailscale={client_caps.tailscale_ip}")
+        except Exception:
+            # Client capabilities parsing is optional
+            pass
+
+        # Build our capabilities response
+        our_caps = self._build_capabilities()
+
+        logger.info(f"Capability exchange with {device_id[:8]}...: "
+                    f"tailscale={our_caps.tailscale_ip}:{our_caps.tailscale_port}")
+
+        return web.Response(
+            body=bytes(our_caps),
+            content_type="application/x-protobuf",
+        )
+
+    def _build_capabilities(self):
+        """Build our current capabilities."""
+        from ras.proto.ras import ConnectionCapabilities as ProtoCapabilities
+
+        tailscale_ip = ""
+        tailscale_port = 0
+        if self.tailscale_capabilities_provider:
+            ts_caps = self.tailscale_capabilities_provider()
+            tailscale_ip = ts_caps.get("tailscale_ip", "")
+            tailscale_port = ts_caps.get("tailscale_port", 0)
+
+        return ProtoCapabilities(
+            tailscale_ip=tailscale_ip,
+            tailscale_port=tailscale_port,
+            supports_webrtc=True,
+            supports_turn=False,
+            protocol_version=1,
+        )
 
     # =========================================================================
     # Helpers

@@ -253,6 +253,8 @@ def pair(ctx: click.Context, timeout: int, browser: bool, output: str | None) ->
                     master_secret=master_secret,
                     session_id=qr_data["session_id"],
                     ntfy_topic=qr_data["ntfy_topic"],
+                    tailscale_ip=qr_data.get("tailscale_ip", ""),
+                    tailscale_port=qr_data.get("tailscale_port", 0),
                 )
 
                 click.echo(f"\nPairing session started")

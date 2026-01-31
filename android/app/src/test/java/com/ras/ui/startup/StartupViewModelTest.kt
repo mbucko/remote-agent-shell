@@ -100,12 +100,12 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Success
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Success
 
         val viewModel = createViewModel()
         advanceUntilIdle()
 
-        coVerify { attemptReconnectionUseCase() }
+        coVerify { attemptReconnectionUseCase(any()) }
     }
 
     @Test
@@ -115,7 +115,7 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } coAnswers {
+        coEvery { attemptReconnectionUseCase(any()) } coAnswers {
             // Delay to observe Connecting state
             kotlinx.coroutines.delay(100)
             ReconnectionResult.Success
@@ -134,7 +134,7 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Success
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Success
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -149,7 +149,7 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Failure.DaemonUnreachable
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Failure.DaemonUnreachable
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -169,7 +169,7 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Failure.AuthenticationFailed
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Failure.AuthenticationFailed
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -189,7 +189,7 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Failure.NetworkError
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Failure.NetworkError
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -213,19 +213,19 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Failure.DaemonUnreachable
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Failure.DaemonUnreachable
 
         val viewModel = createViewModel()
         advanceUntilIdle()
 
         // Reset mock to return success on retry
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Success
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Success
 
         viewModel.retry()
         advanceUntilIdle()
 
         assertEquals(StartupState.NavigateToSessions, viewModel.state.value)
-        coVerify(exactly = 2) { attemptReconnectionUseCase() }
+        coVerify(exactly = 2) { attemptReconnectionUseCase(any()) }
     }
 
     @Test
@@ -235,13 +235,13 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Failure.DaemonUnreachable
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Failure.DaemonUnreachable
 
         val viewModel = createViewModel()
         advanceUntilIdle()
 
         // Make reconnection take some time
-        coEvery { attemptReconnectionUseCase() } coAnswers {
+        coEvery { attemptReconnectionUseCase(any()) } coAnswers {
             kotlinx.coroutines.delay(100)
             ReconnectionResult.Success
         }
@@ -263,7 +263,7 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } returns ReconnectionResult.Failure.DaemonUnreachable
+        coEvery { attemptReconnectionUseCase(any()) } returns ReconnectionResult.Failure.DaemonUnreachable
 
         val viewModel = createViewModel()
         advanceUntilIdle()
@@ -297,7 +297,7 @@ class StartupViewModelTest {
             daemonHost = "192.168.1.100",
             daemonPort = 8765
         )
-        coEvery { attemptReconnectionUseCase() } throws RuntimeException("WebRTC error")
+        coEvery { attemptReconnectionUseCase(any()) } throws RuntimeException("WebRTC error")
 
         val viewModel = createViewModel()
         advanceUntilIdle()

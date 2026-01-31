@@ -1119,6 +1119,12 @@ wheels = [
 ]
 
 [[package]]
+name = "netifaces"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/91/86a6eac449ddfae239e93ffc1918cf33fd9bab35c04d1e963b311e347a73/netifaces-0.11.0.tar.gz", hash = "sha256:043a79146eb2907edf439899f262b3dfe41717d34124298ed281139a8b93ca32", size = 30106, upload-time = "2021-05-31T08:33:02.506Z" }
+
+[[package]]
 name = "packaging"
 version = "26.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1601,6 +1607,7 @@ dependencies = [
     { name = "click" },
     { name = "cryptography" },
     { name = "httpx" },
+    { name = "netifaces" },
     { name = "pillow" },
     { name = "pyyaml" },
     { name = "qrcode" },
@@ -1626,6 +1633,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=46.0.3" },
     { name = "grpcio-tools", marker = "extra == 'dev'", specifier = ">=1.60.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "netifaces", specifier = ">=0.11.0" },
     { name = "pillow", specifier = ">=12.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-aiohttp", marker = "extra == 'dev'", specifier = ">=1.1.0" },

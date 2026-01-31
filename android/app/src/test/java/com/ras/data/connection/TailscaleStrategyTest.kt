@@ -1,12 +1,7 @@
 package com.ras.data.connection
 
-import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.mockkObject
-import io.mockk.slot
-import io.mockk.unmockkObject
+import android.content.Context
+import io.mockk.*
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -30,10 +25,12 @@ class TailscaleStrategyTest {
     private lateinit var strategy: TailscaleStrategy
     private lateinit var mockSignaling: SignalingChannel
     private lateinit var mockTransport: TailscaleTransport
+    private lateinit var mockContext: Context
 
     @Before
     fun setup() {
-        strategy = TailscaleStrategy()
+        mockContext = mockk(relaxed = true)
+        strategy = TailscaleStrategy(mockContext)
         mockSignaling = mockk(relaxed = true)
         mockTransport = mockk(relaxed = true)
         mockkObject(TailscaleDetector)
@@ -50,6 +47,7 @@ class TailscaleStrategyTest {
         daemonTailscaleIp: String? = null,
         daemonTailscalePort: Int? = null
     ) = ConnectionContext(
+        androidContext = mockContext,
         deviceId = "test-device",
         daemonHost = "192.168.1.100",
         daemonPort = 8765,
@@ -75,7 +73,7 @@ class TailscaleStrategyTest {
 
     @Test
     fun `detect returns Available when Tailscale is running`() = runTest {
-        every { TailscaleDetector.detect() } returns TailscaleInfo(
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo(
             ip = "100.64.0.1",
             interfaceName = "tailscale0"
         )
@@ -88,12 +86,12 @@ class TailscaleStrategyTest {
 
     @Test
     fun `detect returns Unavailable when Tailscale not running`() = runTest {
-        every { TailscaleDetector.detect() } returns null
+        every { TailscaleDetector.detect(any()) } returns null
 
         val result = strategy.detect()
 
         assertTrue(result is DetectionResult.Unavailable)
-        assertEquals("Tailscale not running", (result as DetectionResult.Unavailable).reason)
+        assertEquals("Tailscale not connected", (result as DetectionResult.Unavailable).reason)
     }
 
     // ==================== Connection Tests ====================
@@ -101,7 +99,7 @@ class TailscaleStrategyTest {
     @Test
     fun `connect fails when detect was not called first`() = runTest {
         // Don't call detect() first
-        every { TailscaleDetector.detect() } returns null
+        every { TailscaleDetector.detect(any()) } returns null
 
         val result = strategy.connect(createContext()) {}
 
@@ -112,7 +110,7 @@ class TailscaleStrategyTest {
     @Test
     fun `connect fails when daemon Tailscale IP not in credentials`() = runTest {
         // Detect succeeds
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         // Context doesn't have daemon Tailscale IP
@@ -125,7 +123,7 @@ class TailscaleStrategyTest {
     @Test
     fun `connect uses daemon Tailscale IP from context`() = runTest {
         // Detect succeeds
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         // Mock TailscaleTransport to succeed
@@ -148,7 +146,7 @@ class TailscaleStrategyTest {
     @Test
     fun `connect uses default port when not specified`() = runTest {
         // Detect succeeds
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         // Mock TailscaleTransport to fail (so we can verify default port was used)
@@ -168,7 +166,7 @@ class TailscaleStrategyTest {
 
     @Test
     fun `connect reports correct progress steps`() = runTest {
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         val steps = mutableListOf<ConnectionStep>()
@@ -184,7 +182,7 @@ class TailscaleStrategyTest {
     @Test
     fun `auth message format is correct`() = runTest {
         // Detect succeeds
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         // Capture the auth message sent
@@ -196,6 +194,7 @@ class TailscaleStrategyTest {
         val deviceId = "test-device-123"
         val authToken = ByteArray(32) { it.toByte() }
         val context = ConnectionContext(
+            androidContext = mockContext,
             deviceId = deviceId,
             daemonHost = "192.168.1.100",
             daemonPort = 8765,
@@ -231,7 +230,7 @@ class TailscaleStrategyTest {
 
     @Test
     fun `device id is UTF-8 encoded`() = runTest {
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         val capturedMessage = slot<ByteArray>()
@@ -242,6 +241,7 @@ class TailscaleStrategyTest {
         // Device ID with unicode characters
         val deviceId = "test-\u4e2d\u6587-device"  // Chinese characters
         val context = ConnectionContext(
+            androidContext = mockContext,
             deviceId = deviceId,
             daemonHost = "192.168.1.100",
             daemonPort = 8765,
@@ -265,7 +265,7 @@ class TailscaleStrategyTest {
 
     @Test
     fun `length prefix is big-endian`() = runTest {
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         val capturedMessage = slot<ByteArray>()
@@ -276,6 +276,7 @@ class TailscaleStrategyTest {
         // Device ID of exactly 4 bytes
         val deviceId = "test"  // 4 characters = 4 bytes in UTF-8
         val context = ConnectionContext(
+            androidContext = mockContext,
             deviceId = deviceId,
             daemonHost = "192.168.1.100",
             daemonPort = 8765,
@@ -300,7 +301,7 @@ class TailscaleStrategyTest {
 
     @Test
     fun `success response returns connected transport`() = runTest {
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
@@ -316,7 +317,7 @@ class TailscaleStrategyTest {
 
     @Test
     fun `failure response returns failed result`() = runTest {
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport
@@ -334,7 +335,7 @@ class TailscaleStrategyTest {
 
     @Test
     fun `empty response returns failed result`() = runTest {
-        every { TailscaleDetector.detect() } returns TailscaleInfo("100.64.0.1", "tailscale0")
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
         coEvery { TailscaleTransport.connect(any(), any(), any()) } returns mockTransport

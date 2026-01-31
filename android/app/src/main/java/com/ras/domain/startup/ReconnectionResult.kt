@@ -24,9 +24,14 @@ sealed class ReconnectionResult {
         object DaemonUnreachable : Failure()
 
         /**
-         * Authentication failed (invalid signature, unknown device).
+         * Authentication failed (invalid signature).
          */
         object AuthenticationFailed : Failure()
+
+        /**
+         * Device not found on daemon - needs re-pairing.
+         */
+        object DeviceNotFound : Failure()
 
         /**
          * Network error (no connectivity, etc).

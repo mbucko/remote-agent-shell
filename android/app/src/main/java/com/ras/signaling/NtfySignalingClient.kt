@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -21,6 +22,8 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.io.IOException
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 /**
@@ -134,7 +137,18 @@ class NtfySignalingClient(
         private const val MAX_BACKOFF_MS = 10000L
         private const val CONNECTION_TIMEOUT_MS = 10_000L
 
+        /**
+         * DNS resolver that only returns IPv4 addresses.
+         * Fixes VPN/IPv6 routing issues where IPv6 is attempted but fails.
+         */
+        private val ipv4OnlyDns = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                return Dns.SYSTEM.lookup(hostname).filterIsInstance<Inet4Address>()
+            }
+        }
+
         private fun defaultHttpClient() = OkHttpClient.Builder()
+            .dns(ipv4OnlyDns)  // Force IPv4 to avoid VPN IPv6 routing issues
             .readTimeout(0, TimeUnit.MILLISECONDS)  // No read timeout for WebSocket
             .writeTimeout(30, TimeUnit.SECONDS)
             .connectTimeout(30, TimeUnit.SECONDS)

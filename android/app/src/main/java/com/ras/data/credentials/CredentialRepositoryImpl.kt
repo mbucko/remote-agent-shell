@@ -27,12 +27,18 @@ class CredentialRepositoryImpl @Inject constructor(
         if (daemonPort == null || daemonPort <= 0) return null
         if (ntfyTopic.isNullOrEmpty()) return null
 
+        // Get optional Tailscale info
+        val tailscaleIp = keyManager.getTailscaleIp()
+        val tailscalePort = keyManager.getTailscalePort()
+
         return StoredCredentials(
             deviceId = keyManager.getOrCreateDeviceId(),
             masterSecret = masterSecret,
             daemonHost = daemonIp,
             daemonPort = daemonPort,
-            ntfyTopic = ntfyTopic
+            ntfyTopic = ntfyTopic,
+            daemonTailscaleIp = tailscaleIp,
+            daemonTailscalePort = tailscalePort
         )
     }
 

@@ -121,7 +121,9 @@ data class QuickButton(
 val DEFAULT_QUICK_BUTTONS = listOf(
     QuickButton(id = "y", label = "Y", character = "y", isDefault = true),
     QuickButton(id = "n", label = "N", character = "n", isDefault = true),
-    QuickButton(id = "ctrl_c", label = "Ctrl+C", keyType = KeyType.KEY_CTRL_C, isDefault = true)
+    QuickButton(id = "ctrl_c", label = "Ctrl+C", keyType = KeyType.KEY_CTRL_C, isDefault = true),
+    QuickButton(id = "backspace", label = "⌫", keyType = KeyType.KEY_BACKSPACE, isDefault = true),
+    QuickButton(id = "tab", label = "Tab", keyType = KeyType.KEY_TAB, isDefault = true)
 )
 
 /**
@@ -132,6 +134,7 @@ val AVAILABLE_QUICK_BUTTONS = listOf(
     QuickButton(id = "y", label = "Y", character = "y"),
     QuickButton(id = "n", label = "N", character = "n"),
     QuickButton(id = "ctrl_c", label = "Ctrl+C", keyType = KeyType.KEY_CTRL_C),
+    QuickButton(id = "backspace", label = "⌫", keyType = KeyType.KEY_BACKSPACE),
     // Navigation
     QuickButton(id = "tab", label = "Tab", keyType = KeyType.KEY_TAB),
     QuickButton(id = "esc", label = "Esc", keyType = KeyType.KEY_ESCAPE),

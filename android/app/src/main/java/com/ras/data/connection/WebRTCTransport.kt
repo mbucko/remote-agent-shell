@@ -8,13 +8,14 @@ import com.ras.data.webrtc.WebRTCClient
  * Adapts the existing WebRTCClient to the Transport interface.
  */
 class WebRTCTransport(
-    private val webRTCClient: WebRTCClient
+    /** The underlying WebRTC client. Exposed for ConnectionManager integration. */
+    val client: WebRTCClient
 ) : Transport {
 
     override val type: TransportType = TransportType.WEBRTC
 
     override val isConnected: Boolean
-        get() = webRTCClient.isReady()
+        get() = client.isReady()
 
     private var bytesSent: Long = 0
     private var bytesReceived: Long = 0
@@ -24,14 +25,14 @@ class WebRTCTransport(
     private var lastActivity: Long = connectedAt
 
     override suspend fun send(data: ByteArray) {
-        webRTCClient.send(data)
+        client.send(data)
         bytesSent += data.size
         messagesSent++
         lastActivity = System.currentTimeMillis()
     }
 
     override suspend fun receive(timeoutMs: Long): ByteArray {
-        val data = webRTCClient.receive(timeoutMs)
+        val data = client.receive(timeoutMs)
         bytesReceived += data.size
         messagesReceived++
         lastActivity = System.currentTimeMillis()
@@ -39,7 +40,7 @@ class WebRTCTransport(
     }
 
     override fun close() {
-        webRTCClient.close()
+        client.close()
     }
 
     override fun getStats(): TransportStats {

@@ -44,6 +44,8 @@ class KeyManager @Inject constructor(
         private val KEY_NTFY_TOPIC = stringPreferencesKey("ntfy_topic")
         private val KEY_DAEMON_IP = stringPreferencesKey("daemon_ip")
         private val KEY_DAEMON_PORT = stringPreferencesKey("daemon_port")
+        private val KEY_TAILSCALE_IP = stringPreferencesKey("tailscale_ip")
+        private val KEY_TAILSCALE_PORT = stringPreferencesKey("tailscale_port")
     }
 
     private val keyStore: KeyStore by lazy {
@@ -128,11 +130,27 @@ class KeyManager @Inject constructor(
     /**
      * Store daemon connection info.
      */
-    suspend fun storeDaemonInfo(ip: String, port: Int, ntfyTopic: String) {
+    suspend fun storeDaemonInfo(
+        ip: String,
+        port: Int,
+        ntfyTopic: String,
+        tailscaleIp: String? = null,
+        tailscalePort: Int? = null
+    ) {
         context.dataStore.edit { prefs ->
             prefs[KEY_DAEMON_IP] = ip
             prefs[KEY_DAEMON_PORT] = port.toString()
             prefs[KEY_NTFY_TOPIC] = ntfyTopic
+            if (tailscaleIp != null) {
+                prefs[KEY_TAILSCALE_IP] = tailscaleIp
+            } else {
+                prefs.remove(KEY_TAILSCALE_IP)
+            }
+            if (tailscalePort != null) {
+                prefs[KEY_TAILSCALE_PORT] = tailscalePort.toString()
+            } else {
+                prefs.remove(KEY_TAILSCALE_PORT)
+            }
         }
     }
 
@@ -164,6 +182,24 @@ class KeyManager @Inject constructor(
     }
 
     /**
+     * Get stored Tailscale IP.
+     */
+    suspend fun getTailscaleIp(): String? {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_TAILSCALE_IP]
+        }.first()
+    }
+
+    /**
+     * Get stored Tailscale port.
+     */
+    suspend fun getTailscalePort(): Int? {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_TAILSCALE_PORT]?.toIntOrNull()
+        }.first()
+    }
+
+    /**
      * Clear all stored credentials (for unpairing).
      */
     suspend fun clearCredentials() {
@@ -172,6 +208,8 @@ class KeyManager @Inject constructor(
             prefs.remove(KEY_DAEMON_IP)
             prefs.remove(KEY_DAEMON_PORT)
             prefs.remove(KEY_NTFY_TOPIC)
+            prefs.remove(KEY_TAILSCALE_IP)
+            prefs.remove(KEY_TAILSCALE_PORT)
         }
     }
 

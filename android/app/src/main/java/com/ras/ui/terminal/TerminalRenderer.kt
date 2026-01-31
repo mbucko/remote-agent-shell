@@ -1,11 +1,10 @@
 package com.ras.ui.terminal
 
-import android.graphics.Typeface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -24,8 +23,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import com.ras.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -47,24 +51,56 @@ fun TerminalRenderer(
     val screenVersion = emulator.screenVersion
 
     val verticalScrollState = rememberScrollState()
-    val horizontalScrollState = rememberScrollState()
 
     val density = LocalDensity.current
-    val fontSizePx = with(density) { fontSize.sp.toPx() }
 
-    // Calculate character dimensions for terminal sizing
-    val paint = remember {
-        android.graphics.Paint().apply {
-            textSize = fontSizePx
-            typeface = Typeface.MONOSPACE
+    // Use JetBrains Mono - a true monospace font where all characters have equal width
+    val jetBrainsMono = remember {
+        FontFamily(
+            Font(R.font.jetbrains_mono_regular, FontWeight.Normal),
+            Font(R.font.jetbrains_mono_bold, FontWeight.Bold)
+        )
+    }
+
+    // Use Compose TextMeasurer to get accurate character dimensions
+    val textMeasurer = rememberTextMeasurer()
+    val textStyle = remember(fontSize, jetBrainsMono) {
+        TextStyle(
+            fontFamily = jetBrainsMono,
+            fontSize = fontSize.sp,
+            lineHeight = (fontSize * 1.2).sp
+        )
+    }
+
+    // With a true monospace font, all characters should have the same width
+    val charWidth = remember(fontSize, textMeasurer, jetBrainsMono) {
+        textMeasurer.measure(text = "M", style = textStyle).size.width.toFloat()
+    }
+    val charHeight = remember(fontSize) {
+        with(density) { (fontSize * 1.2f).sp.toPx() }
+    }
+
+    // Track CONTAINER size in pixels - only recalculate when this changes
+    var lastContainerWidth by remember { mutableIntStateOf(0) }
+    var lastContainerHeight by remember { mutableIntStateOf(0) }
+    var reportedCols by remember { mutableIntStateOf(0) }
+    var reportedRows by remember { mutableIntStateOf(0) }
+
+    // Recalculate when font size changes (pinch zoom)
+    LaunchedEffect(charWidth, charHeight) {
+        if (lastContainerWidth > 0 && lastContainerHeight > 0) {
+            val horizontalPadding = with(density) { 16.dp.toPx() }
+            val rawCols = ((lastContainerWidth - horizontalPadding) / charWidth).toInt()
+            val cols = (rawCols - 2).coerceAtLeast(20)
+            val rows = ((lastContainerHeight - with(density) { 16.dp.toPx() }) / charHeight).toInt().coerceAtLeast(5)
+
+            if (cols != reportedCols || rows != reportedRows) {
+                reportedCols = cols
+                reportedRows = rows
+                onSizeChanged?.invoke(cols, rows)
+            }
         }
     }
-    val charWidth = remember(fontSizePx) { paint.measureText("M") }
-    val charHeight = remember(fontSizePx) { fontSizePx * 1.2f }
-
-    // Track size for resize callback
-    var lastCols by remember { mutableIntStateOf(0) }
-    var lastRows by remember { mutableIntStateOf(0) }
 
     // Pinch zoom state for font size adjustment
     val transformableState = rememberTransformableState { zoomChange, _, _ ->
@@ -84,33 +120,44 @@ fun TerminalRenderer(
     Box(
         modifier = modifier
             .background(TerminalColors.background)
+            .clipToBounds()
             .transformable(state = transformableState)
             .onGloballyPositioned { coordinates ->
                 val width = coordinates.size.width
                 val height = coordinates.size.height
 
-                // Calculate terminal dimensions based on available space
-                val cols = ((width - 16.dp.value * density.density) / charWidth).toInt().coerceAtLeast(20)
-                val rows = ((height - 16.dp.value * density.density) / charHeight).toInt().coerceAtLeast(5)
+                // Only recalculate if container size actually changed (not just recomposition)
+                if (width != lastContainerWidth || height != lastContainerHeight) {
+                    lastContainerWidth = width
+                    lastContainerHeight = height
 
-                if (cols != lastCols || rows != lastRows) {
-                    lastCols = cols
-                    lastRows = rows
-                    onSizeChanged?.invoke(cols, rows)
+                    // Calculate terminal dimensions based on available space
+                    val horizontalPadding = with(density) { 16.dp.toPx() }
+                    val rawCols = ((width - horizontalPadding) / charWidth).toInt()
+                    val cols = (rawCols - 2).coerceAtLeast(20)
+                    val rows = ((height - with(density) { 16.dp.toPx() }) / charHeight).toInt().coerceAtLeast(5)
+
+                    // Only send resize if cols/rows actually changed
+                    if (cols != reportedCols || rows != reportedRows) {
+                        reportedCols = cols
+                        reportedRows = rows
+                        onSizeChanged?.invoke(cols, rows)
+                    }
                 }
             }
             .verticalScroll(verticalScrollState)
-            .horizontalScroll(horizontalScrollState)
-            .padding(8.dp)
+            .padding(4.dp)
     ) {
-        SelectionContainer {
+        SelectionContainer(
+            modifier = Modifier.clipToBounds()
+        ) {
             Text(
                 text = terminalText,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = jetBrainsMono,
                 fontSize = fontSize.sp,
                 lineHeight = (fontSize * 1.2).sp,
-                // Don't constrain width - let it expand for horizontal scrolling
-                softWrap = false
+                softWrap = false,
+                modifier = Modifier.clipToBounds()
             )
         }
     }

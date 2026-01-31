@@ -34,17 +34,21 @@ class TailscaleTransport private constructor(
         private const val MAX_PACKET_SIZE = 65507  // Max UDP payload
         private const val HEADER_SIZE = 4  // Length prefix
         private const val DEFAULT_PORT = 9876
-        private const val CONNECT_TIMEOUT_MS = 5000
+        private const val HANDSHAKE_TIMEOUT_MS = 2000  // Per-attempt timeout
+        private const val HANDSHAKE_MAX_RETRIES = 3
         private const val HANDSHAKE_MAGIC = 0x52415354  // "RAST" in hex
 
         /**
          * Create a TailscaleTransport by connecting to a remote Tailscale IP.
          *
+         * Includes automatic retry for handshake failures (UDP packets can be lost).
+         * Uses the SAME socket for all retries so daemon can respond to correct port.
+         *
          * @param localIp Our Tailscale IP (to bind to)
          * @param remoteIp Remote device's Tailscale IP
          * @param remotePort Remote device's listening port
          * @return Connected transport
-         * @throws IOException if connection fails
+         * @throws IOException if connection fails after all retries
          */
         suspend fun connect(
             localIp: String,
@@ -53,45 +57,65 @@ class TailscaleTransport private constructor(
         ): TailscaleTransport = withContext(Dispatchers.IO) {
             Log.i(TAG, "Connecting to $remoteIp:$remotePort from $localIp")
 
+            // Create socket and connect to remote (connected UDP socket)
+            // This helps Android route packets correctly on VPN interfaces
             val socket = DatagramSocket()
-            socket.soTimeout = CONNECT_TIMEOUT_MS
+            val remoteAddress = InetSocketAddress(InetAddress.getByName(remoteIp), remotePort)
+            socket.connect(remoteAddress)  // Connected UDP - helps with VPN routing
+            Log.d(TAG, "Socket connected: local=${socket.localAddress}:${socket.localPort} -> remote=$remoteAddress")
+            socket.soTimeout = HANDSHAKE_TIMEOUT_MS
 
             try {
-                // Bind to local Tailscale interface
-                // Note: We don't bind to specific IP as Android handles routing
-                val remoteAddress = InetSocketAddress(InetAddress.getByName(remoteIp), remotePort)
+                var lastException: Exception? = null
 
-                // Send handshake packet
+                // Handshake packet (same for all attempts)
                 val handshake = ByteBuffer.allocate(8)
                     .putInt(HANDSHAKE_MAGIC)
                     .putInt(0)  // Reserved
                     .array()
+                val handshakePacket = DatagramPacket(handshake, handshake.size, remoteAddress)
 
-                val packet = DatagramPacket(handshake, handshake.size, remoteAddress)
-                socket.send(packet)
-                Log.d(TAG, "Sent handshake to $remoteIp:$remotePort")
-
-                // Wait for handshake response
+                // Response buffer
                 val responseBuffer = ByteArray(8)
                 val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
 
-                try {
-                    socket.receive(responsePacket)
-                    val response = ByteBuffer.wrap(responseBuffer)
-                    val magic = response.int
+                repeat(HANDSHAKE_MAX_RETRIES) { attempt ->
+                    try {
+                        // Send handshake
+                        socket.send(handshakePacket)
+                        Log.d(TAG, "Sent handshake to $remoteIp:$remotePort (attempt ${attempt + 1})")
 
-                    if (magic != HANDSHAKE_MAGIC) {
-                        throw IOException("Invalid handshake response: $magic")
+                        // Wait for response
+                        socket.receive(responsePacket)
+                        val response = ByteBuffer.wrap(responseBuffer)
+                        val magic = response.int
+
+                        if (magic != HANDSHAKE_MAGIC) {
+                            throw IOException("Invalid handshake response: $magic")
+                        }
+
+                        Log.i(TAG, "Handshake successful with $remoteIp:$remotePort")
+                        socket.soTimeout = 0  // Clear timeout for normal operation
+
+                        return@withContext TailscaleTransport(socket, remoteAddress, localIp)
+
+                    } catch (e: SocketTimeoutException) {
+                        lastException = e
+                        if (attempt < HANDSHAKE_MAX_RETRIES - 1) {
+                            Log.w(TAG, "Handshake timeout (attempt ${attempt + 1}/$HANDSHAKE_MAX_RETRIES), retrying...")
+                        }
+                    } catch (e: Exception) {
+                        lastException = e
+                        if (attempt < HANDSHAKE_MAX_RETRIES - 1) {
+                            Log.w(TAG, "Handshake error (attempt ${attempt + 1}/$HANDSHAKE_MAX_RETRIES): ${e.message}, retrying...")
+                        }
                     }
-
-                    Log.i(TAG, "Handshake successful with $remoteIp:$remotePort")
-                    socket.soTimeout = 0  // Clear timeout for normal operation
-
-                    return@withContext TailscaleTransport(socket, remoteAddress, localIp)
-
-                } catch (e: SocketTimeoutException) {
-                    throw IOException("Handshake timeout - daemon may not be listening on Tailscale")
                 }
+
+                throw IOException(
+                    "Handshake failed after $HANDSHAKE_MAX_RETRIES attempts - daemon may not be listening on Tailscale",
+                    lastException
+                )
 
             } catch (e: Exception) {
                 socket.close()

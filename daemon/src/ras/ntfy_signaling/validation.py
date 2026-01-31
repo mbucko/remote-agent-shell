@@ -178,11 +178,14 @@ class NtfySignalMessageValidator:
 
         Args:
             pending_session_id: Expected session ID from QR code.
+                               Empty string ("") enables reconnection mode
+                               which skips session_id validation.
             expected_type: Expected message type ("OFFER" or "ANSWER").
             timestamp_window: Allowed timestamp skew in seconds.
             nonce_cache: Optional nonce cache (creates new one if None).
         """
         self._session_id = pending_session_id
+        self._reconnection_mode = pending_session_id == ""
         self._expected_type = (
             NtfySignalMessageMessageType.OFFER
             if expected_type == "OFFER"
@@ -208,35 +211,46 @@ class NtfySignalMessageValidator:
                 error_detail=f"Expected {self._expected_type}, got {msg.type}",
             )
 
-        # 2. Validate session ID format
-        if not msg.session_id:
-            return ValidationResult(
-                is_valid=False,
-                error=ValidationError.INVALID_SESSION,
-                error_detail="Empty session_id",
-            )
+        # 2. Session ID validation depends on mode
+        if self._reconnection_mode:
+            # Reconnection mode: session_id must be empty
+            if msg.session_id:
+                return ValidationResult(
+                    is_valid=False,
+                    error=ValidationError.INVALID_SESSION,
+                    error_detail="session_id must be empty for reconnection",
+                )
+            # Device ID validation is done in the handler (against device_store)
+        else:
+            # Pairing mode: validate session_id format and match
+            if not msg.session_id:
+                return ValidationResult(
+                    is_valid=False,
+                    error=ValidationError.INVALID_SESSION,
+                    error_detail="Empty session_id",
+                )
 
-        if len(msg.session_id) > MAX_SESSION_ID_LENGTH:
-            return ValidationResult(
-                is_valid=False,
-                error=ValidationError.INVALID_SESSION_ID_FORMAT,
-                error_detail=f"session_id exceeds {MAX_SESSION_ID_LENGTH} chars",
-            )
+            if len(msg.session_id) > MAX_SESSION_ID_LENGTH:
+                return ValidationResult(
+                    is_valid=False,
+                    error=ValidationError.INVALID_SESSION_ID_FORMAT,
+                    error_detail=f"session_id exceeds {MAX_SESSION_ID_LENGTH} chars",
+                )
 
-        if not SESSION_ID_PATTERN.match(msg.session_id):
-            return ValidationResult(
-                is_valid=False,
-                error=ValidationError.INVALID_SESSION_ID_FORMAT,
-                error_detail="session_id contains invalid characters",
-            )
+            if not SESSION_ID_PATTERN.match(msg.session_id):
+                return ValidationResult(
+                    is_valid=False,
+                    error=ValidationError.INVALID_SESSION_ID_FORMAT,
+                    error_detail="session_id contains invalid characters",
+                )
 
-        # 3. Check session ID matches
-        if msg.session_id != self._session_id:
-            return ValidationResult(
-                is_valid=False,
-                error=ValidationError.INVALID_SESSION,
-                error_detail="session_id mismatch",
-            )
+            # Check session ID matches
+            if msg.session_id != self._session_id:
+                return ValidationResult(
+                    is_valid=False,
+                    error=ValidationError.INVALID_SESSION,
+                    error_detail="session_id mismatch",
+                )
 
         # 4. Validate timestamp
         timestamp_result = self._validate_timestamp(msg.timestamp)

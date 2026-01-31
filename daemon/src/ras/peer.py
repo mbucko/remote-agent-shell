@@ -8,6 +8,7 @@ from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSession
 
 from ras.protocols import PeerOwnership, PeerState
 from ras.sdp_validator import validate_sdp
+from ras.vpn_candidate_injector import inject_vpn_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,10 @@ class PeerConnection:
             f"Remote offer: {validation.candidate_count} candidates "
             f"(host={validation.has_host}, srflx={validation.has_srflx}, relay={validation.has_relay})"
         )
+        # Log candidate IPs for debugging
+        for line in offer_sdp.split("\n"):
+            if line.startswith("a=candidate:"):
+                logger.info(f"  Candidate: {line}")
 
         offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
         await self._pc.setRemoteDescription(offer)
@@ -181,8 +186,18 @@ class PeerConnection:
         # Wait for ICE gathering to complete
         await self._wait_ice_gathering()
 
+        # Get answer SDP and inject VPN candidates (Tailscale, etc.)
+        answer_sdp = self._pc.localDescription.sdp
+        answer_sdp = inject_vpn_candidates(answer_sdp)
+
+        # Log answer candidates for debugging
+        logger.info("Local answer candidates:")
+        for line in answer_sdp.split("\n"):
+            if line.startswith("a=candidate:"):
+                logger.info(f"  {line}")
+
         self._state = PeerState.CONNECTING
-        return self._pc.localDescription.sdp
+        return answer_sdp
 
     async def set_remote_description(self, sdp: str, sdp_type: str = "answer") -> None:
         """Set remote SDP description.

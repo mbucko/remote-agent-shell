@@ -154,8 +154,9 @@ class TestFullConnectionFlow:
         # Step 3: Still only one connection
         assert len(listener._connections) == 1
 
-        # All packets should be queued
-        assert mock_protocol._queue.qsize() == 20
+        # All packets should be queued in the transport's queue
+        transport = listener._connections[phone_addr]
+        assert transport._queue.qsize() == 20
 
 
 class TestTwoClientsFlow:
@@ -237,8 +238,11 @@ class TestTwoClientsFlow:
         # Still only two connections
         assert len(listener._connections) == 2
 
-        # All 20 packets should be queued (both clients share the protocol queue)
-        assert mock_protocol._queue.qsize() == 20
+        # Each transport should have 10 packets in its queue
+        transport1 = listener._connections[phone1_addr]
+        transport2 = listener._connections[phone2_addr]
+        assert transport1._queue.qsize() == 10
+        assert transport2._queue.qsize() == 10
 
 
 class TestEdgeCases:

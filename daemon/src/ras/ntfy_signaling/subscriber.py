@@ -297,8 +297,9 @@ class NtfySignalingSubscriber:
                 # Publish answer
                 success = await self._publish(result.answer_encrypted)
 
-                if success and self.on_offer_received:
+                if success and self.on_offer_received and not result.is_capability_exchange:
                     # Notify callback with is_reconnection flag
+                    # (Skip for capability exchange - no peer to authenticate)
                     await self.on_offer_received(
                         result.device_id,
                         result.device_name,

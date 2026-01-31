@@ -70,6 +70,7 @@ class HandlerResult:
     device_name: Optional[str]
     peer: Optional[Any]  # PeerConnection
     is_reconnection: bool = False  # True if this was a reconnection (not pairing)
+    is_capability_exchange: bool = False  # True if this was just a capability exchange
 
 
 class NtfySignalingHandler:
@@ -166,6 +167,10 @@ class NtfySignalingHandler:
             logger.info(f"Failed to parse protobuf: {type(e).__name__}")
             return None
 
+        # Handle CAPABILITIES messages separately (simpler flow, no WebRTC)
+        if msg.type == NtfySignalMessageMessageType.CAPABILITIES:
+            return await self._handle_capabilities_message(msg)
+
         # Determine if this is a reconnection request (empty session_id)
         is_reconnection_request = not msg.session_id
 
@@ -254,6 +259,88 @@ class NtfySignalingHandler:
             device_name=device_name,
             peer=peer,
             is_reconnection=is_reconnection_request,
+        )
+
+    async def _handle_capabilities_message(
+        self, msg: NtfySignalMessage
+    ) -> Optional[HandlerResult]:
+        """Handle a CAPABILITIES exchange message.
+
+        This is a simpler flow than OFFER - just exchange capabilities without WebRTC.
+        Used for discovering connection methods before attempting connection.
+
+        Args:
+            msg: The parsed CAPABILITIES message.
+
+        Returns:
+            HandlerResult with capability response, or None on error.
+        """
+        logger.info("Handling CAPABILITIES message")
+
+        # Only allow in reconnection mode (needs device validation)
+        if not self._reconnection_mode:
+            logger.info("Rejecting CAPABILITIES in pairing mode")
+            return None
+
+        # Validate device_id
+        if not self._device_store:
+            logger.warning("CAPABILITIES request but no device_store configured")
+            return None
+
+        if not msg.device_id:
+            logger.info("CAPABILITIES request missing device_id")
+            return None
+
+        device = self._device_store.get(msg.device_id)
+        if not device:
+            logger.info(f"Unknown device_id in CAPABILITIES: {msg.device_id[:8]}...")
+            return None
+
+        logger.info(f"Device validated for CAPABILITIES: {msg.device_id[:8]}...")
+
+        # Validate timestamp and nonce (reuse validator logic but allow CAPABILITIES type)
+        # We do manual validation here since the validator is configured for OFFER
+        now = int(time.time())
+        if abs(now - msg.timestamp) > 30:
+            logger.info(f"CAPABILITIES timestamp too old/new: {msg.timestamp}")
+            return None
+
+        if len(msg.nonce) != NONCE_SIZE:
+            logger.info(f"Invalid nonce size in CAPABILITIES: {len(msg.nonce)}")
+            return None
+
+        # Build our capabilities
+        capabilities = self._build_capabilities()
+
+        # Create CAPABILITIES response
+        response_msg = NtfySignalMessage(
+            type=NtfySignalMessageMessageType.CAPABILITIES,
+            session_id="",  # Empty for reconnection mode
+            device_id="",  # Not needed in response
+            device_name="",  # Not needed in response
+            timestamp=int(time.time()),
+            nonce=os.urandom(NONCE_SIZE),
+            capabilities=capabilities,
+        )
+
+        # Encrypt response
+        try:
+            response_encrypted = self._crypto.encrypt(bytes(response_msg))
+            logger.info(
+                f"CAPABILITIES response encrypted: tailscale={capabilities.tailscale_ip}:{capabilities.tailscale_port}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to encrypt CAPABILITIES response: {e}")
+            return None
+
+        return HandlerResult(
+            should_respond=True,
+            answer_encrypted=response_encrypted,
+            device_id=msg.device_id,
+            device_name=None,
+            peer=None,
+            is_reconnection=True,
+            is_capability_exchange=True,
         )
 
     def _build_capabilities(self) -> ConnectionCapabilities:

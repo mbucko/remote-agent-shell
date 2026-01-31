@@ -1,18 +1,30 @@
 package com.ras.data.reconnection
 
+import android.content.Context
 import android.util.Log
 import com.ras.crypto.HmacUtils
 import com.ras.crypto.KeyDerivation
 import com.ras.crypto.toHex
+import com.ras.data.connection.ConnectionContext
 import com.ras.data.connection.ConnectionManager
+import com.ras.data.connection.ConnectionOrchestrator
+import com.ras.data.connection.ConnectionProgress
+import com.ras.data.connection.NtfySignalingChannel
+import com.ras.data.connection.Transport
 import com.ras.data.credentials.CredentialRepository
-import com.ras.data.webrtc.ConnectionOwnership
-import com.ras.data.webrtc.WebRTCClient
 import com.ras.domain.startup.ReconnectionResult
 import com.ras.pairing.AuthClient
 import com.ras.pairing.AuthResult
+import com.ras.proto.AuthError
 import com.ras.proto.SignalRequest
 import com.ras.proto.SignalResponse
+import com.ras.di.DirectSignalingClient
+import com.ras.signaling.AuthenticationException
+import com.ras.signaling.DeviceNotFoundException
+import com.ras.signaling.DirectReconnectionClient
+import com.ras.signaling.NtfyClientInterface
+import com.ras.signaling.ReconnectionSignaler
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -24,35 +36,38 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Implementation of ReconnectionService.
- * Handles the full reconnection flow:
- * 1. Get stored credentials
- * 2. Create WebRTC offer
- * 3. Send reconnect request to daemon
- * 4. Establish WebRTC connection
- * 5. Perform authentication handshake
- * 6. Hand off to ConnectionManager
+ * Implementation of ReconnectionService using ConnectionOrchestrator.
+ *
+ * Orchestrates connection attempts using multiple strategies:
+ * 1. TailscaleStrategy - Direct VPN connection (if both on Tailscale)
+ * 2. WebRTCStrategy - Standard P2P via ICE/STUN
+ *
+ * After transport is established, performs authentication handshake
+ * and hands off to ConnectionManager.
  */
 @Singleton
 class ReconnectionServiceImpl @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val credentialRepository: CredentialRepository,
     private val httpClient: OkHttpClient,
-    private val webRTCClientFactory: WebRTCClient.Factory,
-    private val connectionManager: ConnectionManager
+    @DirectSignalingClient private val directSignalingHttpClient: OkHttpClient,
+    private val connectionManager: ConnectionManager,
+    private val ntfyClient: NtfyClientInterface,
+    private val orchestrator: ConnectionOrchestrator
 ) : ReconnectionService {
 
     companion object {
         private const val TAG = "ReconnectionService"
-        private val PROTOBUF_MEDIA_TYPE = "application/x-protobuf".toMediaType()
-        private const val DATA_CHANNEL_TIMEOUT_MS = 30_000L
     }
 
-    private var webRTCClient: WebRTCClient? = null
-    private var authKey: ByteArray? = null
-
-    override suspend fun reconnect(): ReconnectionResult {
+    override suspend fun reconnect(onProgress: (ConnectionProgress) -> Unit): ReconnectionResult {
         // 1. Get stored credentials
-        val credentials = credentialRepository.getCredentials()
+        val credentials = try {
+            credentialRepository.getCredentials()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get credentials", e)
+            return ReconnectionResult.Failure.Unknown(e.message ?: "Credential error")
+        }
         if (credentials == null) {
             Log.d(TAG, "No stored credentials")
             return ReconnectionResult.Failure.NoCredentials
@@ -61,211 +76,270 @@ class ReconnectionServiceImpl @Inject constructor(
         Log.d(TAG, "Attempting reconnection to ${credentials.daemonHost}:${credentials.daemonPort}")
 
         // Derive auth key from master secret
-        authKey = KeyDerivation.deriveKey(credentials.masterSecret, "auth")
+        val authKey = KeyDerivation.deriveKey(credentials.masterSecret, "auth")
 
-        // 2. Create WebRTC client and offer
-        val client: WebRTCClient
-        val sdpOffer: String
         try {
-            client = webRTCClientFactory.create(ConnectionOwnership.ReconnectionManager)
-            webRTCClient = client
-            sdpOffer = client.createOffer()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create WebRTC offer: ${e.message}")
-            cleanup()
-            return ReconnectionResult.Failure.NetworkError
-        }
+            // 2. Create signaling channel (use short-timeout client for direct probing)
+            val directClient = HttpDirectReconnectionClient(directSignalingHttpClient)
+            val signaler = ReconnectionSignaler(
+                directClient = directClient,
+                ntfyClient = ntfyClient
+            )
 
-        // 3. Send reconnect request to daemon
-        val sdpAnswer = try {
-            sendReconnectRequest(
+            val signalingChannel = NtfySignalingChannel(
+                signaler = signaler,
                 host = credentials.daemonHost,
                 port = credentials.daemonPort,
+                masterSecret = credentials.masterSecret,
                 deviceId = credentials.deviceId,
-                sdpOffer = sdpOffer
+                deviceName = android.os.Build.MODEL ?: "Unknown Device"
             )
-        } catch (e: IOException) {
-            Log.e(TAG, "Network error during reconnect: ${e.message}")
-            cleanup()
-            return ReconnectionResult.Failure.DaemonUnreachable
-        } catch (e: ReconnectionException) {
-            Log.e(TAG, "Reconnection failed: ${e.message}")
-            cleanup()
-            return e.result
-        }
 
-        // 4. Establish WebRTC connection
-        try {
-            client.setRemoteDescription(sdpAnswer)
-            val channelOpened = client.waitForDataChannel(DATA_CHANNEL_TIMEOUT_MS)
-            if (!channelOpened) {
-                Log.e(TAG, "Data channel failed to open")
-                cleanup()
+            // 3. Create connection context
+            val context = ConnectionContext(
+                androidContext = appContext,
+                deviceId = credentials.deviceId,
+                daemonHost = credentials.daemonHost,
+                daemonPort = credentials.daemonPort,
+                daemonTailscaleIp = credentials.daemonTailscaleIp,
+                daemonTailscalePort = credentials.daemonTailscalePort,
+                signaling = signalingChannel,
+                authToken = authKey,
+                signalingProgress = onProgress  // Pass progress for detailed signaling events
+            )
+
+            // 4. Connect using orchestrator
+            val transport = orchestrator.connect(context, onProgress)
+
+            if (transport == null) {
+                Log.e(TAG, "All connection strategies failed")
+                cleanup(authKey)
                 return ReconnectionResult.Failure.NetworkError
             }
+
+            // 5. Perform authentication handshake (only for WebRTC)
+            // TailscaleStrategy already does auth during connect(), so skip for Tailscale
+            val isTailscale = transport::class.simpleName?.contains("Tailscale") == true
+
+            if (!isTailscale) {
+                onProgress(ConnectionProgress.Authenticating())
+                val authResult = runAuthentication(transport, authKey)
+
+                when (authResult) {
+                    is AuthResult.Success -> {
+                        Log.i(TAG, "Authentication successful")
+                        onProgress(ConnectionProgress.Authenticated)
+                    }
+                    is AuthResult.Error -> {
+                        Log.e(TAG, "Authentication failed: ${authResult.code}")
+                        onProgress(ConnectionProgress.AuthenticationFailed("Error: ${authResult.code}"))
+                        transport.close()
+                        cleanup(authKey)
+                        return ReconnectionResult.Failure.AuthenticationFailed
+                    }
+                    AuthResult.Timeout -> {
+                        Log.e(TAG, "Authentication timed out")
+                        onProgress(ConnectionProgress.AuthenticationFailed("Timeout"))
+                        transport.close()
+                        cleanup(authKey)
+                        return ReconnectionResult.Failure.AuthenticationFailed
+                    }
+                }
+            } else {
+                Log.i(TAG, "Tailscale auth already completed during connect")
+                onProgress(ConnectionProgress.Authenticated)
+            }
+
+            // 6. Hand off to ConnectionManager
+            Log.i(TAG, "Handing off to ConnectionManager")
+            connectionManager.connectWithTransport(transport, authKey)
+
+            // Clear auth key after handoff
+            authKey.fill(0)
+            return ReconnectionResult.Success
         } catch (e: Exception) {
-            Log.e(TAG, "WebRTC connection failed: ${e.message}")
-            cleanup()
-            return ReconnectionResult.Failure.NetworkError
+            Log.e(TAG, "Reconnection failed: ${e.message}", e)
+            cleanup(authKey)
+            return ReconnectionResult.Failure.Unknown(e.message ?: "Unknown error")
         }
+    }
 
-        // 5. Perform authentication handshake
-        val key = authKey
-        if (key == null) {
-            Log.e(TAG, "Auth key is null")
-            cleanup()
-            return ReconnectionResult.Failure.AuthenticationFailed
-        }
-
-        val authResult = try {
-            val authClient = AuthClient(key)
+    private suspend fun runAuthentication(
+        transport: Transport,
+        authKey: ByteArray
+    ): AuthResult {
+        return try {
+            val authClient = AuthClient(authKey)
             authClient.runHandshake(
-                sendMessage = { data -> client.send(data) },
-                receiveMessage = { client.receive() }
+                sendMessage = { data -> transport.send(data) },
+                receiveMessage = { transport.receive() }
             )
         } catch (e: Exception) {
             Log.e(TAG, "Auth handshake error: ${e.message}")
-            cleanup()
-            return ReconnectionResult.Failure.AuthenticationFailed
-        }
-
-        when (authResult) {
-            is AuthResult.Success -> {
-                Log.i(TAG, "Authentication successful, handing off to ConnectionManager")
-
-                // 6. Hand off to ConnectionManager
-                try {
-                    client.transferOwnership(ConnectionOwnership.ConnectionManager)
-                    webRTCClient = null
-                    connectionManager.connect(client, key)
-
-                    // Clear auth key after handoff
-                    authKey?.fill(0)
-                    authKey = null
-
-                    return ReconnectionResult.Success
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to hand off to ConnectionManager: ${e.message}")
-                    cleanup()
-                    return ReconnectionResult.Failure.NetworkError
-                }
-            }
-            is AuthResult.Error -> {
-                Log.e(TAG, "Authentication failed: ${authResult.code}")
-                cleanup()
-                return ReconnectionResult.Failure.AuthenticationFailed
-            }
-            AuthResult.Timeout -> {
-                Log.e(TAG, "Authentication timed out")
-                cleanup()
-                return ReconnectionResult.Failure.AuthenticationFailed
-            }
+            AuthResult.Error(AuthError.ErrorCode.PROTOCOL_ERROR)
         }
     }
 
-    private suspend fun sendReconnectRequest(
+    private fun cleanup(authKey: ByteArray) {
+        authKey.fill(0)
+    }
+}
+
+/**
+ * HTTP implementation of DirectReconnectionClient.
+ * Used for direct HTTP signaling before falling back to ntfy.
+ */
+internal class HttpDirectReconnectionClient(
+    private val httpClient: OkHttpClient
+) : DirectReconnectionClient {
+
+    companion object {
+        private const val TAG = "HttpDirectReconnect"
+        private val PROTOBUF_MEDIA_TYPE = "application/x-protobuf".toMediaType()
+    }
+
+    override suspend fun exchangeCapabilities(
         host: String,
         port: Int,
         deviceId: String,
-        sdpOffer: String
-    ): String = withContext(Dispatchers.IO) {
-        val key = authKey ?: throw ReconnectionException(
-            "Auth key not available",
-            ReconnectionResult.Failure.AuthenticationFailed
-        )
+        authKey: ByteArray,
+        ourCapabilities: com.ras.proto.ConnectionCapabilities
+    ): com.ras.proto.ConnectionCapabilities? = withContext(Dispatchers.IO) {
+        try {
+            val body = ourCapabilities.toByteArray()
 
-        // Build protobuf request
-        val signalRequest = SignalRequest.newBuilder()
-            .setSdpOffer(sdpOffer)
-            .setDeviceId(deviceId)
-            .setDeviceName(android.os.Build.MODEL ?: "Unknown Device")
-            .build()
+            // Compute HMAC signature
+            val timestamp = System.currentTimeMillis() / 1000
+            val signature = HmacUtils.computeSignalingHmac(
+                authKey,
+                deviceId,
+                timestamp,
+                body
+            )
 
-        val body = signalRequest.toByteArray()
+            val request = Request.Builder()
+                .url("http://$host:$port/capabilities/$deviceId")
+                .post(body.toRequestBody(PROTOBUF_MEDIA_TYPE))
+                .header("X-RAS-Signature", signature.toHex())
+                .header("X-RAS-Timestamp", timestamp.toString())
+                .build()
 
-        // Compute HMAC signature
-        val timestamp = System.currentTimeMillis() / 1000
-        val signature = HmacUtils.computeSignalingHmac(
-            key,
-            deviceId,  // For reconnect, we use deviceId instead of sessionId
-            timestamp,
-            body
-        )
+            val response = httpClient.newCall(request).execute()
 
-        // Build HTTP request
-        val request = Request.Builder()
-            .url("http://$host:$port/reconnect/$deviceId")
-            .post(body.toRequestBody(PROTOBUF_MEDIA_TYPE))
-            .header("X-RAS-Signature", signature.toHex())
-            .header("X-RAS-Timestamp", timestamp.toString())
-            .build()
-
-        val response = httpClient.newCall(request).execute()
-
-        when {
-            response.isSuccessful -> {
-                val responseBody = response.body?.bytes()
-                if (responseBody == null || responseBody.isEmpty()) {
-                    throw ReconnectionException(
-                        "Empty response from daemon",
-                        ReconnectionResult.Failure.DaemonUnreachable
-                    )
+            when {
+                response.isSuccessful -> {
+                    val responseBody = response.body?.bytes()
+                    if (responseBody == null || responseBody.isEmpty()) {
+                        Log.w(TAG, "Empty capabilities response")
+                        return@withContext null
+                    }
+                    try {
+                        com.ras.proto.ConnectionCapabilities.parseFrom(responseBody)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Invalid capabilities response format")
+                        null
+                    }
                 }
-
-                val signalResponse = try {
-                    SignalResponse.parseFrom(responseBody)
-                } catch (e: Exception) {
-                    throw ReconnectionException(
-                        "Invalid response format",
-                        ReconnectionResult.Failure.DaemonUnreachable
-                    )
+                response.code == 401 -> throw AuthenticationException()
+                response.code == 404 -> throw DeviceNotFoundException()
+                else -> {
+                    Log.w(TAG, "Capabilities exchange failed: ${response.code}")
+                    null
                 }
-
-                if (signalResponse.sdpAnswer.isBlank()) {
-                    throw ReconnectionException(
-                        "Empty SDP answer",
-                        ReconnectionResult.Failure.DaemonUnreachable
-                    )
-                }
-
-                signalResponse.sdpAnswer
             }
-            response.code == 401 -> {
-                throw ReconnectionException(
-                    "Authentication failed (401)",
-                    ReconnectionResult.Failure.AuthenticationFailed
-                )
-            }
-            response.code == 404 -> {
-                throw ReconnectionException(
-                    "Device not found (404)",
-                    ReconnectionResult.Failure.DaemonUnreachable
-                )
-            }
-            response.code == 429 -> {
-                throw ReconnectionException(
-                    "Rate limited (429)",
-                    ReconnectionResult.Failure.NetworkError
-                )
-            }
-            else -> {
-                throw ReconnectionException(
-                    "Unexpected response code: ${response.code}",
-                    ReconnectionResult.Failure.DaemonUnreachable
-                )
-            }
+        } catch (e: DeviceNotFoundException) {
+            throw e
+        } catch (e: AuthenticationException) {
+            throw e
+        } catch (e: IOException) {
+            Log.d(TAG, "Network error during capabilities: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "Capabilities exchange error: ${e.message}")
+            null
         }
     }
 
-    private fun cleanup() {
-        webRTCClient?.closeByOwner(ConnectionOwnership.ReconnectionManager)
-        webRTCClient = null
-        authKey?.fill(0)
-        authKey = null
-    }
+    override suspend fun sendReconnect(
+        host: String,
+        port: Int,
+        deviceId: String,
+        authKey: ByteArray,
+        sdpOffer: String,
+        deviceName: String
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            // Build protobuf request
+            val signalRequest = SignalRequest.newBuilder()
+                .setSdpOffer(sdpOffer)
+                .setDeviceId(deviceId)
+                .setDeviceName(deviceName)
+                .build()
 
-    private class ReconnectionException(
-        message: String,
-        val result: ReconnectionResult.Failure
-    ) : Exception(message)
+            val body = signalRequest.toByteArray()
+
+            // Compute HMAC signature
+            val timestamp = System.currentTimeMillis() / 1000
+            val signature = HmacUtils.computeSignalingHmac(
+                authKey,
+                deviceId,
+                timestamp,
+                body
+            )
+
+            // Build HTTP request
+            val request = Request.Builder()
+                .url("http://$host:$port/reconnect/$deviceId")
+                .post(body.toRequestBody(PROTOBUF_MEDIA_TYPE))
+                .header("X-RAS-Signature", signature.toHex())
+                .header("X-RAS-Timestamp", timestamp.toString())
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+
+            when {
+                response.isSuccessful -> {
+                    val responseBody = response.body?.bytes()
+                    if (responseBody == null || responseBody.isEmpty()) {
+                        Log.w(TAG, "Empty response from daemon")
+                        return@withContext null
+                    }
+
+                    val signalResponse = try {
+                        SignalResponse.parseFrom(responseBody)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Invalid response format")
+                        return@withContext null
+                    }
+
+                    if (signalResponse.sdpAnswer.isBlank()) {
+                        Log.w(TAG, "Empty SDP answer")
+                        return@withContext null
+                    }
+
+                    signalResponse.sdpAnswer
+                }
+                response.code == 401 -> {
+                    throw AuthenticationException()
+                }
+                response.code == 404 -> {
+                    throw DeviceNotFoundException()
+                }
+                else -> {
+                    Log.w(TAG, "Unexpected response code: ${response.code}")
+                    null
+                }
+            }
+        } catch (e: DeviceNotFoundException) {
+            throw e
+        } catch (e: AuthenticationException) {
+            throw e
+        } catch (e: IOException) {
+            Log.d(TAG, "Network error: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "Unexpected error: ${e.message}")
+            null
+        }
+    }
 }

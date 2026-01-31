@@ -130,14 +130,15 @@ class TestConnectionReuse:
 
         # Verify connection exists
         assert addr in listener._connections
+        transport = listener._connections[addr]
 
         # Send data packet
         data = struct.pack(">I", 5) + b"hello"
         await listener._handle_packet(data, addr)
 
-        # Packet should be in the protocol queue for the transport to receive
+        # Packet should be in the transport's own queue (not protocol queue)
         queue_item = await asyncio.wait_for(
-            mock_protocol._queue.get(),
+            transport._queue.get(),
             timeout=1.0
         )
         assert queue_item == (data, addr)
@@ -184,6 +185,7 @@ class TestMultiPacketRouting:
 
         addr = ("100.64.0.2", 12345)
         await listener._handle_handshake(addr)
+        transport = listener._connections[addr]
 
         packet_count = 10
         packets_sent = []
@@ -193,12 +195,12 @@ class TestMultiPacketRouting:
             packets_sent.append(data)
             await listener._handle_packet(data, addr)
 
-        # All packets should be in the queue
-        assert mock_protocol._queue.qsize() == packet_count
+        # All packets should be in the transport's queue
+        assert transport._queue.qsize() == packet_count
 
         # Verify packet contents
         for expected_data in packets_sent:
-            queued_data, queued_addr = await mock_protocol._queue.get()
+            queued_data, queued_addr = await transport._queue.get()
             assert queued_data == expected_data
             assert queued_addr == addr
 

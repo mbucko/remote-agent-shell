@@ -78,13 +78,18 @@ class TailscaleListener:
         try:
             loop = asyncio.get_running_loop()
 
-            # Create UDP socket bound to Tailscale IP
-            # Note: We bind to 0.0.0.0 and let the OS route via Tailscale
+            # Create UDP socket bound to Tailscale IP specifically
+            # This ensures responses go out with correct source IP
             self._transport, self._protocol = await loop.create_datagram_endpoint(
                 TailscaleProtocol,
-                local_addr=("0.0.0.0", self._port),
-                family=0,
+                local_addr=(self._tailscale_info.ip, self._port),
             )
+
+            # Verify actual bound address
+            sock = self._transport.get_extra_info('socket')
+            if sock:
+                actual_addr = sock.getsockname()
+                logger.info(f"Tailscale socket bound to {actual_addr}")
 
             self._running = True
             logger.info(
@@ -153,9 +158,10 @@ class TailscaleListener:
 
         # Regular data packet - route to existing connection
         if addr in self._connections:
-            # Put packet in queue for the existing transport to receive
+            # Route packet to the transport's own queue
             logger.debug(f"Routing {len(data)} bytes to existing connection from {addr}")
-            await self._protocol._queue.put((data, addr))
+            transport = self._connections[addr]
+            await transport.enqueue(data, addr)
         else:
             # No established connection for this address - might be a late handshake or error
             logger.warning(f"Received {len(data)} bytes from unknown address {addr}")

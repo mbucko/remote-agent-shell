@@ -28,17 +28,17 @@ class AttemptReconnectionUseCaseTest {
 
     @Test
     fun `invoke calls reconnectionService`() = runTest {
-        coEvery { reconnectionService.reconnect() } returns ReconnectionResult.Success
+        coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Success
 
         val useCase = createUseCase()
         useCase()
 
-        coVerify { reconnectionService.reconnect() }
+        coVerify { reconnectionService.reconnect(any()) }
     }
 
     @Test
     fun `invoke returns Success when reconnection succeeds`() = runTest {
-        coEvery { reconnectionService.reconnect() } returns ReconnectionResult.Success
+        coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Success
 
         val useCase = createUseCase()
         val result = useCase()
@@ -48,7 +48,7 @@ class AttemptReconnectionUseCaseTest {
 
     @Test
     fun `invoke returns NoCredentials when no stored credentials`() = runTest {
-        coEvery { reconnectionService.reconnect() } returns ReconnectionResult.Failure.NoCredentials
+        coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.NoCredentials
 
         val useCase = createUseCase()
         val result = useCase()
@@ -58,7 +58,7 @@ class AttemptReconnectionUseCaseTest {
 
     @Test
     fun `invoke returns DaemonUnreachable when daemon is unreachable`() = runTest {
-        coEvery { reconnectionService.reconnect() } returns ReconnectionResult.Failure.DaemonUnreachable
+        coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.DaemonUnreachable
 
         val useCase = createUseCase()
         val result = useCase()
@@ -68,7 +68,7 @@ class AttemptReconnectionUseCaseTest {
 
     @Test
     fun `invoke returns AuthenticationFailed when auth fails`() = runTest {
-        coEvery { reconnectionService.reconnect() } returns ReconnectionResult.Failure.AuthenticationFailed
+        coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.AuthenticationFailed
 
         val useCase = createUseCase()
         val result = useCase()
@@ -78,7 +78,7 @@ class AttemptReconnectionUseCaseTest {
 
     @Test
     fun `invoke returns NetworkError on network issues`() = runTest {
-        coEvery { reconnectionService.reconnect() } returns ReconnectionResult.Failure.NetworkError
+        coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.NetworkError
 
         val useCase = createUseCase()
         val result = useCase()
@@ -89,7 +89,7 @@ class AttemptReconnectionUseCaseTest {
     @Test
     fun `invoke returns Unknown for other errors`() = runTest {
         val errorMessage = "Some unexpected error"
-        coEvery { reconnectionService.reconnect() } returns ReconnectionResult.Failure.Unknown(errorMessage)
+        coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.Unknown(errorMessage)
 
         val useCase = createUseCase()
         val result = useCase()

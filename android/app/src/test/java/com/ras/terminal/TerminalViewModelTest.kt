@@ -42,6 +42,7 @@ class TerminalViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var repository: TerminalRepository
+    private lateinit var sessionRepository: com.ras.data.sessions.SessionRepository
     private lateinit var buttonSettings: QuickButtonSettings
     private lateinit var savedStateHandle: SavedStateHandle
 
@@ -49,6 +50,7 @@ class TerminalViewModelTest {
     private lateinit var outputFlow: MutableSharedFlow<ByteArray>
     private lateinit var eventsFlow: MutableSharedFlow<TerminalEvent>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
+    private lateinit var sessionsFlow: MutableStateFlow<List<com.ras.data.sessions.SessionInfo>>
 
     @Before
     fun setup() {
@@ -58,6 +60,7 @@ class TerminalViewModelTest {
         outputFlow = MutableSharedFlow()
         eventsFlow = MutableSharedFlow()
         isConnectedFlow = MutableStateFlow(true)
+        sessionsFlow = MutableStateFlow(emptyList())
 
         repository = mockk(relaxed = true) {
             every { state } returns stateFlow
@@ -70,6 +73,10 @@ class TerminalViewModelTest {
             every { getButtons() } returns DEFAULT_QUICK_BUTTONS
         }
 
+        sessionRepository = mockk(relaxed = true) {
+            every { sessions } returns sessionsFlow
+        }
+
         savedStateHandle = SavedStateHandle(mapOf(NavArgs.SESSION_ID to "abc123def456"))
     }
 
@@ -79,7 +86,7 @@ class TerminalViewModelTest {
     }
 
     private fun createViewModel(): TerminalViewModel {
-        return TerminalViewModel(savedStateHandle, repository, buttonSettings)
+        return TerminalViewModel(savedStateHandle, repository, sessionRepository, buttonSettings)
     }
 
     // ==========================================================================
@@ -91,7 +98,7 @@ class TerminalViewModelTest {
         createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        coVerify { repository.attach("abc123def456") }
+        coVerify { repository.attach("abc123def456", any()) }
     }
 
     @Test
@@ -549,7 +556,7 @@ class TerminalViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Called once in init and once in reconnect
-        coVerify(exactly = 2) { repository.attach("abc123def456") }
+        coVerify(exactly = 2) { repository.attach("abc123def456", any()) }
     }
 
     // ==========================================================================
@@ -700,14 +707,29 @@ class TerminalViewModelTest {
     // ==========================================================================
 
     @Test
-    fun `sessionName updates from terminal state`() = runTest {
+    fun `sessionName updates from session repository`() = runTest {
+        // Initially no sessions, so sessionName falls back to sessionId
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        stateFlow.value = TerminalState(sessionId = "newsession12")
+        assertEquals("abc123def456", viewModel.sessionName.value)
+
+        // Update sessions with display name for our session
+        sessionsFlow.value = listOf(
+            com.ras.data.sessions.SessionInfo(
+                id = "abc123def456",
+                tmuxName = "tmux_name",
+                displayName = "My Session",
+                directory = "/home/user",
+                agent = "claude",
+                createdAt = java.time.Instant.now(),
+                lastActivityAt = java.time.Instant.now(),
+                status = com.ras.data.sessions.SessionStatus.ACTIVE
+            )
+        )
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals("newsession12", viewModel.sessionName.value)
+        assertEquals("My Session", viewModel.sessionName.value)
     }
 
     @Test

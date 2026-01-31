@@ -3,18 +3,26 @@ package com.ras.ui.terminal
 import android.content.Context
 import android.view.KeyEvent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -92,7 +100,7 @@ fun TerminalScreen(
     val scope = rememberCoroutineScope()
 
     // Font size for terminal (adjustable via pinch zoom)
-    var fontSize by remember { mutableFloatStateOf(14f) }
+    var fontSize by remember { mutableFloatStateOf(12f) }
 
     // Resume attachment when screen appears
     LaunchedEffect(Unit) {
@@ -131,28 +139,38 @@ fun TerminalScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(sessionName) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    // Raw mode toggle
-                    val isRawMode = (screenState as? TerminalScreenState.Connected)?.isRawMode == true
-                    TextButton(onClick = { viewModel.onRawModeToggle() }) {
-                        Text(
-                            if (isRawMode) stringResource(R.string.terminal_normal_mode)
-                            else stringResource(R.string.terminal_raw_mode)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+            // Compact custom header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .statusBarsPadding()
+                    .padding(horizontal = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onNavigateBack,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text(
+                    text = sessionName,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
                 )
-            )
+                // Raw mode toggle
+                val isRawMode = (screenState as? TerminalScreenState.Connected)?.isRawMode == true
+                Text(
+                    text = if (isRawMode) stringResource(R.string.terminal_normal_mode)
+                           else stringResource(R.string.terminal_raw_mode),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable { viewModel.onRawModeToggle() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
@@ -168,6 +186,7 @@ fun TerminalScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .clipToBounds()
                     .background(TerminalBackground)
             ) {
                 when (val state = screenState) {
@@ -371,7 +390,7 @@ private fun OutputSkippedBanner(
 }
 
 /**
- * Raw mode input that shows a keyboard and sends keypresses directly.
+ * Raw mode input - minimal UI with invisible text field for keyboard capture.
  */
 @Composable
 private fun RawModeInput(
@@ -381,57 +400,51 @@ private fun RawModeInput(
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
-    val inputText = remember { mutableStateOf("") }
+    // Keep a space so backspace has something to delete
+    val inputText = remember { mutableStateOf(" ") }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
         keyboardController?.show()
     }
 
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant
-    ) {
-        Row(
+    // Invisible text field to capture keyboard input
+    Box(modifier = modifier) {
+        BasicTextField(
+            value = inputText.value,
+            onValueChange = { newValue ->
+                val oldLen = inputText.value.length
+                val newLen = newValue.length
+
+                if (newLen > oldLen) {
+                    // New character typed
+                    val newChar = newValue.last()
+                    onCharacter(newChar)
+                } else if (newLen < oldLen) {
+                    // Backspace pressed - send DEL character
+                    onCharacter('\u007F')
+                }
+                // Always reset to single space for next input
+                inputText.value = " "
+            },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.terminal_raw_mode_active),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(end = 8.dp)
-            )
-
-            OutlinedTextField(
-                value = inputText.value,
-                onValueChange = { newValue ->
-                    // Send each new character
-                    if (newValue.length > inputText.value.length) {
-                        val newChar = newValue.last()
-                        onCharacter(newChar)
+                .focusRequester(focusRequester)
+                .onKeyEvent { keyEvent ->
+                    if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
+                        val keyCode = keyEvent.nativeKeyEvent.keyCode
+                        val isCtrl = keyEvent.nativeKeyEvent.isCtrlPressed
+                        onKeyPress(keyCode, isCtrl)
+                    } else {
+                        false
                     }
-                    // Clear input after sending to keep it fresh
-                    inputText.value = ""
                 },
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focusRequester)
-                    .onKeyEvent { keyEvent ->
-                        if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                            val keyCode = keyEvent.nativeKeyEvent.keyCode
-                            val isCtrl = keyEvent.nativeKeyEvent.isCtrlPressed
-                            onKeyPress(keyCode, isCtrl)
-                        } else {
-                            false
-                        }
-                    },
-                placeholder = { Text("Type here...") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
-            )
-        }
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            // Make text field invisible - just captures keyboard
+            textStyle = TextStyle(color = Color.Transparent),
+            cursorBrush = SolidColor(Color.Transparent)
+        )
     }
 }
 

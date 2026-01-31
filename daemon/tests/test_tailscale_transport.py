@@ -116,9 +116,9 @@ class TestSendReceive:
         """Receive should correctly parse length prefix and extract payload."""
         transport = create_test_transport(mock_udp_transport, mock_protocol)
 
-        # Inject packet into protocol queue
+        # Inject packet into transport's queue (simulates listener routing)
         packet = struct.pack(">I", 5) + b"hello"
-        await mock_protocol._queue.put((packet, ("100.64.0.2", 12345)))
+        await transport.enqueue(packet, ("100.64.0.2", 12345))
 
         received = await transport.receive(timeout=1.0)
 
@@ -131,7 +131,7 @@ class TestSendReceive:
 
         large_payload = b"y" * 1000
         packet = struct.pack(">I", len(large_payload)) + large_payload
-        await mock_protocol._queue.put((packet, ("100.64.0.2", 12345)))
+        await transport.enqueue(packet, ("100.64.0.2", 12345))
 
         received = await transport.receive(timeout=1.0)
 
@@ -143,7 +143,7 @@ class TestSendReceive:
         transport = create_test_transport(mock_udp_transport, mock_protocol)
 
         packet = struct.pack(">I", 0)  # Length 0, no payload
-        await mock_protocol._queue.put((packet, ("100.64.0.2", 12345)))
+        await transport.enqueue(packet, ("100.64.0.2", 12345))
 
         received = await transport.receive(timeout=1.0)
 
@@ -166,7 +166,7 @@ class TestSendReceive:
 
         # Length prefix says 100 bytes, but only 5 bytes follow
         packet = struct.pack(">I", 100) + b"hello"
-        await mock_protocol._queue.put((packet, ("100.64.0.2", 12345)))
+        await transport.enqueue(packet, ("100.64.0.2", 12345))
 
         with pytest.raises(ValueError, match="Invalid length prefix"):
             await transport.receive(timeout=1.0)
@@ -178,7 +178,7 @@ class TestSendReceive:
 
         # Only 2 bytes - smaller than 4-byte header
         packet = b"\x00\x05"
-        await mock_protocol._queue.put((packet, ("100.64.0.2", 12345)))
+        await transport.enqueue(packet, ("100.64.0.2", 12345))
 
         with pytest.raises(ValueError, match="Packet too small"):
             await transport.receive(timeout=1.0)
@@ -204,12 +204,12 @@ class TestStatsTracking:
         transport = create_test_transport(mock_udp_transport, mock_protocol)
 
         packet1 = struct.pack(">I", 5) + b"hello"
-        await mock_protocol._queue.put((packet1, ("100.64.0.2", 12345)))
+        await transport.enqueue(packet1, ("100.64.0.2", 12345))
         await transport.receive(timeout=1.0)
         assert transport.get_stats().bytes_received == 5
 
         packet2 = struct.pack(">I", 6) + b"world!"
-        await mock_protocol._queue.put((packet2, ("100.64.0.2", 12345)))
+        await transport.enqueue(packet2, ("100.64.0.2", 12345))
         await transport.receive(timeout=1.0)
         assert transport.get_stats().bytes_received == 11
 
@@ -230,7 +230,7 @@ class TestStatsTracking:
 
         for i in range(5):
             packet = struct.pack(">I", 4) + f"m{i:03d}".encode()
-            await mock_protocol._queue.put((packet, ("100.64.0.2", 12345)))
+            await transport.enqueue(packet, ("100.64.0.2", 12345))
             await transport.receive(timeout=1.0)
 
         assert transport.get_stats().messages_received == 5
@@ -260,7 +260,7 @@ class TestStatsTracking:
         await asyncio.sleep(0.01)
 
         packet = struct.pack(">I", 5) + b"hello"
-        await mock_protocol._queue.put((packet, ("100.64.0.2", 12345)))
+        await transport.enqueue(packet, ("100.64.0.2", 12345))
         await transport.receive(timeout=1.0)
 
         assert transport.get_stats().last_activity > initial_activity
@@ -371,10 +371,10 @@ class TestTailscalePeer:
 
         peer.on_message(handler)
 
-        # Inject messages into the queue
+        # Inject messages into the transport's queue (simulates listener routing)
         for i in range(3):
             packet = struct.pack(">I", 4) + f"m{i:03d}".encode()
-            await mock_protocol._queue.put((packet, ("100.64.0.2", 12345)))
+            await transport.enqueue(packet, ("100.64.0.2", 12345))
 
         # Wait for messages to be received
         try:

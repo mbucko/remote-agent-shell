@@ -2,7 +2,9 @@ package com.ras.data.connection
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,8 +45,11 @@ class ConnectionOrchestrator @Inject constructor(
     /**
      * Attempt to connect using available strategies.
      *
-     * Strategies are tried in priority order. Detection happens first
-     * (can be parallel), then connection attempts are sequential.
+     * Flow:
+     * 1. Discovery: Detect local capabilities (Tailscale IP, etc.)
+     * 2. Exchange: Get daemon's current capabilities via signaling
+     * 3. Detection: Check which strategies are available
+     * 4. Connection: Try strategies in priority order
      *
      * @param context Connection context with daemon info
      * @param onProgress Callback for progress updates
@@ -61,10 +66,75 @@ class ConnectionOrchestrator @Inject constructor(
         Log.i(TAG, "Starting connection with ${sortedStrategies.size} strategies: " +
                 sortedStrategies.joinToString { "${it.name} (p${it.priority})" })
 
+        // =================================================================
+        // Phase 0: Parallel Capability Discovery
+        // =================================================================
+        // Start all probes in parallel for faster connection establishment
+        onProgress(ConnectionProgress.DiscoveryStarted)
+
+        // Start Tailscale detection in parallel (fast, ~10ms)
+        onProgress(ConnectionProgress.TailscaleDetecting)
+        val tailscaleDeferred: Deferred<TailscaleInfo?> = async {
+            TailscaleDetector.detect(context.androidContext)
+        }
+
+        // Exchange capabilities - this now races direct vs ntfy internally
+        onProgress(ConnectionProgress.ExchangingCapabilities)
+
+        // Get Tailscale result (should be ready quickly)
+        val localTailscale = tailscaleDeferred.await()
+        onProgress(ConnectionProgress.LocalCapabilities(
+            tailscaleIp = localTailscale?.ip,
+            tailscaleInterface = localTailscale?.interfaceName,
+            supportsWebRTC = true
+        ))
+        Log.i(TAG, "Local capabilities: tailscale=${localTailscale?.ip ?: "none"}")
+
+        // Build our capabilities with Tailscale info
+        val ourCapabilities = ConnectionCapabilities(
+            tailscaleIp = localTailscale?.ip,
+            tailscalePort = 9876, // Default port
+            supportsWebRTC = true,
+            supportsTurn = false,
+            protocolVersion = 1
+        )
+
+        // Exchange capabilities with daemon (parallel racing inside)
+        val daemonCapabilities = try {
+            context.signaling.exchangeCapabilities(ourCapabilities, onProgress)
+        } catch (e: CancellationException) {
+            throw e  // Never swallow CancellationException - it breaks coroutine cancellation
+        } catch (e: Exception) {
+            Log.w(TAG, "Capability exchange error: ${e.message}")
+            null
+        }
+
+        // Update context with daemon's Tailscale info (dynamic, not from stored credentials)
+        val enrichedContext = if (daemonCapabilities != null) {
+            onProgress(ConnectionProgress.DaemonCapabilities(
+                tailscaleIp = daemonCapabilities.tailscaleIp,
+                tailscalePort = daemonCapabilities.tailscalePort,
+                supportsWebRTC = daemonCapabilities.supportsWebRTC,
+                protocolVersion = daemonCapabilities.protocolVersion
+            ))
+            Log.i(TAG, "Daemon capabilities: tailscale=${daemonCapabilities.tailscaleIp}:${daemonCapabilities.tailscalePort}")
+
+            // Enrich context with fresh daemon Tailscale info
+            context.copy(
+                daemonTailscaleIp = daemonCapabilities.tailscaleIp,
+                daemonTailscalePort = daemonCapabilities.tailscalePort
+            )
+        } else {
+            onProgress(ConnectionProgress.CapabilityExchangeFailed("Could not reach daemon"))
+            Log.w(TAG, "Capability exchange failed, proceeding with stored credentials")
+            context // Use original context with any stored credentials
+        }
+
+        // =================================================================
+        // Phase 1: Strategy Detection
+        // =================================================================
         _state.value = ConnectionState.DETECTING
         val failedAttempts = mutableListOf<FailedAttempt>()
-
-        // Phase 1: Detection (could be parallel, but sequential is simpler for progress)
         val availableStrategies = mutableListOf<Pair<ConnectionStrategy, String?>>()
 
         for (strategy in sortedStrategies) {
@@ -98,7 +168,9 @@ class ConnectionOrchestrator @Inject constructor(
             return@coroutineScope null
         }
 
-        // Phase 2: Connection attempts (sequential by priority)
+        // =================================================================
+        // Phase 2: Connection Attempts (sequential by priority)
+        // =================================================================
         _state.value = ConnectionState.CONNECTING
 
         for ((index, pair) in availableStrategies.withIndex()) {
@@ -109,7 +181,7 @@ class ConnectionOrchestrator @Inject constructor(
             Log.i(TAG, "Trying ${strategy.name}...")
 
             try {
-                val result = strategy.connect(context) { step ->
+                val result = strategy.connect(enrichedContext) { step ->
                     onProgress(ConnectionProgress.Connecting(
                         strategyName = strategy.name,
                         step = step.step,
@@ -120,10 +192,11 @@ class ConnectionOrchestrator @Inject constructor(
 
                 when (result) {
                     is ConnectionResult.Success -> {
-                        Log.i(TAG, "Connected via ${strategy.name}!")
+                        val duration = System.currentTimeMillis() - startTime
+                        Log.i(TAG, "Connected via ${strategy.name} in ${duration}ms!")
                         _state.value = ConnectionState.CONNECTED
                         _currentTransport.value = result.transport
-                        onProgress(ConnectionProgress.Connected(strategy.name, result.transport))
+                        onProgress(ConnectionProgress.Connected(strategy.name, result.transport, duration))
                         return@coroutineScope result.transport
                     }
                     is ConnectionResult.Failed -> {
@@ -133,6 +206,7 @@ class ConnectionOrchestrator @Inject constructor(
                         onProgress(ConnectionProgress.StrategyFailed(
                             strategyName = strategy.name,
                             error = result.error,
+                            durationMs = duration,
                             willTryNext = !isLast
                         ))
                     }
@@ -149,6 +223,7 @@ class ConnectionOrchestrator @Inject constructor(
                 onProgress(ConnectionProgress.StrategyFailed(
                     strategyName = strategy.name,
                     error = e.message ?: "Unknown error",
+                    durationMs = duration,
                     willTryNext = !isLast
                 ))
             }

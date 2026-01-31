@@ -1,5 +1,6 @@
 package com.ras.di
 
+import android.content.Context
 import com.ras.data.connection.ConnectionStrategy
 import com.ras.data.connection.TailscaleStrategy
 import com.ras.data.connection.WebRTCStrategy
@@ -7,6 +8,7 @@ import com.ras.data.webrtc.WebRTCClient
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import javax.inject.Singleton
@@ -36,8 +38,10 @@ object ConnectionModule {
     @Provides
     @IntoSet
     @Singleton
-    fun provideTailscaleStrategy(): ConnectionStrategy {
-        return TailscaleStrategy()
+    fun provideTailscaleStrategy(
+        @ApplicationContext context: Context
+    ): ConnectionStrategy {
+        return TailscaleStrategy(context)
     }
 
     /**

@@ -314,7 +314,8 @@ class SessionStateTest {
 
     @Test
     fun `DisplayNameValidator validate returns specific error for control chars`() {
-        val result = DisplayNameValidator.validate("Name\t")
+        // Use control character in the middle to avoid triggering whitespace trimming check
+        val result = DisplayNameValidator.validate("Na\tme")
         assertTrue(result is DisplayNameValidator.ValidationResult.Invalid)
         assertEquals("Name cannot contain control characters", (result as DisplayNameValidator.ValidationResult.Invalid).reason)
     }

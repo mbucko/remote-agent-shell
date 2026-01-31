@@ -143,11 +143,14 @@ class WebRTCClient(
         val localDesc = peerConnection?.localDescription
             ?: throw IllegalStateException("Local description not available")
 
-        // Validate SDP contains candidates
-        SdpValidator.requireCandidates(localDesc.description, "Offer SDP")
-        Log.d(TAG, "Offer contains ${SdpValidator.countCandidates(localDesc.description)} ICE candidates")
+        // Inject VPN candidates (Tailscale, etc.) that WebRTC might have missed
+        val sdpWithVpn = VpnCandidateInjector.injectVpnCandidates(localDesc.description)
 
-        return localDesc.description
+        // Validate SDP contains candidates
+        SdpValidator.requireCandidates(sdpWithVpn, "Offer SDP")
+        Log.d(TAG, "Offer contains ${SdpValidator.countCandidates(sdpWithVpn)} ICE candidates (after VPN injection)")
+
+        return sdpWithVpn
     }
 
     /**

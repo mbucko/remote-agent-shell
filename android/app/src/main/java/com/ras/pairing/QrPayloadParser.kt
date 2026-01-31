@@ -23,7 +23,9 @@ data class ParsedQrPayload(
     val port: Int,
     val masterSecret: ByteArray,
     val sessionId: String,
-    val ntfyTopic: String
+    val ntfyTopic: String,
+    val tailscaleIp: String? = null,
+    val tailscalePort: Int? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -33,7 +35,9 @@ data class ParsedQrPayload(
                port == other.port &&
                masterSecret.contentEquals(other.masterSecret) &&
                sessionId == other.sessionId &&
-               ntfyTopic == other.ntfyTopic
+               ntfyTopic == other.ntfyTopic &&
+               tailscaleIp == other.tailscaleIp &&
+               tailscalePort == other.tailscalePort
     }
 
     override fun hashCode(): Int {
@@ -43,6 +47,8 @@ data class ParsedQrPayload(
         result = 31 * result + masterSecret.contentHashCode()
         result = 31 * result + sessionId.hashCode()
         result = 31 * result + ntfyTopic.hashCode()
+        result = 31 * result + (tailscaleIp?.hashCode() ?: 0)
+        result = 31 * result + (tailscalePort ?: 0)
         return result
     }
 }
@@ -100,6 +106,10 @@ object QrPayloadParser {
             return QrParseResult.Error(QrParseResult.ErrorCode.INVALID_PORT)
         }
 
+        // Extract optional Tailscale fields
+        val tailscaleIp = if (payload.tailscaleIp.isNotBlank()) payload.tailscaleIp else null
+        val tailscalePort = if (payload.tailscalePort > 0) payload.tailscalePort else null
+
         return QrParseResult.Success(
             ParsedQrPayload(
                 version = payload.version,
@@ -107,7 +117,9 @@ object QrPayloadParser {
                 port = payload.port,
                 masterSecret = payload.masterSecret.toByteArray(),
                 sessionId = payload.sessionId,
-                ntfyTopic = payload.ntfyTopic
+                ntfyTopic = payload.ntfyTopic,
+                tailscaleIp = tailscaleIp,
+                tailscalePort = tailscalePort
             )
         )
     }

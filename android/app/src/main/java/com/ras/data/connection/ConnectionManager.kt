@@ -80,7 +80,10 @@ class ConnectionManager @Inject constructor(
     private val connectionLock = Any()
 
     @Volatile
-    private var webRtcClient: WebRTCClient? = null
+    private var transport: Transport? = null
+
+    @Volatile
+    private var webRtcClient: WebRTCClient? = null  // For health checking (WebRTC only)
 
     @Volatile
     private var codec: BytesCodec? = null
@@ -185,6 +188,111 @@ class ConnectionManager @Inject constructor(
     }
 
     /**
+     * Connect using a Transport with encryption.
+     *
+     * Supports all transport types (WebRTC, Tailscale, etc).
+     *
+     * @param t The transport to use for communication
+     * @param authKey 32-byte key for AES-256-GCM encryption
+     */
+    suspend fun connectWithTransport(t: Transport, authKey: ByteArray) {
+        require(authKey.size == 32) { "Auth key must be 32 bytes" }
+
+        synchronized(connectionLock) {
+            if (transport != null) {
+                Log.w(TAG, "Already connected, disconnecting first")
+                disconnectInternal()
+            }
+
+            transport = t
+            // Keep reference to WebRTC client for health monitoring if applicable
+            webRtcClient = (t as? WebRTCTransport)?.client
+            codec = BytesCodec(authKey.copyOf())
+            _isConnected.value = true
+            _isHealthy.value = true
+            startTransportEventListener()
+            startHeartbeatMonitor()
+            startPingLoop()
+            Log.i(TAG, "Connected via ${t.type.displayName} with encryption")
+        }
+
+        // Send ConnectionReady
+        try {
+            withTimeout(config.connectionReadyTimeoutMs) {
+                sendConnectionReady()
+            }
+            Log.i(TAG, "Sent ConnectionReady - handoff complete")
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "Timeout sending ConnectionReady")
+            disconnect()
+            throw IllegalStateException("ConnectionReady timeout", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send ConnectionReady", e)
+            disconnect()
+            throw IllegalStateException("Failed to send ConnectionReady: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Start event listener for Transport-based connections.
+     */
+    private fun startTransportEventListener() {
+        eventListenerJob?.cancel()
+        eventListenerJob = scope.launch {
+            val t = transport ?: return@launch
+            try {
+                while (_isConnected.value && isActive) {
+                    try {
+                        val data = t.receive(config.receiveTimeoutMs)
+                        routeMessage(data)
+                    } catch (e: TransportException) {
+                        if (e.message?.contains("timeout") == true) {
+                            Log.d(TAG, "Receive timeout, checking health...")
+                            checkTransportHealth()
+                        } else {
+                            throw e
+                        }
+                    } catch (e: IllegalStateException) {
+                        if (e.message?.contains("timeout") == true) {
+                            Log.d(TAG, "Receive timeout, checking health...")
+                            checkTransportHealth()
+                        } else {
+                            throw e
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Transport connection error", e)
+                synchronized(connectionLock) {
+                    if (_isConnected.value) {
+                        _isConnected.value = false
+                        _isHealthy.value = false
+                        _connectionErrors.tryEmit(
+                            ConnectionError.Disconnected(e.message ?: "Unknown error")
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun checkTransportHealth() {
+        val t = transport ?: return
+        if (!t.isConnected) {
+            Log.w(TAG, "Transport disconnected")
+            _isHealthy.value = false
+            return
+        }
+        // For WebRTC, use the detailed health check
+        webRtcClient?.let { client ->
+            if (!client.isHealthy(config.maxIdleMs)) {
+                Log.w(TAG, "Connection appears unhealthy")
+                _isHealthy.value = false
+            }
+        }
+    }
+
+    /**
      * Disconnect and clean up resources.
      */
     fun disconnect() {
@@ -202,6 +310,8 @@ class ConnectionManager @Inject constructor(
         pingJob = null
         _isConnected.value = false
         _isHealthy.value = false
+        transport?.close()
+        transport = null
         webRtcClient?.close()
         webRtcClient = null
         codec?.zeroKey()
@@ -280,20 +390,23 @@ class ConnectionManager @Inject constructor(
      * Encrypt and send data.
      */
     private suspend fun sendEncrypted(plaintext: ByteArray) {
-        val client = requireConnected()
         val c = codec ?: throw IllegalStateException("No encryption codec available")
         val encrypted = c.encode(plaintext)
-        client.send(encrypted)
+
+        // Prefer transport if available, fall back to webRtcClient for legacy
+        val t = transport
+        val client = webRtcClient
+        when {
+            t != null -> t.send(encrypted)
+            client != null -> client.send(encrypted)
+            else -> throw IllegalStateException("Not connected to daemon")
+        }
     }
 
     private fun validateMessageSize(data: ByteArray, type: String) {
         require(data.size <= MAX_MESSAGE_SIZE) {
             "$type too large: ${data.size} bytes exceeds maximum $MAX_MESSAGE_SIZE"
         }
-    }
-
-    private fun requireConnected(): WebRTCClient {
-        return webRtcClient ?: throw IllegalStateException("Not connected to daemon")
     }
 
     private fun startEventListener() {

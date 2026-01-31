@@ -603,6 +603,23 @@ class Daemon:
             peer: WebRTC peer connection.
             auth_key: Auth key for authentication and message encryption.
         """
+        # Wait for WebRTC connection to be established before authenticating
+        # (signaling completes before ICE finishes)
+        try:
+            await peer.wait_connected(timeout=30.0)
+        except Exception as e:
+            logger.warning(f"WebRTC connection failed for {device_id[:8]}...: {e}")
+            await peer.close()
+            return
+
+        # Set up message queue for auth handshake
+        auth_queue: asyncio.Queue = asyncio.Queue()
+
+        async def on_auth_message(message: bytes) -> None:
+            await auth_queue.put(message)
+
+        peer.on_message(on_auth_message)
+
         # Run authentication handshake
         auth_handler = AuthHandler(auth_key, device_id)
 
@@ -610,7 +627,7 @@ class Daemon:
             await peer.send(data)
 
         async def receive_message() -> bytes:
-            return await peer.receive()
+            return await asyncio.wait_for(auth_queue.get(), timeout=10.0)
 
         success = await auth_handler.run_handshake(send_message, receive_message)
 

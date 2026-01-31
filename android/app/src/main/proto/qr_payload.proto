@@ -29,4 +29,11 @@ message QrPayload {
 
   // ntfy topic for IP change notifications
   string ntfy_topic = 6;
+
+  // Optional: Daemon's Tailscale IP (if available)
+  // Allows direct connection when both devices are on Tailscale
+  string tailscale_ip = 7;
+
+  // Optional: Daemon's Tailscale port (defaults to 9876 if not set)
+  uint32 tailscale_port = 8;
 }

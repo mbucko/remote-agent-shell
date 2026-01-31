@@ -68,7 +68,9 @@ class NtfySignalMessageValidator(
         }
 
         // Check session ID
-        if (msg.sessionId.isEmpty() || msg.sessionId != pendingSessionId) {
+        // Note: For reconnection mode, both pendingSessionId and msg.sessionId are empty
+        // Only fail if they don't match
+        if (msg.sessionId != pendingSessionId) {
             return ValidationResult(false, ValidationError.INVALID_SESSION)
         }
 
@@ -92,9 +94,11 @@ class NtfySignalMessageValidator(
             }
         }
 
-        // Validate SDP
-        if (!isValidSdp(msg.sdp)) {
-            return ValidationResult(false, ValidationError.INVALID_SDP)
+        // Validate SDP (only for OFFER/ANSWER messages, not CAPABILITIES)
+        if (expectedType != NtfySignalMessage.MessageType.CAPABILITIES) {
+            if (!isValidSdp(msg.sdp)) {
+                return ValidationResult(false, ValidationError.INVALID_SDP)
+            }
         }
 
         // For OFFER messages, validate device ID and name

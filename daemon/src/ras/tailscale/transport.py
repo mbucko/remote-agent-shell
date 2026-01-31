@@ -52,6 +52,9 @@ class TailscaleTransport:
         self._remote_addr = remote_addr
         self._closed = False
         self._stats = TransportStats()
+        # Each transport has its own queue for receiving messages
+        # This avoids race conditions with the listener's receive loop
+        self._queue: asyncio.Queue[Tuple[bytes, Tuple[str, int]]] = asyncio.Queue()
         logger.info(f"TailscaleTransport created for {remote_addr}")
 
     @property
@@ -107,8 +110,9 @@ class TailscaleTransport:
             raise ConnectionError("Transport is closed")
 
         try:
+            # Use our own queue (populated by listener routing packets to us)
             data, addr = await asyncio.wait_for(
-                self._protocol.receive(),
+                self._queue.get(),
                 timeout=timeout
             )
         except asyncio.TimeoutError:
@@ -144,6 +148,17 @@ class TailscaleTransport:
     def get_stats(self) -> TransportStats:
         """Get transport statistics."""
         return self._stats
+
+    async def enqueue(self, data: bytes, addr: Tuple[str, int]) -> None:
+        """Enqueue received data for processing.
+
+        Called by the listener to route packets to this transport.
+
+        Args:
+            data: Received data
+            addr: Source address
+        """
+        await self._queue.put((data, addr))
 
 
 class TailscaleProtocol(asyncio.DatagramProtocol):
@@ -184,8 +199,13 @@ class TailscaleProtocol(asyncio.DatagramProtocol):
         """Send handshake response."""
         if self._transport:
             response = struct.pack(">II", HANDSHAKE_MAGIC, 0)
+            # Log local socket info for debugging
+            sock = self._transport.get_extra_info('socket')
+            if sock:
+                local_addr = sock.getsockname()
+                logger.info(f"Sending handshake response from {local_addr} to {addr}")
             self._transport.sendto(response, addr)
-            logger.debug(f"Sent handshake response to {addr}")
+            logger.info(f"Sent handshake response ({len(response)} bytes) to {addr}")
 
 
 class TailscalePeer:

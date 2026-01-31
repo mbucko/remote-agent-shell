@@ -171,7 +171,13 @@ class PairingManager @Inject constructor(
                 // Save master secret and daemon info to keystore
                 currentPayload?.let { payload ->
                     keyManager.storeMasterSecret(payload.masterSecret)
-                    keyManager.storeDaemonInfo(payload.ip, payload.port, payload.ntfyTopic)
+                    keyManager.storeDaemonInfo(
+                        ip = payload.ip,
+                        port = payload.port,
+                        ntfyTopic = payload.ntfyTopic,
+                        tailscaleIp = payload.tailscaleIp,
+                        tailscalePort = payload.tailscalePort
+                    )
                 }
 
                 // Hand off WebRTC connection to ConnectionManager with encryption key

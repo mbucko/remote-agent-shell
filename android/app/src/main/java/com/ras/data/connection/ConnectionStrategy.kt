@@ -1,5 +1,7 @@
 package com.ras.data.connection
 
+import android.content.Context
+
 /**
  * A strategy for establishing a connection to the daemon.
  *
@@ -57,11 +59,15 @@ interface ConnectionStrategy {
  * Context provided to strategies for connection.
  */
 data class ConnectionContext(
+    val androidContext: Context,  // Android context for system services
     val deviceId: String,
     val daemonHost: String?,  // Direct host if known (e.g., from QR code)
     val daemonPort: Int?,
+    val daemonTailscaleIp: String? = null,  // Daemon's Tailscale IP if known
+    val daemonTailscalePort: Int? = null,   // Daemon's Tailscale port if known
     val signaling: SignalingChannel,
-    val authToken: ByteArray
+    val authToken: ByteArray,
+    val signalingProgress: SignalingProgressCallback? = null  // For detailed signaling events
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -74,11 +80,42 @@ data class ConnectionContext(
 }
 
 /**
+ * Callback for signaling progress events.
+ */
+typealias SignalingProgressCallback = (ConnectionProgress) -> Unit
+
+/**
  * Abstraction for signaling (ntfy or direct HTTP).
  */
 interface SignalingChannel {
-    suspend fun sendCapabilities(capabilities: ConnectionCapabilities): ConnectionCapabilities?
-    suspend fun sendOffer(sdp: String): String?
+    /**
+     * Exchange capabilities with daemon before connection attempts.
+     * This is a quick exchange to discover what connection methods are available.
+     *
+     * @param capabilities Our local capabilities
+     * @param onProgress Optional callback for detailed signaling progress
+     * @return Daemon's capabilities, or null if exchange failed
+     */
+    suspend fun exchangeCapabilities(
+        capabilities: ConnectionCapabilities,
+        onProgress: SignalingProgressCallback? = null
+    ): ConnectionCapabilities?
+
+    /**
+     * Send SDP offer and get answer for WebRTC connection.
+     *
+     * @param sdp The SDP offer
+     * @param onProgress Optional callback for detailed signaling progress
+     * @return SDP answer from daemon, or null if failed
+     */
+    suspend fun sendOffer(
+        sdp: String,
+        onProgress: SignalingProgressCallback? = null
+    ): String?
+
+    /**
+     * Close the signaling channel.
+     */
     suspend fun close()
 }
 

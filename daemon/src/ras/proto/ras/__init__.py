@@ -532,6 +532,12 @@ class QrPayload(betterproto.Message):
     ntfy_topic: str = betterproto.string_field(6)
     """ntfy topic for IP change notifications"""
 
+    tailscale_ip: str = betterproto.string_field(7)
+    """Optional: Daemon's Tailscale IP (if available)"""
+
+    tailscale_port: int = betterproto.uint32_field(8)
+    """Optional: Daemon's Tailscale port (defaults to 9876)"""
+
 
 @dataclass(eq=False, repr=False)
 class SignalRequest(betterproto.Message):

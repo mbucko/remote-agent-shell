@@ -46,7 +46,7 @@ class WebRTCStrategy @Inject constructor(
             onProgress(ConnectionStep("Signaling", "Sending offer to daemon"))
             Log.d(TAG, "Sending offer via signaling...")
 
-            val answer = context.signaling.sendOffer(offer)
+            val answer = context.signaling.sendOffer(offer, context.signalingProgress)
             if (answer == null) {
                 Log.e(TAG, "No answer received from daemon")
                 webRTCClient.close()

@@ -201,7 +201,14 @@ class TerminalViewModel @Inject constructor(
     private fun attach() {
         viewModelScope.launch {
             try {
-                repository.attach(sessionId)
+                // Reset terminal emulator to clear any stale state
+                terminalEmulator.reset()
+                // Skip historical output - we'll get current screen via resize/redraw
+                repository.attach(sessionId, Long.MAX_VALUE)
+                // Force a resize after attach to trigger tmux to redraw current screen
+                if (currentCols > 0 && currentRows > 0) {
+                    repository.resize(currentCols, currentRows)
+                }
             } catch (e: Exception) {
                 _uiEvents.emit(TerminalUiEvent.ShowError("Failed to attach: ${e.message}"))
             }

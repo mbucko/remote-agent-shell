@@ -9,7 +9,9 @@ data class StoredCredentials(
     val masterSecret: ByteArray,
     val daemonHost: String,
     val daemonPort: Int,
-    val ntfyTopic: String
+    val ntfyTopic: String,
+    val daemonTailscaleIp: String? = null,
+    val daemonTailscalePort: Int? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -22,6 +24,8 @@ data class StoredCredentials(
         if (daemonHost != other.daemonHost) return false
         if (daemonPort != other.daemonPort) return false
         if (ntfyTopic != other.ntfyTopic) return false
+        if (daemonTailscaleIp != other.daemonTailscaleIp) return false
+        if (daemonTailscalePort != other.daemonTailscalePort) return false
 
         return true
     }
@@ -32,6 +36,8 @@ data class StoredCredentials(
         result = 31 * result + daemonHost.hashCode()
         result = 31 * result + daemonPort
         result = 31 * result + ntfyTopic.hashCode()
+        result = 31 * result + (daemonTailscaleIp?.hashCode() ?: 0)
+        result = 31 * result + (daemonTailscalePort ?: 0)
         return result
     }
 }

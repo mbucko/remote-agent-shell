@@ -1,5 +1,6 @@
 package com.ras.data.connection
 
+import android.content.Context
 import android.util.Log
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -26,17 +27,42 @@ object TailscaleDetector {
         return firstOctet == 100 && secondOctet in 64..127
     }
 
+    // Check if interface name looks like a VPN interface
+    private fun isVpnInterface(name: String): Boolean {
+        // VPN interfaces are typically tun*, tap*, or named after VPN software
+        return name.startsWith("tun") ||
+               name.startsWith("tap") ||
+               name.contains("tailscale") ||
+               name.contains("vpn") ||
+               name.contains("ipsec") ||
+               name.contains("wg")  // WireGuard
+    }
+
     /**
      * Detect if Tailscale is running and get the Tailscale IP.
      *
+     * @param context Android context (kept for API compatibility)
      * @return TailscaleInfo if detected, null otherwise
      */
-    fun detect(): TailscaleInfo? {
+    fun detect(context: Context): TailscaleInfo? {
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
+            Log.d(TAG, "Checking ${interfaces.size} network interfaces for Tailscale")
 
             for (networkInterface in interfaces) {
+                // Skip interfaces that are down or virtual (not actually connected)
+                if (!networkInterface.isUp) {
+                    Log.d(TAG, "Skipping ${networkInterface.name}: not up")
+                    continue
+                }
+
+                // Skip loopback interfaces
+                if (networkInterface.isLoopback) {
+                    continue
+                }
+
                 val name = networkInterface.name.lowercase()
+                Log.d(TAG, "Interface: $name (up=${networkInterface.isUp}, virtual=${networkInterface.isVirtual})")
 
                 // Check both by interface name and by IP range
                 val addresses = Collections.list(networkInterface.inetAddresses)
@@ -44,28 +70,27 @@ object TailscaleDetector {
                     .filter { !it.isLoopbackAddress }
                     .mapNotNull { it.hostAddress }
 
-                // Check if this interface has a Tailscale IP
+                if (addresses.isNotEmpty()) {
+                    Log.d(TAG, "  IPs on $name: $addresses")
+                }
+
+                // Only check VPN-like interfaces for Tailscale
+                // Skip rmnet (mobile), wlan (wifi), eth (ethernet) - these can have CGNAT IPs
+                if (!isVpnInterface(name)) {
+                    if (addresses.any { isTailscaleIp(it) }) {
+                        Log.d(TAG, "Skipping non-VPN interface $name with Tailscale-range IP (likely CGNAT)")
+                    }
+                    continue
+                }
+
+                // Check if this VPN interface has a Tailscale IP
                 for (ip in addresses) {
                     if (isTailscaleIp(ip)) {
-                        Log.i(TAG, "Detected Tailscale: $ip on interface $name")
+                        Log.i(TAG, "Detected Tailscale: $ip on VPN interface $name")
                         return TailscaleInfo(
                             ip = ip,
                             interfaceName = name
                         )
-                    }
-                }
-
-                // Also check by interface name for edge cases
-                if (VPN_INTERFACE_NAMES.contains(name)) {
-                    for (ip in addresses) {
-                        Log.i(TAG, "Detected VPN interface $name with IP $ip")
-                        // Even if not in Tailscale range, might still be usable
-                        if (ip.startsWith("100.")) {
-                            return TailscaleInfo(
-                                ip = ip,
-                                interfaceName = name
-                            )
-                        }
                     }
                 }
             }

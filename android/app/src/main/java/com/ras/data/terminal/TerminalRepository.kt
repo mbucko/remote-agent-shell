@@ -221,6 +221,11 @@ class TerminalRepository @Inject constructor(
     }
 
     private suspend fun handleSkipped(skipped: com.ras.proto.OutputSkipped) {
+        // Only show output skipped if there was actually data skipped
+        if (skipped.bytesSkipped <= 0) {
+            Log.d(TAG, "Ignoring output skipped with 0 bytes")
+            return
+        }
         Log.w(TAG, "Output skipped: seq ${skipped.fromSequence}-${skipped.toSequence}, ${skipped.bytesSkipped} bytes")
         _state.update { current ->
             current.copy(

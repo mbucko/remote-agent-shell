@@ -63,11 +63,32 @@ class NtfySignalMessageValidatorTest {
     }
 
     @Test
-    fun `empty session id rejected`() {
+    fun `empty session id rejected when expecting non-empty`() {
         val msg = validAnswerMessage(sessionId = "")
         val result = validator.validate(msg)
         assertFalse(result.isValid)
         assertEquals(ValidationError.INVALID_SESSION, result.error)
+    }
+
+    @Test
+    fun `empty session id accepted in reconnection mode`() {
+        // Reconnection mode uses empty session ID for both pending and message
+        val reconnectionValidator = NtfySignalMessageValidator(
+            pendingSessionId = "",  // Empty for reconnection mode
+            expectedType = NtfySignalMessage.MessageType.ANSWER,
+            timestampWindowSeconds = 30
+        )
+
+        val msg = NtfySignalMessage.newBuilder()
+            .setType(NtfySignalMessage.MessageType.ANSWER)
+            .setSessionId("")  // Empty in daemon response
+            .setSdp("v=0\r\nm=application 9\r\n")
+            .setTimestamp(currentTimestamp())
+            .setNonce(ByteString.copyFrom(ByteArray(16) { it.toByte() }))
+            .build()
+
+        val result = reconnectionValidator.validate(msg)
+        assertTrue("Reconnection mode should accept empty session IDs", result.isValid)
     }
 
     // ==================== Timestamp Tests ====================
