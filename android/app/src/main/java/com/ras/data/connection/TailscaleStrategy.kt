@@ -14,7 +14,8 @@ import javax.inject.Inject
  * This is the fastest and most reliable option when available.
  */
 class TailscaleStrategy @Inject constructor(
-    @ApplicationContext private val appContext: Context
+    @ApplicationContext private val appContext: Context,
+    private val socketFactory: DatagramSocketFactory = DefaultDatagramSocketFactory()
 ) : ConnectionStrategy {
 
     companion object {
@@ -74,7 +75,8 @@ class TailscaleStrategy @Inject constructor(
                 transport = TailscaleTransport.connect(
                     localIp = localInfo.ip,
                     remoteIp = daemonTailscaleIp,
-                    remotePort = daemonTailscalePort
+                    remotePort = daemonTailscalePort,
+                    socketFactory = socketFactory
                 )
 
                 // Step 3: Authenticate

@@ -47,21 +47,22 @@ class TailscaleTransport private constructor(
          * @param localIp Our Tailscale IP (to bind to)
          * @param remoteIp Remote device's Tailscale IP
          * @param remotePort Remote device's listening port
+         * @param socketFactory Factory for creating DatagramSocket instances (for DI/testing)
          * @return Connected transport
          * @throws IOException if connection fails after all retries
          */
         suspend fun connect(
             localIp: String,
             remoteIp: String,
-            remotePort: Int = DEFAULT_PORT
+            remotePort: Int = DEFAULT_PORT,
+            socketFactory: DatagramSocketFactory = DefaultDatagramSocketFactory()
         ): TailscaleTransport = withContext(Dispatchers.IO) {
             Log.i(TAG, "Connecting to $remoteIp:$remotePort from $localIp")
 
             // Create socket and connect to remote (connected UDP socket)
             // This helps Android route packets correctly on VPN interfaces
-            val socket = DatagramSocket()
             val remoteAddress = InetSocketAddress(InetAddress.getByName(remoteIp), remotePort)
-            socket.connect(remoteAddress)  // Connected UDP - helps with VPN routing
+            val socket = socketFactory.createConnected(remoteAddress)
             Log.d(TAG, "Socket connected: local=${socket.localAddress}:${socket.localPort} -> remote=$remoteAddress")
             socket.soTimeout = HANDSHAKE_TIMEOUT_MS
 

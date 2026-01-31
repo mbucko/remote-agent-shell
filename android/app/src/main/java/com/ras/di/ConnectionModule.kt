@@ -2,6 +2,8 @@ package com.ras.di
 
 import android.content.Context
 import com.ras.data.connection.ConnectionStrategy
+import com.ras.data.connection.DatagramSocketFactory
+import com.ras.data.connection.DefaultDatagramSocketFactory
 import com.ras.data.connection.TailscaleStrategy
 import com.ras.data.connection.WebRTCStrategy
 import com.ras.data.webrtc.WebRTCClient
@@ -30,6 +32,19 @@ import javax.inject.Singleton
 object ConnectionModule {
 
     /**
+     * Provides the default DatagramSocketFactory for UDP socket creation.
+     *
+     * This abstraction allows for:
+     * - Dependency injection for testability
+     * - Future platform-specific implementations (VPN routing)
+     */
+    @Provides
+    @Singleton
+    fun provideDatagramSocketFactory(): DatagramSocketFactory {
+        return DefaultDatagramSocketFactory()
+    }
+
+    /**
      * Provides TailscaleStrategy for direct VPN connections.
      *
      * This has the highest priority (10) and is tried first when
@@ -39,9 +54,10 @@ object ConnectionModule {
     @IntoSet
     @Singleton
     fun provideTailscaleStrategy(
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
+        socketFactory: DatagramSocketFactory
     ): ConnectionStrategy {
-        return TailscaleStrategy(context)
+        return TailscaleStrategy(context, socketFactory)
     }
 
     /**

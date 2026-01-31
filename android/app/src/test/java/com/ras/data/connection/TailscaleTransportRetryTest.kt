@@ -20,10 +20,8 @@ import java.net.SocketTimeoutException
  * - Socket is closed on final failure
  * - Retry attempts use the same socket (verified at strategy level)
  *
- * Note: Since TailscaleTransport.connect() creates DatagramSocket directly,
- * some tests operate at the TailscaleStrategy level with mocked transport.
- * Future improvement: Add SocketFactory for dependency injection to enable
- * direct unit testing of the retry logic.
+ * See also: SocketFactoryTest for tests using DatagramSocketFactory
+ * for direct socket mocking and retry verification.
  */
 class TailscaleTransportRetryTest {
 
