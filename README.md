@@ -34,12 +34,6 @@ The app tries multiple connection strategies in order of preference:
 | **Hairpin NAT** | Both devices behind same public IP | 🚧 Detected but no workaround |
 | **Symmetric NAT** | Both on commercial VPN (NordVPN, etc.) | 🚧 Detected but no workaround |
 
-### Connection Priority
-
-1. **Tailscale** (if both on Tailscale) - Direct TCP, lowest latency (~50ms)
-2. **Local HTTP** (same network) - Direct WebRTC signaling (~100ms)
-3. **ntfy relay** (cross-NAT) - WebRTC via encrypted relay (~1-5s depending on region)
-
 ### Connection Flow
 
 The mobile app uses a **Connection Orchestrator** with parallel racing:
@@ -50,25 +44,6 @@ The mobile app uses a **Connection Orchestrator** with parallel racing:
 4. **WebRTC Setup** - ICE gathering, DTLS handshake, data channel
 5. **Authentication** - Mutual auth over encrypted data channel
 6. **Heartbeat** - Keepalive packets every 15s to detect disconnection
-
-### Connection Timing (Typical)
-
-| Phase | Same Network | Cross-NAT (same region) | Cross-NAT (different region) |
-|-------|--------------|-------------------------|------------------------------|
-| Signaling | ~50ms | ~200ms | ~800ms+ |
-| ICE Negotiation | ~100ms | ~500ms | ~2-3s |
-| DTLS Handshake | ~50ms | ~200ms | ~1s |
-| **Total** | **~200ms** | **~1s** | **~5s** |
-
-Enable DEBUG logging to see detailed timing:
-
-```yaml
-# ~/.config/ras/config.yaml
-log_level: DEBUG
-log_file: /tmp/ras-debug.log
-```
-
-Look for `[TIMING]` entries in the logs.
 
 ## Quick Start
 
