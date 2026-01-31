@@ -73,6 +73,7 @@ import com.ras.R
 import com.ras.data.terminal.TerminalScreenState
 import com.ras.data.terminal.TerminalState
 import com.ras.data.terminal.TerminalUiEvent
+import com.ras.ui.components.ConnectionStatusOverlay
 import com.ras.ui.theme.StatusConnected
 import com.ras.ui.theme.StatusError
 import com.ras.ui.theme.TerminalBackground
@@ -93,6 +94,7 @@ fun TerminalScreen(
     val quickButtons by viewModel.quickButtons.collectAsStateWithLifecycle()
     val inputText by viewModel.inputText.collectAsStateWithLifecycle()
     val pasteTruncated by viewModel.pasteTruncated.collectAsStateWithLifecycle()
+    val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -236,6 +238,13 @@ fun TerminalScreen(
                 }
             }
 
+            // Connection status overlay - YouTube-style thin bar
+            // Shows only on disconnect/reconnect, auto-hides after connected
+            ConnectionStatusOverlay(
+                isConnected = isConnected,
+                modifier = Modifier.fillMaxWidth()
+            )
+
             // Quick buttons bar
             QuickButtonBar(
                 buttons = quickButtons,
@@ -249,7 +258,7 @@ fun TerminalScreen(
             )
 
             // Input area (depends on mode)
-            val isConnected = screenState is TerminalScreenState.Connected
+            val isScreenConnected = screenState is TerminalScreenState.Connected
             val isRawMode = (screenState as? TerminalScreenState.Connected)?.isRawMode == true
 
             if (isRawMode) {
@@ -271,7 +280,7 @@ fun TerminalScreen(
                             viewModel.onPaste(text)
                         }
                     },
-                    enabled = isConnected,
+                    enabled = isScreenConnected,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
