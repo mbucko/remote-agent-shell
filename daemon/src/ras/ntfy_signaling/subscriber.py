@@ -319,6 +319,8 @@ class NtfySignalingSubscriber:
         Returns:
             True on success, False after all retries exhausted.
         """
+        import time
+
         if not self._session:
             return False
 
@@ -326,16 +328,21 @@ class NtfySignalingSubscriber:
 
         for attempt in range(self.MAX_PUBLISH_RETRIES):
             try:
+                publish_start = time.time()
+                logger.info(f"[TIMING] ntfy: publish_start (attempt {attempt + 1})")
                 async with self._session.post(
                     url,
                     data=data,
                     headers={"Content-Type": "text/plain"},
                     timeout=aiohttp.ClientTimeout(total=self.REQUEST_TIMEOUT),
                 ) as response:
+                    publish_ms = (time.time() - publish_start) * 1000
                     if response.status == 200:
+                        logger.info(f"[TIMING] ntfy: publish_complete @ {publish_ms:.1f}ms")
                         logger.debug(f"Published signaling response to {self._topic[:8]}...")
                         return True
                     else:
+                        logger.info(f"[TIMING] ntfy: publish_failed @ {publish_ms:.1f}ms (status {response.status})")
                         logger.debug(f"Publish failed with status {response.status}")
             except Exception as e:
                 logger.debug(f"Publish attempt {attempt + 1} failed: {e}")
