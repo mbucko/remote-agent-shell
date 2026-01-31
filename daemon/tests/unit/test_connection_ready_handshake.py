@@ -11,6 +11,7 @@ Solution:
 3. Daemon receives ConnectionReady, then sends InitialState
 """
 
+import betterproto
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -87,7 +88,7 @@ class TestConnectionReadyHandshake:
 
     @pytest.mark.asyncio
     async def test_initial_state_not_sent_immediately(self, config, session_manager):
-        """InitialState should not be sent immediately on connection."""
+        """InitialState should not be sent immediately on connection (only heartbeat)."""
         daemon = Daemon(config=config, session_manager=session_manager)
         await daemon._initialize_stores()
         daemon._register_handlers()
@@ -102,8 +103,10 @@ class TestConnectionReadyHandshake:
             codec=codec,
         )
 
-        # No data sent yet
-        assert len(peer.sent_data) == 0
+        # Only heartbeat sent, not InitialState
+        assert len(peer.sent_data) == 1
+        event = RasEvent().parse(peer.sent_data[0])
+        assert betterproto.which_one_of(event, "event")[0] == "heartbeat"
 
     @pytest.mark.asyncio
     async def test_device_added_to_pending_ready(self, config, session_manager):
@@ -145,9 +148,9 @@ class TestConnectionReadyHandshake:
         cmd = RasCommand(connection_ready=ConnectionReady())
         await daemon._on_message("test_device", bytes(cmd))
 
-        # InitialState should be sent
-        assert len(peer.sent_data) == 1
-        event = RasEvent().parse(peer.sent_data[0])
+        # InitialState should be sent (heartbeat + initial state = 2 messages)
+        assert len(peer.sent_data) == 2
+        event = RasEvent().parse(peer.sent_data[1])
         assert event.initial_state is not None
 
     @pytest.mark.asyncio
@@ -212,8 +215,8 @@ class TestConnectionReadyHandshake:
         await daemon._on_message("test_device", bytes(cmd))
         await daemon._on_message("test_device", bytes(cmd))
 
-        # InitialState should only be sent once
-        assert len(peer.sent_data) == 1
+        # InitialState should only be sent once (heartbeat + initial state = 2 messages)
+        assert len(peer.sent_data) == 2
 
     @pytest.mark.asyncio
     async def test_pending_cleared_on_disconnect(self, config, session_manager):

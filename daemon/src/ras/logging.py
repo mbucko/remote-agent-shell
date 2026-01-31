@@ -30,9 +30,12 @@ def setup_logging(config: Config) -> logging.Logger:
     # Clear any existing handlers
     logger.handlers.clear()
 
-    # Log format: 2025-01-27 10:30:45 [INFO] message
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    formatter.datefmt = "%Y-%m-%d %H:%M:%S"
+    # Log format: 2025-01-27 10:30:45.123 [INFO] message
+    # Milliseconds included for precise timing analysis
+    formatter = logging.Formatter(
+        "%(asctime)s.%(msecs)03d [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     # File handler if log_file is configured
     if config.log_file:

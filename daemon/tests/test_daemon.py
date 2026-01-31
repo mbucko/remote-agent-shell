@@ -3,7 +3,7 @@
 import asyncio
 import shutil
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -262,8 +262,8 @@ class TestDaemonPingPong:
         assert b"1234567890" in str(sent_data).encode() or sent_data is not None
 
 
-class TestKeepaliveLoop:
-    """Tests for keepalive loop sending pings."""
+class TestHeartbeatIntegration:
+    """Tests for daemon integration with HeartbeatManager."""
 
     @pytest.fixture
     def config(self, tmp_path: Path) -> Config:
@@ -282,95 +282,57 @@ class TestKeepaliveLoop:
         """Create daemon."""
         return Daemon(config=config)
 
-    # KA01: Keepalive loop sends pings to all connections
-    @pytest.mark.asyncio
-    async def test_keepalive_loop_sends_pings(self, daemon):
-        """Keepalive loop should send ping messages to all connected devices."""
-        import time
-        from ras.proto.ras import RasEvent
+    # KA01: Daemon initializes HeartbeatManager with correct config
+    def test_daemon_creates_heartbeat_manager(self, daemon):
+        """Daemon should create HeartbeatManager with correct config."""
+        assert daemon._heartbeat_manager is not None
+        assert daemon._heartbeat_manager._config.send_interval == 0.1
+        assert daemon._heartbeat_manager._config.receive_timeout == 60.0
 
+    # KA02: Daemon registers send callback with HeartbeatManager
+    @pytest.mark.asyncio
+    async def test_daemon_send_heartbeat_callback(self, daemon):
+        """Daemon should properly send heartbeat through connection manager."""
         mock_conn = AsyncMock()
-        mock_conn.last_activity = time.time()
-
         daemon._connection_manager.connections = {"device1": mock_conn}
-        daemon._running = True
 
-        # Run keepalive loop - need to wait longer than the interval (0.1s)
-        async def run_keepalive_briefly():
-            await asyncio.sleep(0.15)
-            daemon._running = False
+        # Call the heartbeat send callback directly
+        await daemon._send_heartbeat("device1", b"heartbeat_data")
 
-        await asyncio.gather(
-            daemon._keepalive_loop(),
-            run_keepalive_briefly(),
-        )
+        # Verify send was called on the connection
+        mock_conn.send.assert_called_once_with(b"heartbeat_data")
 
-        # Verify ping was sent (may be called multiple times if loop iterates)
-        assert mock_conn.send.call_count >= 1
-        sent_data = mock_conn.send.call_args[0][0]
-        msg = RasEvent().parse(sent_data)
-        assert msg.pong is not None
-        assert msg.pong.timestamp > 0
-
-    # KA02: Keepalive continues after ping failure
+    # KA03: Daemon registers connection with heartbeat manager
     @pytest.mark.asyncio
-    async def test_keepalive_continues_after_ping_failure(self, daemon):
-        """Keepalive should continue to other connections if one fails."""
-        import time
+    async def test_daemon_registers_connection_with_heartbeat(self, daemon):
+        """When connection is added, daemon should register with heartbeat manager."""
+        mock_peer = AsyncMock()
+        mock_codec = Mock()
+        mock_codec.encode.return_value = b"encoded"
+        mock_codec.decode.return_value = b"decoded"
 
-        mock_conn1 = AsyncMock()
-        mock_conn1.send.side_effect = Exception("Connection dead")
-        mock_conn1.last_activity = time.time()
+        # Track if heartbeat manager methods were called
+        daemon._heartbeat_manager.on_connection_added = Mock()
+        daemon._heartbeat_manager.send_immediate = AsyncMock()
 
-        mock_conn2 = AsyncMock()
-        mock_conn2.last_activity = time.time()
-
-        daemon._connection_manager.connections = {
-            "device1": mock_conn1,
-            "device2": mock_conn2,
-        }
-        daemon._running = True
-
-        # Run keepalive loop - need to wait longer than the interval (0.1s)
-        async def run_keepalive_briefly():
-            await asyncio.sleep(0.15)
-            daemon._running = False
-
-        await asyncio.gather(
-            daemon._keepalive_loop(),
-            run_keepalive_briefly(),
+        await daemon.on_new_connection(
+            device_id="device1",
+            device_name="Test Device",
+            peer=mock_peer,
+            codec=mock_codec,
         )
 
-        # First connection tried and failed (may be called multiple times)
-        assert mock_conn1.send.call_count >= 1
-        # Second connection should still get ping
-        assert mock_conn2.send.call_count >= 1
+        # Verify heartbeat manager was notified
+        daemon._heartbeat_manager.on_connection_added.assert_called_once_with("device1")
+        daemon._heartbeat_manager.send_immediate.assert_called_once_with("device1")
 
-    # KA03: Stale connections are closed
+    # KA04: Daemon removes connection from heartbeat manager on disconnect
     @pytest.mark.asyncio
-    async def test_keepalive_closes_stale_connections(self, config, tmp_path):
-        """Keepalive should close connections that exceed timeout."""
-        import time
+    async def test_daemon_removes_connection_from_heartbeat(self, daemon):
+        """When connection is lost, daemon should remove from heartbeat manager."""
+        daemon._heartbeat_manager.on_connection_removed = Mock()
 
-        # Use short timeout for test
-        config.daemon.keepalive_timeout = 0.01
-        daemon = Daemon(config=config)
+        await daemon._on_connection_lost("device1")
 
-        mock_conn = AsyncMock()
-        mock_conn.last_activity = time.time() - 1.0  # 1 second ago (past timeout)
-
-        daemon._connection_manager.connections = {"device1": mock_conn}
-        daemon._running = True
-
-        # Run keepalive loop - need to wait longer than the interval (0.1s)
-        async def run_keepalive_briefly():
-            await asyncio.sleep(0.15)
-            daemon._running = False
-
-        await asyncio.gather(
-            daemon._keepalive_loop(),
-            run_keepalive_briefly(),
-        )
-
-        # Connection should have been closed (may be called multiple times)
-        assert mock_conn.close.call_count >= 1
+        # Verify heartbeat manager was notified
+        daemon._heartbeat_manager.on_connection_removed.assert_called_once_with("device1")

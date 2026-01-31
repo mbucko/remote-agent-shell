@@ -30,7 +30,7 @@ Usage:
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Protocol
 
 from ras.ntfy_signaling.crypto import (
@@ -71,6 +71,7 @@ class HandlerResult:
     peer: Optional[Any]  # PeerConnection
     is_reconnection: bool = False  # True if this was a reconnection (not pairing)
     is_capability_exchange: bool = False  # True if this was just a capability exchange
+    timing_ms: dict[str, float] = field(default_factory=dict)  # Phase timing in ms
 
 
 class NtfySignalingHandler:
@@ -145,10 +146,18 @@ class NtfySignalingHandler:
             HandlerResult if valid OFFER and answer created, None otherwise.
             Returns None silently on any error (security requirement).
         """
+        import time as time_module
+        start_time = time_module.perf_counter()
+        timing: dict[str, float] = {}
+
+        def mark(phase: str) -> None:
+            timing[phase] = (time_module.perf_counter() - start_time) * 1000
+
         try:
             # Decrypt
             plaintext = self._crypto.decrypt(encrypted)
-            logger.info(f"Decrypted ntfy message ({len(plaintext)} bytes)")
+            mark("decrypt")
+            logger.info(f"[TIMING] signaling: decrypt @ {timing['decrypt']:.1f}ms ({len(plaintext)} bytes)")
         except DecryptionError as e:
             # Silent ignore - could be wrong key or tampered
             logger.info(f"Decryption failed: {e}")
@@ -161,8 +170,9 @@ class NtfySignalingHandler:
         # Parse protobuf
         try:
             msg = NtfySignalMessage().parse(plaintext)
+            mark("parse")
             session_id_display = msg.session_id[:8] if msg.session_id else "(empty)"
-            logger.info(f"Parsed ntfy message: type={msg.type}, session={session_id_display}")
+            logger.info(f"[TIMING] signaling: parse @ {timing['parse']:.1f}ms (type={msg.type}, session={session_id_display})")
         except Exception as e:
             logger.info(f"Failed to parse protobuf: {type(e).__name__}")
             return None
@@ -191,7 +201,8 @@ class NtfySignalingHandler:
         if not result.is_valid:
             logger.info(f"Validation failed: {result.error}")
             return None
-        logger.info("Message validated successfully")
+        mark("validate")
+        logger.info(f"[TIMING] signaling: validate @ {timing['validate']:.1f}ms")
 
         # For reconnection mode, validate device_id against device store
         if self._reconnection_mode:
@@ -208,7 +219,8 @@ class NtfySignalingHandler:
                 logger.info(f"Unknown device_id: {msg.device_id[:8]}...")
                 return None
 
-            logger.info(f"Device validated: {msg.device_id[:8]}...")
+            mark("device_lookup")
+            logger.info(f"[TIMING] signaling: device_lookup @ {timing['device_lookup']:.1f}ms ({msg.device_id[:8]}...)")
 
         # Sanitize device name
         device_name = sanitize_device_name(msg.device_name)
@@ -217,9 +229,11 @@ class NtfySignalingHandler:
         try:
             logger.info("Creating WebRTC peer connection...")
             peer = self._create_peer()
+            mark("peer_create")
             # PeerConnection uses raw SDP format directly
             answer_sdp = await peer.accept_offer(msg.sdp)
-            logger.info("WebRTC peer created, answer SDP generated")
+            mark("accept_offer")
+            logger.info(f"[TIMING] signaling: accept_offer @ {timing['accept_offer']:.1f}ms")
         except Exception as e:
             logger.warning(f"WebRTC peer creation failed: {e}")
             return None
@@ -245,13 +259,19 @@ class NtfySignalingHandler:
         # Encrypt answer
         try:
             answer_encrypted = self._crypto.encrypt(bytes(answer_msg))
-            logger.info(f"Answer encrypted ({len(answer_encrypted)} bytes)")
+            mark("encrypt_answer")
+            logger.info(f"[TIMING] signaling: encrypt_answer @ {timing['encrypt_answer']:.1f}ms ({len(answer_encrypted)} bytes)")
         except Exception as e:
             logger.warning(f"Failed to encrypt answer: {e}")
             return None
 
         mode = "reconnection" if is_reconnection_request else "pairing"
-        logger.info(f"Returning successful handler result ({mode} mode)")
+        mark("complete")
+
+        # Log timing summary
+        summary = " | ".join(f"{phase}={ms:.0f}ms" for phase, ms in timing.items())
+        logger.info(f"[TIMING] signaling summary ({mode}): {summary}")
+
         return HandlerResult(
             should_respond=True,
             answer_encrypted=answer_encrypted,
@@ -259,6 +279,7 @@ class NtfySignalingHandler:
             device_name=device_name,
             peer=peer,
             is_reconnection=is_reconnection_request,
+            timing_ms=timing,
         )
 
     async def _handle_capabilities_message(

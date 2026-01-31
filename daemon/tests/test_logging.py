@@ -68,8 +68,8 @@ class TestSetupLogging:
         logger.info("test message")
 
         content = log_file.read_text()
-        # Format: 2025-01-27 10:30:45 [INFO] message
-        pattern = r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \[INFO\] test message"
+        # Format: 2025-01-27 10:30:45.123 [INFO] message (with milliseconds)
+        pattern = r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[INFO\] test message"
         assert re.search(pattern, content)
 
     def test_setup_logging_without_file(self):

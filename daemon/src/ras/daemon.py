@@ -125,6 +125,10 @@ class Daemon:
         # Device IDs in this set have connected but not yet sent ConnectionReady
         self._pending_ready: set[str] = set()
 
+        # Track connection timing for profiling
+        # Maps device_id -> connection start time (perf_counter)
+        self._connection_timing: dict[str, float] = {}
+
     async def start(self) -> None:
         """Start the daemon.
 
@@ -546,7 +550,17 @@ class Daemon:
         """
         if device_id in self._pending_ready:
             self._pending_ready.discard(device_id)
-            logger.info(f"Received ConnectionReady from {device_id}")
+
+            # Log timing if available
+            start_time = self._connection_timing.pop(device_id, None)
+            if start_time is not None:
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                logger.info(
+                    f"[TIMING] ConnectionReady from {device_id[:8]}... @ {elapsed_ms:.1f}ms after new_connection"
+                )
+            else:
+                logger.info(f"Received ConnectionReady from {device_id}")
+
             await self._send_initial_state(device_id)
         else:
             logger.warning(f"Unexpected ConnectionReady from {device_id}")
@@ -598,16 +612,25 @@ class Daemon:
             peer: WebRTC peer connection (already authenticated).
             auth_key: Auth key for message encryption.
         """
+        wait_start = time.perf_counter()
+
         # Wait for WebRTC connection to be established
         # (signaling/auth completes before ICE finishes)
         try:
             await peer.wait_connected(timeout=30.0)
         except Exception as e:
-            logger.warning(f"WebRTC connection failed for {device_id[:8]}...: {e}")
+            wait_ms = (time.perf_counter() - wait_start) * 1000
+            logger.warning(
+                f"WebRTC connection failed for {device_id[:8]}... after {wait_ms:.0f}ms: {e}"
+            )
             await peer.close()
             return
 
-        logger.info(f"Device connected: {device_name} ({device_id[:8]}...)")
+        wait_ms = (time.perf_counter() - wait_start) * 1000
+        logger.info(
+            f"[TIMING] Device connected: {device_name} ({device_id[:8]}...) "
+            f"wait_connected took {wait_ms:.0f}ms"
+        )
 
         # Create codec for encrypted communication
         codec = BytesCodec(auth_key)
@@ -627,6 +650,9 @@ class Daemon:
 
         # Clean up pending ready state
         self._pending_ready.discard(device_id)
+
+        # Clean up connection timing
+        self._connection_timing.pop(device_id, None)
 
         # Clean up terminal attachments
         if self._terminal_manager:
@@ -677,7 +703,10 @@ class Daemon:
         # This ensures the phone's event listener is set up before we send
         self._pending_ready.add(device_id)
 
-        logger.info(f"New connection: {device_id} ({device_name})")
+        # Track connection timing
+        self._connection_timing[device_id] = time.perf_counter()
+
+        logger.info(f"New connection: {device_id} ({device_name}) - waiting for ConnectionReady")
 
     async def _on_message(self, device_id: str, data: bytes) -> None:
         """Handle incoming message from phone."""

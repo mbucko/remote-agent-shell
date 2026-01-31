@@ -8,6 +8,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import betterproto
 import pytest
 
 
@@ -132,8 +133,12 @@ class TestConnectionLifecycle:
             codec=codec,
         )
 
-        # No initial state sent yet - waiting for ConnectionReady
-        assert len(peer.sent_data) == 0
+        # Immediate heartbeat sent, but no initial state yet - waiting for ConnectionReady
+        # HeartbeatManager sends immediate heartbeat on connection
+        assert len(peer.sent_data) == 1
+        # Verify it's a heartbeat, not initial state
+        event = RasEvent().parse(peer.sent_data[0])
+        assert betterproto.which_one_of(event, "event")[0] == "heartbeat"
 
         # Device should be in pending_ready set
         assert "new_device_123" in daemon._pending_ready
@@ -142,9 +147,9 @@ class TestConnectionLifecycle:
         connection_ready_cmd = RasCommand(connection_ready=ConnectionReady())
         await daemon._on_message("new_device_123", bytes(connection_ready_cmd))
 
-        # Now should have sent initial state
-        assert len(peer.sent_data) == 1
-        event = RasEvent().parse(peer.sent_data[0])
+        # Now should have sent initial state (heartbeat + initial state = 2 messages)
+        assert len(peer.sent_data) == 2
+        event = RasEvent().parse(peer.sent_data[1])
         assert event.initial_state is not None
 
         # Device should no longer be in pending_ready
