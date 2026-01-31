@@ -9,10 +9,12 @@ import com.ras.domain.startup.ClearCredentialsUseCase
 import com.ras.domain.startup.CredentialStatus
 import com.ras.domain.startup.ReconnectionResult
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -59,10 +61,13 @@ class StartupViewModel @Inject constructor(
         var currentLog = ConnectionLog()
 
         try {
-            val result = attemptReconnectionUseCase { progress ->
-                // Accumulate progress into connection log
-                currentLog = currentLog.apply(progress)
-                _state.value = StartupState.Connecting(log = currentLog)
+            // Run connection on Default dispatcher to keep Main thread free for animations
+            val result = withContext(Dispatchers.Default) {
+                attemptReconnectionUseCase { progress ->
+                    currentLog = currentLog.apply(progress)
+                    // StateFlow is thread-safe, can update from any thread
+                    _state.value = StartupState.Connecting(log = currentLog)
+                }
             }
             when (result) {
                 is ReconnectionResult.Success -> {
