@@ -101,6 +101,10 @@ class WebRTCClient(
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             iceTransportsType = PeerConnection.IceTransportsType.ALL
+            // Pre-gather ICE candidates to speed up subsequent connections
+            iceCandidatePoolSize = 2
+            // Use aggressive nomination for faster ICE selection on reconnects
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
 
         synchronized(lock) {
@@ -437,6 +441,24 @@ class WebRTCClient(
                     }
                     PeerConnection.IceConnectionState.CONNECTED -> {
                         GlobalConnectionTimer.logMark("ice_connected")
+                        // Log connection stats to see which candidate pair succeeded
+                        peerConnection?.getStats { report ->
+                            report.statsMap.values
+                                .filter { it.type == "candidate-pair" && it.members["state"] == "succeeded" }
+                                .forEach { pair ->
+                                    val localId = pair.members["localCandidateId"] as? String
+                                    val remoteId = pair.members["remoteCandidateId"] as? String
+                                    Log.i(TAG, "ICE succeeded with pair: local=$localId, remote=$remoteId")
+                                }
+                            report.statsMap.values
+                                .filter { it.type == "local-candidate" || it.type == "remote-candidate" }
+                                .forEach { candidate ->
+                                    val id = candidate.id
+                                    val candidateType = candidate.members["candidateType"] as? String
+                                    val ip = candidate.members["ip"] as? String ?: candidate.members["address"] as? String
+                                    Log.d(TAG, "Candidate $id: type=$candidateType, ip=$ip")
+                                }
+                        }
                         Log.i(TAG, "ICE connected! Peer-to-peer connection established")
                     }
                     PeerConnection.IceConnectionState.COMPLETED -> {
