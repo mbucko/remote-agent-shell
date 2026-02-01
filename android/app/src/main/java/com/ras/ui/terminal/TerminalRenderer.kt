@@ -4,20 +4,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -29,15 +29,20 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
-import com.ras.R
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ras.R
+import com.termux.terminal.TerminalBuffer
 
 /**
  * Compose component that renders a terminal buffer.
  *
  * Uses Termux's TerminalBuffer for the data model and renders it
- * using Compose Text with AnnotatedString for styling.
+ * using LazyColumn for virtualization - only visible rows are composed.
+ *
+ * Performance: Instead of extracting all 2000+ scrollback rows on every
+ * recomposition, we only extract the ~40 visible rows, reducing work by 50x.
  */
 @Composable
 fun TerminalRenderer(
@@ -50,7 +55,18 @@ fun TerminalRenderer(
     // Observe screen version to trigger recomposition
     val screenVersion = emulator.screenVersion
 
-    val verticalScrollState = rememberScrollState()
+    val screen = emulator.getScreen()
+    val terminalRows = emulator.getRows()
+    val cols = emulator.getColumns()
+
+    // Total rows including scrollback
+    val firstRow = -screen.activeTranscriptRows
+    val totalRows = terminalRows - firstRow
+
+    val listState = rememberLazyListState()
+
+    // Track if we've done the initial scroll to bottom
+    var hasInitiallyScrolled by remember { mutableStateOf(false) }
 
     val density = LocalDensity.current
 
@@ -91,13 +107,13 @@ fun TerminalRenderer(
         if (lastContainerWidth > 0 && lastContainerHeight > 0) {
             val horizontalPadding = with(density) { 16.dp.toPx() }
             val rawCols = ((lastContainerWidth - horizontalPadding) / charWidth).toInt()
-            val cols = (rawCols - 2).coerceAtLeast(20)
-            val rows = ((lastContainerHeight - with(density) { 16.dp.toPx() }) / charHeight).toInt().coerceAtLeast(5)
+            val calculatedCols = (rawCols - 2).coerceAtLeast(20)
+            val calculatedRows = ((lastContainerHeight - with(density) { 16.dp.toPx() }) / charHeight).toInt().coerceAtLeast(5)
 
-            if (cols != reportedCols || rows != reportedRows) {
-                reportedCols = cols
-                reportedRows = rows
-                onSizeChanged?.invoke(cols, rows)
+            if (calculatedCols != reportedCols || calculatedRows != reportedRows) {
+                reportedCols = calculatedCols
+                reportedRows = calculatedRows
+                onSizeChanged?.invoke(calculatedCols, calculatedRows)
             }
         }
     }
@@ -110,11 +126,6 @@ fun TerminalRenderer(
                 onFontSizeChanged(newSize)
             }
         }
-    }
-
-    // Extract text from terminal buffer
-    val terminalText = remember(screenVersion) {
-        extractTerminalText(emulator)
     }
 
     Box(
@@ -134,90 +145,129 @@ fun TerminalRenderer(
                     // Calculate terminal dimensions based on available space
                     val horizontalPadding = with(density) { 16.dp.toPx() }
                     val rawCols = ((width - horizontalPadding) / charWidth).toInt()
-                    val cols = (rawCols - 2).coerceAtLeast(20)
-                    val rows = ((height - with(density) { 16.dp.toPx() }) / charHeight).toInt().coerceAtLeast(5)
+                    val calculatedCols = (rawCols - 2).coerceAtLeast(20)
+                    val calculatedRows = ((height - with(density) { 16.dp.toPx() }) / charHeight).toInt().coerceAtLeast(5)
 
                     // Only send resize if cols/rows actually changed
-                    if (cols != reportedCols || rows != reportedRows) {
-                        reportedCols = cols
-                        reportedRows = rows
-                        onSizeChanged?.invoke(cols, rows)
+                    if (calculatedCols != reportedCols || calculatedRows != reportedRows) {
+                        reportedCols = calculatedCols
+                        reportedRows = calculatedRows
+                        onSizeChanged?.invoke(calculatedCols, calculatedRows)
                     }
                 }
             }
-            .verticalScroll(verticalScrollState)
-            .padding(4.dp)
     ) {
-        SelectionContainer(
-            modifier = Modifier.clipToBounds()
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .alpha(if (hasInitiallyScrolled) 1f else 0f)
+                .clipToBounds()
+                .padding(4.dp)
         ) {
-            Text(
-                text = terminalText,
-                fontFamily = jetBrainsMono,
-                fontSize = fontSize.sp,
-                lineHeight = (fontSize * 1.2).sp,
-                softWrap = false,
-                modifier = Modifier.clipToBounds()
-            )
+            items(
+                count = totalRows,
+                // Keys: use absolute row index for stable identity
+                key = { index -> firstRow + index }
+            ) { index ->
+                val rowIndex = firstRow + index
+                TerminalRow(
+                    screen = screen,
+                    rowIndex = rowIndex,
+                    cols = cols,
+                    screenVersion = screenVersion,
+                    fontSize = fontSize,
+                    fontFamily = jetBrainsMono
+                )
+            }
         }
     }
 
-    // Auto-scroll to bottom when content changes
-    LaunchedEffect(screenVersion) {
-        verticalScrollState.animateScrollTo(verticalScrollState.maxValue)
+    // Auto-scroll to bottom:
+    // - Always on initial load
+    // - After that, only if user is already at bottom (don't interrupt reading scrollback)
+    LaunchedEffect(screenVersion, totalRows) {
+        if (totalRows > 0) {
+            val shouldScroll = !hasInitiallyScrolled || !listState.canScrollForward
+            if (shouldScroll) {
+                listState.scrollToItem(totalRows - 1)
+                hasInitiallyScrolled = true
+            }
+        } else if (!hasInitiallyScrolled) {
+            // No content yet, but mark as scrolled so we show the empty terminal
+            hasInitiallyScrolled = true
+        }
     }
 }
 
 /**
- * Extract styled text from the terminal emulator.
- * Uses transcriptText for correct text, then applies styles per-row.
+ * Renders a single terminal row.
+ *
+ * This composable extracts text for only ONE row, making it O(cols) instead of O(rows * cols).
+ * LazyColumn ensures only visible rows (~40) are composed, not all 2000+ scrollback rows.
  */
-private fun extractTerminalText(emulator: RemoteTerminalEmulator): AnnotatedString {
-    val screen = emulator.getScreen()
-    val rows = emulator.getRows()
-    val cols = emulator.getColumns()
+@Composable
+private fun TerminalRow(
+    screen: TerminalBuffer,
+    rowIndex: Int,
+    cols: Int,
+    screenVersion: Long,
+    fontSize: Float,
+    fontFamily: FontFamily
+) {
+    // Cache extracted text - invalidate when screen content changes
+    val rowText = remember(rowIndex, screenVersion, cols) {
+        extractRowText(screen, rowIndex, cols)
+    }
 
+    Text(
+        text = rowText,
+        fontFamily = fontFamily,
+        fontSize = fontSize.sp,
+        lineHeight = (fontSize * 1.2).sp,
+        softWrap = false
+    )
+}
+
+/**
+ * Extract styled text for a single terminal row.
+ */
+private fun extractRowText(
+    screen: TerminalBuffer,
+    rowIndex: Int,
+    cols: Int
+): AnnotatedString {
     return buildAnnotatedString {
-        // Iterate through all rows including scrollback
-        val firstRow = -screen.activeTranscriptRows
+        // Get text for this row using Termux's getSelectedText
+        val rowText = screen.getSelectedText(0, rowIndex, cols, rowIndex) ?: ""
 
-        for (rowIndex in firstRow until rows) {
-            if (rowIndex > firstRow) {
-                append('\n')
+        // Apply styles character by character
+        for (col in 0 until minOf(rowText.length, cols)) {
+            val char = rowText[col]
+
+            // Get style for this cell
+            val cellStyle = screen.getStyleAt(rowIndex, col)
+            val fgColor = com.termux.terminal.TextStyle.decodeForeColor(cellStyle)
+            val effect = com.termux.terminal.TextStyle.decodeEffect(cellStyle)
+
+            val isBold = (effect and com.termux.terminal.TextStyle.CHARACTER_ATTRIBUTE_BOLD) != 0
+            val isUnderline = (effect and com.termux.terminal.TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE) != 0
+            val isInverse = (effect and com.termux.terminal.TextStyle.CHARACTER_ATTRIBUTE_INVERSE) != 0
+
+            val color = if (isInverse) {
+                TerminalColors.background
+            } else {
+                getTerminalColor(fgColor)
             }
 
-            // Get text for this row using Termux's getSelectedText
-            val rowText = screen.getSelectedText(0, rowIndex, cols, rowIndex) ?: ""
+            val spanStyle = SpanStyle(
+                color = color,
+                fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
+                textDecoration = if (isUnderline) TextDecoration.Underline else TextDecoration.None
+            )
 
-            // Apply styles character by character
-            for (col in 0 until minOf(rowText.length, cols)) {
-                val char = rowText[col]
-
-                // Get style for this cell
-                val cellStyle = screen.getStyleAt(rowIndex, col)
-                val fgColor = com.termux.terminal.TextStyle.decodeForeColor(cellStyle)
-                val effect = com.termux.terminal.TextStyle.decodeEffect(cellStyle)
-
-                val isBold = (effect and com.termux.terminal.TextStyle.CHARACTER_ATTRIBUTE_BOLD) != 0
-                val isUnderline = (effect and com.termux.terminal.TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE) != 0
-                val isInverse = (effect and com.termux.terminal.TextStyle.CHARACTER_ATTRIBUTE_INVERSE) != 0
-
-                val color = if (isInverse) {
-                    TerminalColors.background
-                } else {
-                    getTerminalColor(fgColor)
-                }
-
-                val spanStyle = SpanStyle(
-                    color = color,
-                    fontWeight = if (isBold) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
-                    textDecoration = if (isUnderline) androidx.compose.ui.text.style.TextDecoration.Underline else androidx.compose.ui.text.style.TextDecoration.None
-                )
-
-                pushStyle(spanStyle)
-                append(char)
-                pop()
-            }
+            pushStyle(spanStyle)
+            append(char)
+            pop()
         }
     }
 }
