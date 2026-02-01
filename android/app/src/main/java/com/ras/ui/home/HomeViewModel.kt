@@ -100,6 +100,15 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Called when user taps Open Sessions button (when already connected).
+     */
+    fun openSessions() {
+        viewModelScope.launch {
+            _events.emit(HomeUiEvent.NavigateToSessions)
+        }
+    }
+
+    /**
      * Called when user taps Unpair button.
      */
     fun unpair() {

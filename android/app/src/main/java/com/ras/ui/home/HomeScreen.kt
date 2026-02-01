@@ -112,6 +112,7 @@ fun HomeScreen(
                     connectionState = currentState.connectionState,
                     autoConnectEnabled = autoConnectEnabled,
                     onConnect = { viewModel.connect() },
+                    onOpenSessions = { viewModel.openSessions() },
                     onUnpair = { viewModel.unpair() },
                     onPair = { viewModel.pair() },
                     onAutoConnectChanged = { viewModel.setAutoConnect(it) }
@@ -190,6 +191,7 @@ private fun HasDeviceContent(
     connectionState: ConnectionState,
     autoConnectEnabled: Boolean,
     onConnect: () -> Unit,
+    onOpenSessions: () -> Unit,
     onUnpair: () -> Unit,
     onPair: () -> Unit,
     onAutoConnectChanged: (Boolean) -> Unit
@@ -215,6 +217,7 @@ private fun HasDeviceContent(
             deviceType = deviceType,
             connectionState = connectionState,
             onConnect = onConnect,
+            onOpenSessions = onOpenSessions,
             onUnpair = onUnpair
         )
 

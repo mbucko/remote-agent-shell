@@ -41,6 +41,7 @@ fun DeviceCard(
     deviceType: DeviceType,
     connectionState: ConnectionState,
     onConnect: () -> Unit,
+    onOpenSessions: () -> Unit,
     onUnpair: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -99,13 +100,17 @@ fun DeviceCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = onConnect,
+                    onClick = when (connectionState) {
+                        ConnectionState.CONNECTED -> onOpenSessions
+                        ConnectionState.CONNECTING -> ({})  // No-op while connecting
+                        ConnectionState.DISCONNECTED -> onConnect
+                    },
                     modifier = Modifier.weight(1f),
-                    enabled = connectionState == ConnectionState.DISCONNECTED
+                    enabled = connectionState != ConnectionState.CONNECTING
                 ) {
                     Text(
                         text = when (connectionState) {
-                            ConnectionState.CONNECTED -> "Connected"
+                            ConnectionState.CONNECTED -> "Open Sessions"
                             ConnectionState.CONNECTING -> "Connecting..."
                             ConnectionState.DISCONNECTED -> "Connect"
                         }
