@@ -160,14 +160,13 @@ class SessionManager:
             else:
                 logger.info(f"Session {session.id} no longer in tmux, removing")
 
-        # Adopt orphaned tmux sessions (with ras- prefix)
+        # Adopt orphaned tmux sessions (any tmux session not already tracked)
         known_tmux_names = {s.tmux_name for s in self._sessions.values()}
         for tmux_session in tmux_sessions:
-            if tmux_session.name.startswith("ras-"):
-                if tmux_session.name not in known_tmux_names:
-                    session = self._adopt_orphan(tmux_session.name)
-                    self._sessions[session.id] = session
-                    logger.info(f"Adopted orphan tmux session: {tmux_session.name}")
+            if tmux_session.name not in known_tmux_names:
+                session = self._adopt_orphan(tmux_session.name)
+                self._sessions[session.id] = session
+                logger.info(f"Adopted orphan tmux session: {tmux_session.name}")
 
         # Save reconciled state
         await self._save()
@@ -557,9 +556,13 @@ class SessionManager:
             SessionEvent response or None.
         """
         field_name, field_value = betterproto.which_one_of(command, "command")
+        logger.debug(f"handle_command: field_name={field_name}")
 
         if field_name == "list":
-            return await self.list_sessions()
+            logger.info("handle_command: listing sessions")
+            result = await self.list_sessions()
+            logger.info(f"handle_command: returning {len(result.list.sessions)} sessions")
+            return result
         elif field_name == "create":
             return await self.create_session(
                 directory=field_value.directory,
