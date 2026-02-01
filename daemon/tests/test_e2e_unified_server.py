@@ -811,11 +811,9 @@ class TestConcurrentOperations:
                     ) as resp:
                         assert resp.status == 200
 
-                # First peer should have been closed (close is called during request handling)
-                # Gather any pending tasks to ensure close completed
-                pending = asyncio.all_tasks() - {asyncio.current_task()}
-                if pending:
-                    await asyncio.gather(*pending, return_exceptions=True)
+                # First peer should have been closed when second connection was made
+                # Give a brief moment for the close to be processed
+                await asyncio.sleep(0.01)
         finally:
             await daemon.stop()
 
