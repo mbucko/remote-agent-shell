@@ -13,7 +13,7 @@
 
     <!-- Foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <!-- Vibration for notifications -->
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -47,7 +47,7 @@
         <!-- Foreground service for WebRTC connection -->
         <service
             android:name=".service.ConnectionService"
-            android:foregroundServiceType="dataSync"
+            android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
     </application>
