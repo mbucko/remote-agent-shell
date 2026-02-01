@@ -18,14 +18,14 @@ class CredentialRepositoryImpl @Inject constructor(
 
     override suspend fun getCredentials(): StoredCredentials? {
         val masterSecret = keyManager.getMasterSecret() ?: return null
-        val daemonIp = keyManager.getDaemonIp()
-        val daemonPort = keyManager.getDaemonPort()
         val ntfyTopic = keyManager.getNtfyTopic()
 
-        // Validate all required fields are present and valid
-        if (daemonIp.isNullOrEmpty()) return null
-        if (daemonPort == null || daemonPort <= 0) return null
+        // Only ntfyTopic is required - IP/port can be discovered via mDNS
         if (ntfyTopic.isNullOrEmpty()) return null
+
+        // Get optional daemon IP/port (may be null if using mDNS discovery)
+        val daemonIp = keyManager.getDaemonIp()
+        val daemonPort = keyManager.getDaemonPort()
 
         // Get optional Tailscale info
         val tailscaleIp = keyManager.getTailscaleIp()
