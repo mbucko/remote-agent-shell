@@ -222,11 +222,13 @@ class SessionRepository @Inject constructor(
      * Request the current session list from daemon.
      */
     suspend fun listSessions() {
+        Log.i(TAG, "listSessions: sending ListSessionsCommand")
         sendCommand(
             SessionCommand.newBuilder()
                 .setList(ListSessionsCommand.getDefaultInstance())
                 .build()
         )
+        Log.i(TAG, "listSessions: command sent")
     }
 
     /**
@@ -336,7 +338,9 @@ class SessionRepository @Inject constructor(
      * @throws IllegalStateException if not connected
      */
     private suspend fun sendCommand(command: SessionCommand) {
+        Log.d(TAG, "sendCommand: isConnected=${connectionManager.isConnected.value}")
         if (!connectionManager.isConnected.value) {
+            Log.e(TAG, "sendCommand: Not connected to daemon!")
             throw IllegalStateException("Not connected to daemon")
         }
         // Wrap in RasCommand for proper message envelope
@@ -344,6 +348,7 @@ class SessionRepository @Inject constructor(
             .setSession(command)
             .build()
         connectionManager.send(rasCommand.toByteArray())
+        Log.d(TAG, "sendCommand: sent ${rasCommand.serializedSize} bytes")
     }
 }
 

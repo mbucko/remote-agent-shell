@@ -69,6 +69,7 @@
     <string name="settings_connected">Connected</string>
     <string name="settings_disconnected">Disconnected</string>
     <string name="settings_disconnect">Disconnect</string>
+    <string name="settings_disconnect_confirm">Are you sure you want to disconnect from the daemon? You will need to pair again to reconnect.</string>
     <string name="settings_daemon_version">Daemon version</string>
     <string name="settings_ip_address">IP address</string>
 

@@ -139,7 +139,9 @@ class SessionsViewModel @Inject constructor(
      * Refresh the session list.
      */
     fun refreshSessions() {
+        Log.i(TAG, "refreshSessions() called")
         viewModelScope.launch {
+            Log.i(TAG, "refreshSessions: starting refresh")
             // Atomic update to set refreshing = true
             _screenState.update { currentState ->
                 if (currentState is SessionsScreenState.Loaded) {
@@ -149,7 +151,11 @@ class SessionsViewModel @Inject constructor(
                 }
             }
             try {
+                Log.i(TAG, "refreshSessions: calling listSessions()")
                 sessionRepository.listSessions()
+                Log.i(TAG, "refreshSessions: listSessions() completed")
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshSessions: error", e)
             } finally {
                 // Atomic update to set refreshing = false
                 _screenState.update { currentState ->

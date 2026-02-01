@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -567,6 +568,8 @@ private fun ConnectionCard(
     ipAddress: String?,
     onDisconnect: () -> Unit
 ) {
+    var showDisconnectDialog by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -609,7 +612,7 @@ private fun ConnectionCard(
             if (isConnected) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
-                    onClick = onDisconnect,
+                    onClick = { showDisconnectDialog = true },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = StatusError
                     ),
@@ -619,6 +622,33 @@ private fun ConnectionCard(
                 }
             }
         }
+    }
+
+    // Disconnect confirmation dialog
+    if (showDisconnectDialog) {
+        AlertDialog(
+            onDismissRequest = { showDisconnectDialog = false },
+            title = { Text(stringResource(R.string.settings_disconnect)) },
+            text = { Text(stringResource(R.string.settings_disconnect_confirm)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDisconnectDialog = false
+                        onDisconnect()
+                    }
+                ) {
+                    Text(
+                        stringResource(R.string.settings_disconnect),
+                        color = StatusError
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisconnectDialog = false }) {
+                    Text(stringResource(R.string.terminal_cancel))
+                }
+            }
+        )
     }
 }
 
