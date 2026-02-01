@@ -108,3 +108,25 @@ class TestPairCommand:
         assert result.exit_code == 0
         assert "QR code" in result.output
         assert "--timeout" in result.output
+
+    def test_qr_generator_from_api_response(self):
+        """CLI can create QrGenerator from API response structure."""
+        from ras.pairing.qr_generator import QrGenerator
+
+        # This is the structure returned by the /api/pair endpoint
+        mock_response = {
+            "session_id": "test-session-123",
+            "qr_data": {
+                "master_secret": "a" * 64,  # 32 bytes hex
+            }
+        }
+
+        # CLI extracts and creates QrGenerator
+        qr_data = mock_response["qr_data"]
+        master_secret = bytes.fromhex(qr_data["master_secret"])
+        qr_gen = QrGenerator(master_secret=master_secret)
+
+        # Should not raise and should produce valid output
+        terminal_output = qr_gen.to_terminal()
+        assert terminal_output  # Not empty
+        assert len(terminal_output) > 100  # Has QR code content

@@ -168,7 +168,7 @@ class PairingManager @Inject constructor(
 
         when (result) {
             is AuthResult.Success -> {
-                // Save master secret and daemon info to keystore
+                // Save master secret, daemon info, and device info to keystore
                 currentPayload?.let { payload ->
                     keyManager.storeMasterSecret(payload.masterSecret)
                     keyManager.storeDaemonInfo(
@@ -180,6 +180,8 @@ class PairingManager @Inject constructor(
                         vpnIp = payload.vpnIp,
                         vpnPort = payload.vpnPort
                     )
+                    // Store device info from AuthSuccess
+                    keyManager.storeDeviceInfo(result.hostname, result.deviceType)
                 }
 
                 // Hand off WebRTC connection to ConnectionManager with encryption key

@@ -3,6 +3,7 @@ package com.ras.pairing
 import com.google.protobuf.ByteString
 import com.ras.crypto.CryptoRandom
 import com.ras.crypto.HmacUtils
+import com.ras.data.model.DeviceType
 import com.ras.proto.AuthEnvelope
 import com.ras.proto.AuthError
 import com.ras.proto.AuthResponse
@@ -10,7 +11,11 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 
 sealed class AuthResult {
-    data class Success(val deviceId: String) : AuthResult()
+    data class Success(
+        val deviceId: String,
+        val hostname: String,
+        val deviceType: DeviceType
+    ) : AuthResult()
     data class Error(val code: AuthError.ErrorCode) : AuthResult()
     object Timeout : AuthResult()
 }
@@ -109,6 +114,11 @@ class AuthClient(
             return AuthResult.Error(AuthError.ErrorCode.PROTOCOL_ERROR)
         }
 
-        return AuthResult.Success(successEnvelope.success.deviceId)
+        val success = successEnvelope.success
+        return AuthResult.Success(
+            deviceId = success.deviceId,
+            hostname = success.hostname,
+            deviceType = DeviceType.fromProto(success.deviceType)
+        )
     }
 }

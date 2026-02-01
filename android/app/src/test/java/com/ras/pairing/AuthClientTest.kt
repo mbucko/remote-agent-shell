@@ -4,6 +4,7 @@ import com.google.protobuf.ByteString
 import com.ras.crypto.HmacUtils
 import com.ras.crypto.hexToBytes
 import com.ras.crypto.toHex
+import com.ras.data.model.DeviceType
 import com.ras.proto.AuthChallenge
 import com.ras.proto.AuthEnvelope
 import com.ras.proto.AuthError
@@ -67,7 +68,10 @@ class AuthClientTest {
                 receiveMessage = { clientChannel.receive() }
             )
             assertTrue("Expected success, got: $result", result is AuthResult.Success)
-            assertEquals("device-123", (result as AuthResult.Success).deviceId)
+            val success = result as AuthResult.Success
+            assertEquals("device-123", success.deviceId)
+            assertEquals("test-host.local", success.hostname)
+            assertEquals(DeviceType.LAPTOP, success.deviceType)
         }
 
         // Simulate server
@@ -107,6 +111,8 @@ class AuthClientTest {
             .setSuccess(
                 AuthSuccess.newBuilder()
                     .setDeviceId("device-123")
+                    .setHostname("test-host.local")
+                    .setDeviceType(com.ras.proto.DeviceType.DEVICE_TYPE_LAPTOP)
             )
             .build()
         clientChannel.send(success.toByteArray())
