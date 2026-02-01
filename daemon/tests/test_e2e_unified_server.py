@@ -98,12 +98,13 @@ class TestPairingHappyPath:
                     assert "qr_data" in data
                     assert "expires_at" in data
 
-                    # QR data should contain connection info
+                    # QR data should contain only master_secret (everything else derived)
                     qr = data["qr_data"]
-                    assert "ip" in qr
-                    assert "port" in qr
                     assert "master_secret" in qr
-                    assert "session_id" in qr
+                    # IP/port/session_id are NOT in QR - discovered via mDNS or derived
+                    assert "ip" not in qr
+                    assert "port" not in qr
+                    assert "session_id" not in qr
         finally:
             await daemon.stop()
 
