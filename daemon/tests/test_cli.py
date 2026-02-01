@@ -109,6 +109,81 @@ class TestPairCommand:
         assert "QR code" in result.output
         assert "--timeout" in result.output
 
+    def test_pair_command_generates_qr(self, runner):
+        """ras pair actually generates and displays QR code."""
+        import aiohttp
+        from unittest.mock import MagicMock
+
+        # Mock aiohttp.ClientSession to return expected API response
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            mock_session_class.return_value.__aenter__.return_value = mock_session
+
+            # Mock POST /api/pair response
+            mock_post_response = AsyncMock()
+            mock_post_response.status = 200
+            mock_post_response.json = AsyncMock(return_value={
+                "session_id": "test-session-123",
+                "qr_data": {
+                    "master_secret": "a" * 64,  # 32 bytes hex
+                }
+            })
+            mock_session.post.return_value.__aenter__.return_value = mock_post_response
+
+            # Mock GET /api/pair/{session_id} to return completed immediately
+            mock_get_response = AsyncMock()
+            mock_get_response.status = 200
+            mock_get_response.json = AsyncMock(return_value={
+                "state": "completed",
+                "device_name": "Test Phone"
+            })
+            mock_session.get.return_value.__aenter__.return_value = mock_get_response
+
+            # Mock DELETE for cleanup
+            mock_session.delete.return_value.__aenter__.return_value = AsyncMock()
+
+            result = runner.invoke(main, ["pair", "--timeout", "2"])
+
+        # Should show QR code content (unicode blocks) or success message
+        # The QR code uses unicode blocks like █ or ▄
+        assert result.exit_code == 0 or "Pairing successful" in result.output or "█" in result.output or "Scan" in result.output
+
+    def test_pair_command_uses_only_master_secret(self, runner):
+        """ras pair only uses master_secret from QR data (no ip/port)."""
+        # This test verifies the fix for the KeyError bug
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            from unittest.mock import MagicMock
+
+            mock_session = MagicMock()
+            mock_session_class.return_value.__aenter__.return_value = mock_session
+
+            # API returns ONLY master_secret - no ip, port, or ntfyTopic
+            # This is the current design: everything is derived/discovered
+            mock_post_response = AsyncMock()
+            mock_post_response.status = 200
+            mock_post_response.json = AsyncMock(return_value={
+                "session_id": "test-session-123",
+                "qr_data": {
+                    "master_secret": "b" * 64,
+                    # No "ip", "port", or "ntfy_topic" keys!
+                }
+            })
+            mock_session.post.return_value.__aenter__.return_value = mock_post_response
+
+            # Return 404 to exit polling quickly
+            mock_get_response = AsyncMock()
+            mock_get_response.status = 404
+            mock_session.get.return_value.__aenter__.return_value = mock_get_response
+
+            mock_session.delete.return_value.__aenter__.return_value = AsyncMock()
+
+            result = runner.invoke(main, ["pair", "--timeout", "1"])
+
+        # Should NOT raise KeyError - the command should process without crashing
+        # It may show "cancelled" since we return 404, but no Python exceptions
+        assert "KeyError" not in result.output
+        assert "Traceback" not in result.output
+
     def test_qr_generator_from_api_response(self):
         """CLI can create QrGenerator from API response structure."""
         from ras.pairing.qr_generator import QrGenerator

@@ -2,6 +2,7 @@ package com.ras.data.credentials
 
 import com.ras.crypto.KeyDerivation
 import com.ras.data.keystore.KeyManager
+import com.ras.data.model.DeviceType
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -50,6 +51,14 @@ class CredentialRepositoryImpl @Inject constructor(
             daemonVpnIp = vpnIp,
             daemonVpnPort = vpnPort
         )
+    }
+
+    override suspend fun getDeviceName(): String? {
+        return keyManager.getDeviceName()
+    }
+
+    override suspend fun getDeviceType(): DeviceType {
+        return keyManager.getDeviceType()
     }
 
     override suspend fun clearCredentials() {

@@ -114,7 +114,6 @@ fun HomeScreen(
                     onConnect = { viewModel.connect() },
                     onOpenSessions = { viewModel.openSessions() },
                     onUnpair = { viewModel.unpair() },
-                    onPair = { viewModel.pair() },
                     onAutoConnectChanged = { viewModel.setAutoConnect(it) }
                 )
             }
@@ -193,7 +192,6 @@ private fun HasDeviceContent(
     onConnect: () -> Unit,
     onOpenSessions: () -> Unit,
     onUnpair: () -> Unit,
-    onPair: () -> Unit,
     onAutoConnectChanged: (Boolean) -> Unit
 ) {
     Column(
@@ -238,24 +236,5 @@ private fun HasDeviceContent(
                 onCheckedChange = onAutoConnectChanged
             )
         }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Pair Device button (disabled when device exists)
-        Button(
-            onClick = onPair,
-            modifier = Modifier.fillMaxWidth(0.6f),
-            enabled = false // Disabled when device already paired
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.size(8.dp))
-            Text("Pair Device")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
     }
 }

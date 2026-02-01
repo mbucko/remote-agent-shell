@@ -3,8 +3,7 @@ package com.ras.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionManager
-import com.ras.data.keystore.KeyManager
-import com.ras.data.model.DeviceType
+import com.ras.data.credentials.CredentialRepository
 import com.ras.data.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -23,7 +22,7 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val keyManager: KeyManager,
+    private val credentialRepository: CredentialRepository,
     private val connectionManager: ConnectionManager,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
@@ -45,15 +44,15 @@ class HomeViewModel @Inject constructor(
 
     private fun loadDeviceInfo() {
         viewModelScope.launch {
-            val hasMasterSecret = keyManager.hasMasterSecret()
+            val hasCredentials = credentialRepository.hasCredentials()
 
-            if (!hasMasterSecret) {
+            if (!hasCredentials) {
                 _state.value = HomeState.NoPairedDevice
                 return@launch
             }
 
-            val deviceName = keyManager.getDeviceName() ?: "Unknown Device"
-            val deviceType = keyManager.getDeviceType()
+            val deviceName = credentialRepository.getDeviceName() ?: "Unknown Device"
+            val deviceType = credentialRepository.getDeviceType()
             val isConnected = connectionManager.isConnected.value
 
             _state.value = HomeState.HasDevice(
@@ -117,7 +116,7 @@ class HomeViewModel @Inject constructor(
             connectionManager.disconnectGracefully("unpair")
 
             // Clear credentials
-            keyManager.clearCredentials()
+            credentialRepository.clearCredentials()
 
             // Update state
             _state.value = HomeState.NoPairedDevice

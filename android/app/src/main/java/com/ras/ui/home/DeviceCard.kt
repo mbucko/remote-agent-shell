@@ -148,9 +148,11 @@ private fun ConnectionState.toDisplayText(): String = when (this) {
 
 /**
  * Convert ConnectionState to status dot color.
+ * Uses theme colors for dark mode support.
  */
+@Composable
 private fun ConnectionState.toColor(): Color = when (this) {
-    ConnectionState.CONNECTED -> Color(0xFF3FB950)   // Green
-    ConnectionState.CONNECTING -> Color(0xFFD29922)  // Orange
-    ConnectionState.DISCONNECTED -> Color(0xFF8B949E) // Gray
+    ConnectionState.CONNECTED -> MaterialTheme.colorScheme.tertiary
+    ConnectionState.CONNECTING -> MaterialTheme.colorScheme.secondary
+    ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.outline
 }
