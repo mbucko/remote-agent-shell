@@ -46,6 +46,18 @@ message AuthVerify {
 message AuthSuccess {
   // Device was registered/updated
   string device_id = 1;
+  // System hostname (e.g., "MacBook-Pro.local")
+  string hostname = 2;
+  // Device type for UI display
+  DeviceType device_type = 3;
+}
+
+// Device type for UI display
+enum DeviceType {
+  DEVICE_TYPE_UNKNOWN = 0;
+  DEVICE_TYPE_LAPTOP = 1;
+  DEVICE_TYPE_DESKTOP = 2;
+  DEVICE_TYPE_SERVER = 3;
 }
 
 // Either direction: Authentication failed

@@ -26,7 +26,9 @@ from ras.proto.ras import (
     AuthSuccess,
     AuthError,
     AuthErrorErrorCode,
+    DeviceType as ProtoDeviceType,
 )
+from ras.system import detect_device_type, get_hostname
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +143,14 @@ class AuthHandler:
         await send_message(bytes(verify))
         logger.debug("Sent auth verify")
 
-        # Step 4: Send success
+        # Step 4: Send success with device info
+        device_type = detect_device_type()
         success = AuthEnvelope(
-            success=AuthSuccess(device_id=self.device_id)
+            success=AuthSuccess(
+                device_id=self.device_id,
+                hostname=get_hostname(),
+                device_type=ProtoDeviceType(device_type),
+            )
         )
         await send_message(bytes(success))
         logger.info(f"Authentication successful for device {self.device_id}")

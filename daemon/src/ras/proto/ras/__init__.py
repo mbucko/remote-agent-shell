@@ -11,6 +11,15 @@ import betterproto
 from . import clipboard
 
 
+class DeviceType(betterproto.Enum):
+    """Device type for UI display"""
+
+    UNKNOWN = 0
+    LAPTOP = 1
+    DESKTOP = 2
+    SERVER = 3
+
+
 class AuthErrorErrorCode(betterproto.Enum):
     UNKNOWN = 0
     INVALID_HMAC = 1
@@ -140,6 +149,12 @@ class AuthSuccess(betterproto.Message):
 
     device_id: str = betterproto.string_field(1)
     """Device was registered/updated"""
+
+    hostname: str = betterproto.string_field(2)
+    """System hostname (e.g., "MacBook-Pro.local")"""
+
+    device_type: "DeviceType" = betterproto.enum_field(3)
+    """Device type for UI display"""
 
 
 @dataclass(eq=False, repr=False)
