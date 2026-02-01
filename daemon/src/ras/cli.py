@@ -245,20 +245,13 @@ def pair(ctx: click.Context, timeout: int, browser: bool, output: str | None) ->
                     click.echo("Start the daemon with: ras daemon start", err=True)
                     return
 
-                # 2. Create QR generator with proper protobuf encoding
+                # 2. Create QR generator with master secret only
+                # Everything else (session_id, ntfy_topic) is derived from master_secret
+                # Daemon IP/port are discovered via mDNS or ntfy DISCOVER
                 master_secret = bytes.fromhex(qr_data["master_secret"])
-                qr_gen = QrGenerator(
-                    ip=qr_data["ip"],
-                    port=qr_data["port"],
-                    master_secret=master_secret,
-                    session_id=qr_data["session_id"],
-                    ntfy_topic=qr_data["ntfy_topic"],
-                    tailscale_ip=qr_data.get("tailscale_ip", ""),
-                    tailscale_port=qr_data.get("tailscale_port", 0),
-                )
+                qr_gen = QrGenerator(master_secret=master_secret)
 
                 click.echo(f"\nPairing session started")
-                click.echo(f"Public address: {qr_data['ip']}:{qr_data['port']}")
 
                 # 3. Display QR code
                 if browser:
