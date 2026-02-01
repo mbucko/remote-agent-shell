@@ -53,8 +53,8 @@ class ClipboardManager:
     def __init__(
         self,
         config: ClipboardConfig,
-        send_message: Callable[[ClipboardMessage], Awaitable[None]],
-        send_keys: Callable[[str], Awaitable[None]],
+        send_message: Callable[[str, ClipboardMessage], Awaitable[None]],
+        send_keys: Callable[[str, str], Awaitable[None]],
         platform_info: Optional[PlatformInfo] = None,
         clipboard_backend: Optional[ClipboardBackend] = None,
     ):
@@ -62,14 +62,15 @@ class ClipboardManager:
 
         Args:
             config: Clipboard configuration.
-            send_message: Callback to send messages to phone.
-            send_keys: Callback to send keystrokes to tmux session.
+            send_message: Callback to send messages to phone (device_id, message).
+            send_keys: Callback to send keystrokes to tmux session (device_id, keystroke).
             platform_info: Platform info (auto-detected if None).
             clipboard_backend: Clipboard backend (auto-created if None).
         """
         self.config = config
         self._send_message = send_message
         self._send_keys = send_keys
+        self._current_device_id: Optional[str] = None
 
         # Platform and clipboard (allow injection for testing)
         self._platform_info = platform_info or detect_platform()
@@ -111,13 +112,17 @@ class ClipboardManager:
         check_clipboard_tool(tool)
         logger.info("Clipboard tool verified: %s", tool)
 
-    async def handle_message(self, msg: ClipboardMessage) -> None:
+    async def handle_message(self, device_id: str, msg: ClipboardMessage) -> None:
         """Handle a clipboard message.
 
         Args:
+            device_id: The device ID that sent this message.
             msg: The clipboard message to handle.
         """
         import betterproto
+
+        # Store current device for callbacks
+        self._current_device_id = device_id
 
         # Determine which field is set (oneof)
         field_name, field_value = betterproto.which_one_of(msg, "payload")
@@ -285,6 +290,7 @@ class ClipboardManager:
 
         # Send cancelled acknowledgement
         await self._send_message(
+            self._current_device_id,
             ClipboardMessage(
                 cancelled=Cancelled(transfer_id=cancel.transfer_id)
             )
@@ -311,6 +317,7 @@ class ClipboardManager:
             logger.info("Text requires approval: %d > %d", size, self.config.text_approval_threshold)
             preview = text[:100] + "..." if len(text) > 100 else text
             await self._send_message(
+                self._current_device_id,
                 ClipboardMessage(
                     approval_required=ApprovalRequired(
                         size=size,
@@ -342,13 +349,14 @@ class ClipboardManager:
         # Send paste keystroke
         keystroke = self.config.paste_keystroke or self._platform_info.paste_keystroke
         try:
-            await self._send_keys(keystroke)
+            await self._send_keys(self._current_device_id, keystroke)
             logger.debug("Paste keystroke sent: %s", keystroke)
         except Exception as e:
             raise ClipboardError(ErrorCode.PASTE_FAILED, str(e))
 
         # Send complete
         await self._send_message(
+            self._current_device_id,
             ClipboardMessage(
                 complete=Complete(
                     transfer_id="",
@@ -417,7 +425,7 @@ class ClipboardManager:
         # Send paste keystroke
         keystroke = self.config.paste_keystroke or self._platform_info.paste_keystroke
         try:
-            await self._send_keys(keystroke)
+            await self._send_keys(self._current_device_id, keystroke)
             logger.debug("Paste keystroke sent: %s", keystroke)
         except Exception as e:
             await self._send_error(
@@ -430,6 +438,7 @@ class ClipboardManager:
         # Send complete
         transfer.state = TransferState.COMPLETE
         await self._send_message(
+            self._current_device_id,
             ClipboardMessage(
                 complete=Complete(
                     transfer_id=transfer.transfer_id,
@@ -448,6 +457,7 @@ class ClipboardManager:
             return
 
         await self._send_message(
+            self._current_device_id,
             ClipboardMessage(
                 progress=Progress(
                     transfer_id=self._current_transfer.transfer_id,
@@ -469,6 +479,7 @@ class ClipboardManager:
         logger.error("Clipboard error: code=%s, message=%s", code.name, message)
 
         await self._send_message(
+            self._current_device_id,
             ClipboardMessage(
                 error=Error(
                     transfer_id=transfer_id or "",

@@ -117,6 +117,20 @@ class TerminalManager:
                     "Notification broadcast provided but notifications module not available"
                 )
 
+    def get_attached_session(self, connection_id: str) -> Optional[str]:
+        """Get the session ID that a connection is attached to.
+
+        Args:
+            connection_id: The connection/device ID.
+
+        Returns:
+            Session ID if attached, None otherwise.
+        """
+        for session_id, connections in self._attachments.items():
+            if connection_id in connections:
+                return session_id
+        return None
+
     async def handle_command(
         self,
         connection_id: str,

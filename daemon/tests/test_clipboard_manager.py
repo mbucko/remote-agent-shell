@@ -63,6 +63,12 @@ def config():
 
 
 @pytest.fixture
+def device_id():
+    """Test device ID."""
+    return "test-device-123"
+
+
+@pytest.fixture
 def manager(config, send_message, send_keys, platform_info, mock_clipboard):
     """Create ClipboardManager with mocked dependencies."""
     from ras.clipboard_manager import ClipboardManager
@@ -85,7 +91,7 @@ class TestImageTransferStart:
     """Test image transfer start handling."""
 
     @pytest.mark.asyncio
-    async def test_start_transfer_creates_state(self, manager):
+    async def test_start_transfer_creates_state(self, manager, device_id):
         """Starting transfer creates transfer state."""
         msg = ClipboardMessage(
             image_start=ImageStart(
@@ -96,7 +102,7 @@ class TestImageTransferStart:
             )
         )
 
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         assert manager._current_transfer is not None
         assert manager._current_transfer.transfer_id == "test-123"
@@ -106,7 +112,7 @@ class TestImageTransferStart:
         assert manager._current_transfer.state == TransferState.RECEIVING
 
     @pytest.mark.asyncio
-    async def test_start_transfer_validates_size(self, manager, send_message):
+    async def test_start_transfer_validates_size(self, manager, send_message, device_id):
         """Rejects images over 5MB."""
         msg = ClipboardMessage(
             image_start=ImageStart(
@@ -117,16 +123,16 @@ class TestImageTransferStart:
             )
         )
 
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         # Should send error
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.SIZE_EXCEEDED
 
     @pytest.mark.asyncio
-    async def test_start_transfer_validates_format(self, manager, send_message):
+    async def test_start_transfer_validates_format(self, manager, send_message, device_id):
         """Rejects unknown formats."""
         msg = ClipboardMessage(
             image_start=ImageStart(
@@ -137,15 +143,15 @@ class TestImageTransferStart:
             )
         )
 
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.INVALID_FORMAT
 
     @pytest.mark.asyncio
-    async def test_start_while_transfer_in_progress(self, manager, send_message):
+    async def test_start_while_transfer_in_progress(self, manager, send_message, device_id):
         """Rejects second transfer while one is active."""
         # Start first transfer
         msg1 = ClipboardMessage(
@@ -156,7 +162,7 @@ class TestImageTransferStart:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(msg1)
+        await manager.handle_message(device_id, msg1)
 
         # Try to start second
         msg2 = ClipboardMessage(
@@ -167,16 +173,16 @@ class TestImageTransferStart:
                 total_chunks=3,
             )
         )
-        await manager.handle_message(msg2)
+        await manager.handle_message(device_id, msg2)
 
         # Should send error for second
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.TRANSFER_IN_PROGRESS
 
     @pytest.mark.asyncio
-    async def test_start_at_exactly_5mb_limit(self, manager):
+    async def test_start_at_exactly_5mb_limit(self, manager, device_id):
         """Accepts image at exactly 5MB limit."""
         msg = ClipboardMessage(
             image_start=ImageStart(
@@ -187,13 +193,13 @@ class TestImageTransferStart:
             )
         )
 
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         assert manager._current_transfer is not None
         assert manager._current_transfer.total_size == 5 * 1024 * 1024
 
     @pytest.mark.asyncio
-    async def test_start_with_zero_chunks(self, manager, send_message):
+    async def test_start_with_zero_chunks(self, manager, send_message, device_id):
         """Rejects transfer with zero chunks."""
         msg = ClipboardMessage(
             image_start=ImageStart(
@@ -204,15 +210,15 @@ class TestImageTransferStart:
             )
         )
 
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.INVALID_CHUNK
 
     @pytest.mark.asyncio
-    async def test_start_with_zero_size(self, manager, send_message):
+    async def test_start_with_zero_size(self, manager, send_message, device_id):
         """Rejects transfer with zero size."""
         msg = ClipboardMessage(
             image_start=ImageStart(
@@ -223,10 +229,10 @@ class TestImageTransferStart:
             )
         )
 
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.SIZE_EXCEEDED
 
@@ -240,7 +246,7 @@ class TestChunkHandling:
     """Test image chunk handling."""
 
     @pytest.mark.asyncio
-    async def test_receive_chunk_stores_data(self, manager, send_message):
+    async def test_receive_chunk_stores_data(self, manager, send_message, device_id):
         """Chunks are stored in memory."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -251,7 +257,7 @@ class TestChunkHandling:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunk
         chunk_msg = ClipboardMessage(
@@ -261,13 +267,13 @@ class TestChunkHandling:
                 data=b"chunk0data",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         assert 0 in manager._current_transfer.received_chunks
         assert manager._current_transfer.received_chunks[0] == b"chunk0data"
 
     @pytest.mark.asyncio
-    async def test_receive_chunk_sends_progress(self, manager, send_message):
+    async def test_receive_chunk_sends_progress(self, manager, send_message, device_id):
         """Progress update sent after each chunk."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -278,7 +284,7 @@ class TestChunkHandling:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunk
         chunk_msg = ClipboardMessage(
@@ -288,17 +294,17 @@ class TestChunkHandling:
                 data=b"chunk0data",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         # Should have sent progress
         send_message.assert_called()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.progress is not None
         assert sent_msg.progress.received_chunks == 1
         assert sent_msg.progress.total_chunks == 2
 
     @pytest.mark.asyncio
-    async def test_chunk_without_start(self, manager, send_message):
+    async def test_chunk_without_start(self, manager, send_message, device_id):
         """Rejects chunk before start message."""
         chunk_msg = ClipboardMessage(
             image_chunk=ImageChunk(
@@ -307,15 +313,15 @@ class TestChunkHandling:
                 data=b"chunk0data",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.INVALID_CHUNK
 
     @pytest.mark.asyncio
-    async def test_chunk_wrong_transfer_id(self, manager, send_message):
+    async def test_chunk_wrong_transfer_id(self, manager, send_message, device_id):
         """Ignores chunks for wrong transfer."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -326,7 +332,7 @@ class TestChunkHandling:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunk with wrong ID
         chunk_msg = ClipboardMessage(
@@ -336,14 +342,14 @@ class TestChunkHandling:
                 data=b"chunk0data",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         # Should not store chunk or send progress
         assert 0 not in manager._current_transfer.received_chunks
         send_message.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_chunk_invalid_index_negative(self, manager, send_message):
+    async def test_chunk_invalid_index_negative(self, manager, send_message, device_id):
         """Rejects negative chunk index."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -354,7 +360,7 @@ class TestChunkHandling:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunk with negative index
         chunk_msg = ClipboardMessage(
@@ -364,15 +370,15 @@ class TestChunkHandling:
                 data=b"chunk0data",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.INVALID_CHUNK
 
     @pytest.mark.asyncio
-    async def test_chunk_invalid_index_too_large(self, manager, send_message):
+    async def test_chunk_invalid_index_too_large(self, manager, send_message, device_id):
         """Rejects chunk index >= total_chunks."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -383,7 +389,7 @@ class TestChunkHandling:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunk with too large index
         chunk_msg = ClipboardMessage(
@@ -393,15 +399,15 @@ class TestChunkHandling:
                 data=b"chunk0data",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.INVALID_CHUNK
 
     @pytest.mark.asyncio
-    async def test_duplicate_chunk_overwrites(self, manager, send_message):
+    async def test_duplicate_chunk_overwrites(self, manager, send_message, device_id):
         """Duplicate chunk overwrites previous (idempotent)."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -412,7 +418,7 @@ class TestChunkHandling:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunk twice
         chunk_msg1 = ClipboardMessage(
@@ -422,7 +428,7 @@ class TestChunkHandling:
                 data=b"first",
             )
         )
-        await manager.handle_message(chunk_msg1)
+        await manager.handle_message(device_id, chunk_msg1)
 
         chunk_msg2 = ClipboardMessage(
             image_chunk=ImageChunk(
@@ -431,13 +437,13 @@ class TestChunkHandling:
                 data=b"second",
             )
         )
-        await manager.handle_message(chunk_msg2)
+        await manager.handle_message(device_id, chunk_msg2)
 
         # Should have second value
         assert manager._current_transfer.received_chunks[0] == b"second"
 
     @pytest.mark.asyncio
-    async def test_chunk_too_large(self, manager, send_message):
+    async def test_chunk_too_large(self, manager, send_message, device_id):
         """Rejects chunk > 64KB."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -448,7 +454,7 @@ class TestChunkHandling:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send oversized chunk
         chunk_msg = ClipboardMessage(
@@ -458,15 +464,15 @@ class TestChunkHandling:
                 data=b"x" * (65 * 1024),  # 65KB
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.INVALID_CHUNK
 
     @pytest.mark.asyncio
-    async def test_chunks_out_of_order(self, manager, send_message):
+    async def test_chunks_out_of_order(self, manager, send_message, device_id):
         """Accepts chunks in any order."""
         # Start transfer - use exact size that matches our chunks
         # "chunk0" + "chunk1" + "chunk2" = 6+6+6 = 18 bytes
@@ -478,7 +484,7 @@ class TestChunkHandling:
                 total_chunks=3,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunks out of order (but not the last one, to avoid completion)
         for idx in [2, 0]:
@@ -489,7 +495,7 @@ class TestChunkHandling:
                     data=f"chunk{idx}".encode(),
                 )
             )
-            await manager.handle_message(chunk_msg)
+            await manager.handle_message(device_id, chunk_msg)
 
         # Two chunks stored (not sending last to avoid completion clearing state)
         assert len(manager._current_transfer.received_chunks) == 2
@@ -519,7 +525,7 @@ class TestTransferCompletion:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send all chunks
         for i in range(2):
@@ -530,22 +536,22 @@ class TestTransferCompletion:
                     data=b"12345",
                 )
             )
-            await manager.handle_message(chunk_msg)
+            await manager.handle_message(device_id, chunk_msg)
 
         # Should have set clipboard
         assert mock_clipboard.set_image_call_count == 1
 
         # Should have sent paste keystroke
-        send_keys.assert_called_once_with("M-v")
+        send_keys.assert_called_once_with(device_id, "M-v")
 
         # Should have sent complete message
         calls = send_message.call_args_list
-        complete_call = calls[-1][0][0]
+        complete_call = calls[-1][0][1]
         assert complete_call.complete is not None
         assert complete_call.complete.content_type == ContentType.IMAGE
 
     @pytest.mark.asyncio
-    async def test_reassembly_correct_order(self, manager, mock_clipboard):
+    async def test_reassembly_correct_order(self, manager, mock_clipboard, device_id):
         """Chunks reassembled in correct order."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -556,7 +562,7 @@ class TestTransferCompletion:
                 total_chunks=3,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunks out of order
         chunks = [(1, b"BBBBB"), (2, b"CCCCC"), (0, b"AAAAA")]
@@ -568,13 +574,13 @@ class TestTransferCompletion:
                     data=data,
                 )
             )
-            await manager.handle_message(chunk_msg)
+            await manager.handle_message(device_id, chunk_msg)
 
         # Should be reassembled in order
         assert mock_clipboard.last_image_data == b"AAAAABBBBBCCCCC"
 
     @pytest.mark.asyncio
-    async def test_size_mismatch_error(self, manager, send_message):
+    async def test_size_mismatch_error(self, manager, send_message, device_id):
         """Error if reassembled size != declared size."""
         # Start transfer with wrong size
         start_msg = ClipboardMessage(
@@ -585,7 +591,7 @@ class TestTransferCompletion:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send chunks that don't add up to 100
         for i in range(2):
@@ -596,16 +602,16 @@ class TestTransferCompletion:
                     data=b"12345",
                 )
             )
-            await manager.handle_message(chunk_msg)
+            await manager.handle_message(device_id, chunk_msg)
 
         # Should have sent error
         calls = send_message.call_args_list
-        error_call = calls[-1][0][0]
+        error_call = calls[-1][0][1]
         assert error_call.error is not None
         assert error_call.error.code == ErrorCode.CHUNK_MISSING
 
     @pytest.mark.asyncio
-    async def test_state_cleared_after_complete(self, manager, mock_clipboard):
+    async def test_state_cleared_after_complete(self, manager, mock_clipboard, device_id):
         """State is cleared after successful completion."""
         # Complete a transfer
         start_msg = ClipboardMessage(
@@ -616,7 +622,7 @@ class TestTransferCompletion:
                 total_chunks=1,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         chunk_msg = ClipboardMessage(
             image_chunk=ImageChunk(
@@ -625,7 +631,7 @@ class TestTransferCompletion:
                 data=b"12345",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         # State should be cleared
         assert manager._current_transfer is None
@@ -640,7 +646,7 @@ class TestTransferCancel:
     """Test transfer cancellation."""
 
     @pytest.mark.asyncio
-    async def test_cancel_clears_state(self, manager, send_message):
+    async def test_cancel_clears_state(self, manager, send_message, device_id):
         """Cancel clears transfer state."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -651,7 +657,7 @@ class TestTransferCancel:
                 total_chunks=10,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Send some chunks
         chunk_msg = ClipboardMessage(
@@ -661,19 +667,19 @@ class TestTransferCancel:
                 data=b"chunk0",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         # Cancel
         cancel_msg = ClipboardMessage(
             image_cancel=ImageCancel(transfer_id="test-123")
         )
-        await manager.handle_message(cancel_msg)
+        await manager.handle_message(device_id, cancel_msg)
 
         # State should be cleared
         assert manager._current_transfer is None
 
     @pytest.mark.asyncio
-    async def test_cancel_sends_cancelled_message(self, manager, send_message):
+    async def test_cancel_sends_cancelled_message(self, manager, send_message, device_id):
         """Cancel sends cancelled message."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -684,39 +690,39 @@ class TestTransferCancel:
                 total_chunks=10,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Cancel
         cancel_msg = ClipboardMessage(
             image_cancel=ImageCancel(transfer_id="test-123")
         )
-        await manager.handle_message(cancel_msg)
+        await manager.handle_message(device_id, cancel_msg)
 
         # Should send cancelled message
         calls = send_message.call_args_list
-        cancelled_call = calls[-1][0][0]
+        cancelled_call = calls[-1][0][1]
         assert cancelled_call.cancelled is not None
         assert cancelled_call.cancelled.transfer_id == "test-123"
 
     @pytest.mark.asyncio
-    async def test_cancel_when_idle(self, manager, send_message):
+    async def test_cancel_when_idle(self, manager, send_message, device_id):
         """Cancel when no transfer is harmless."""
         import betterproto
 
         cancel_msg = ClipboardMessage(
             image_cancel=ImageCancel(transfer_id="nonexistent")
         )
-        await manager.handle_message(cancel_msg)
+        await manager.handle_message(device_id, cancel_msg)
 
         # Should not raise, might send cancelled ack
         # No error should be sent
         if send_message.called:
-            sent_msg = send_message.call_args[0][0]
+            sent_msg = send_message.call_args[0][1]
             field_name, _ = betterproto.which_one_of(sent_msg, "payload")
             assert field_name != "error"
 
     @pytest.mark.asyncio
-    async def test_chunk_after_cancel_ignored(self, manager, send_message):
+    async def test_chunk_after_cancel_ignored(self, manager, send_message, device_id):
         """Chunks after cancel are ignored."""
         # Start transfer
         start_msg = ClipboardMessage(
@@ -727,13 +733,13 @@ class TestTransferCancel:
                 total_chunks=10,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # Cancel
         cancel_msg = ClipboardMessage(
             image_cancel=ImageCancel(transfer_id="test-123")
         )
-        await manager.handle_message(cancel_msg)
+        await manager.handle_message(device_id, cancel_msg)
         send_message.reset_mock()
 
         # Send chunk after cancel
@@ -744,11 +750,11 @@ class TestTransferCancel:
                 data=b"late chunk",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         # Should get error (no transfer in progress)
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.INVALID_CHUNK
 
@@ -769,32 +775,32 @@ class TestTextPaste:
         msg = ClipboardMessage(
             text_paste=TextPaste(text="Hello, world!")
         )
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         # Should set clipboard
         assert mock_clipboard.last_text == "Hello, world!"
 
         # Should send paste keystroke
-        send_keys.assert_called_once_with("M-v")
+        send_keys.assert_called_once_with(device_id, "M-v")
 
         # Should send complete message
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.complete is not None
         assert sent_msg.complete.content_type == ContentType.TEXT
 
     @pytest.mark.asyncio
-    async def test_large_text_requires_approval(self, manager, send_message):
+    async def test_large_text_requires_approval(self, manager, send_message, device_id):
         """Text > 100KB requires approval."""
         large_text = "x" * (101 * 1024)  # 101KB
         msg = ClipboardMessage(
             text_paste=TextPaste(text=large_text)
         )
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         # Should request approval
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.approval_required is not None
         assert sent_msg.approval_required.size == len(large_text.encode("utf-8"))
         assert len(sent_msg.approval_required.preview) <= 103  # 100 + "..."
@@ -808,7 +814,7 @@ class TestTextPaste:
         msg = ClipboardMessage(
             text_paste=TextPaste(text=exact_text)
         )
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         # Should paste immediately
         assert mock_clipboard.last_text == exact_text
@@ -822,7 +828,7 @@ class TestTextPaste:
         msg = ClipboardMessage(
             text_paste_approved=TextPasteApproved(text=large_text)
         )
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         # Should set clipboard
         assert mock_clipboard.last_text == large_text
@@ -832,31 +838,31 @@ class TestTextPaste:
 
         # Should send complete
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.complete is not None
 
     @pytest.mark.asyncio
-    async def test_text_with_unicode(self, manager, mock_clipboard):
+    async def test_text_with_unicode(self, manager, mock_clipboard, device_id):
         """Text with unicode is handled correctly."""
         unicode_text = "Hello, 世界! 🎉 Привет мир"
         msg = ClipboardMessage(
             text_paste=TextPaste(text=unicode_text)
         )
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         assert mock_clipboard.last_text == unicode_text
 
     @pytest.mark.asyncio
-    async def test_empty_text_rejected(self, manager, send_message, mock_clipboard):
+    async def test_empty_text_rejected(self, manager, send_message, mock_clipboard, device_id):
         """Empty text is rejected."""
         msg = ClipboardMessage(
             text_paste=TextPaste(text="")
         )
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         # Should send error
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.SIZE_EXCEEDED
 
@@ -882,16 +888,16 @@ class TestClipboardErrors:
         msg = ClipboardMessage(
             text_paste=TextPaste(text="test")
         )
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         send_message.assert_called_once()
-        sent_msg = send_message.call_args[0][0]
+        sent_msg = send_message.call_args[0][1]
         assert sent_msg.error is not None
         assert sent_msg.error.code == ErrorCode.CLIPBOARD_FAILED
 
     @pytest.mark.asyncio
     async def test_send_keys_failure_reports_error(
-        self, manager, send_message, send_keys, mock_clipboard
+        self, manager, send_message, send_keys, mock_clipboard, device_id
     ):
         """send_keys failure is reported as paste failed."""
         send_keys.side_effect = Exception("tmux error")
@@ -899,12 +905,13 @@ class TestClipboardErrors:
         msg = ClipboardMessage(
             text_paste=TextPaste(text="test")
         )
-        await manager.handle_message(msg)
+        await manager.handle_message(device_id, msg)
 
         # Find the error message (might have progress first)
+        # call_args: (device_id, message)
         error_msgs = [
-            call[0][0] for call in send_message.call_args_list
-            if call[0][0].error is not None
+            call[0][1] for call in send_message.call_args_list
+            if call[0][1].error is not None
         ]
         assert len(error_msgs) == 1
         assert error_msgs[0].error.code == ErrorCode.PASTE_FAILED
@@ -920,7 +927,7 @@ class TestContextManager:
 
     @pytest.mark.asyncio
     async def test_context_manager_cleanup(
-        self, config, send_message, send_keys, platform_info, mock_clipboard
+        self, config, send_message, send_keys, platform_info, mock_clipboard, device_id
     ):
         """Context manager cleans up on exit."""
         from ras.clipboard_manager import ClipboardManager
@@ -941,7 +948,7 @@ class TestContextManager:
                     total_chunks=10,
                 )
             )
-            await manager.handle_message(msg)
+            await manager.handle_message(device_id, msg)
 
             assert manager._current_transfer is not None
 
@@ -950,7 +957,7 @@ class TestContextManager:
 
     @pytest.mark.asyncio
     async def test_context_manager_cleanup_on_exception(
-        self, config, send_message, send_keys, platform_info, mock_clipboard
+        self, config, send_message, send_keys, platform_info, mock_clipboard, device_id
     ):
         """Context manager cleans up even on exception."""
         from ras.clipboard_manager import ClipboardManager
@@ -972,7 +979,7 @@ class TestContextManager:
                         total_chunks=10,
                     )
                 )
-                await manager.handle_message(msg)
+                await manager.handle_message(device_id, msg)
                 raise ValueError("Simulated error")
         except ValueError:
             pass
@@ -990,7 +997,7 @@ class TestTimeout:
     """Test transfer timeout handling."""
 
     @pytest.mark.asyncio
-    async def test_timeout_after_no_chunks(self, send_message, send_keys, platform_info, mock_clipboard):
+    async def test_timeout_after_no_chunks(self, send_message, send_keys, platform_info, mock_clipboard, device_id):
         """Transfer times out after configured timeout with no chunks."""
         import betterproto
         from ras.clipboard_manager import ClipboardManager
@@ -1017,17 +1024,17 @@ class TestTimeout:
                     total_chunks=10,
                 )
             )
-            await manager.handle_message(msg)
+            await manager.handle_message(device_id, msg)
 
             # Wait for timeout task to complete
             pending = asyncio.all_tasks() - {asyncio.current_task()}
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
 
-        # Should have sent timeout error
+        # Should have sent timeout error (call_args: (device_id, message))
         error_msgs = [
-            call[0][0] for call in send_message.call_args_list
-            if betterproto.which_one_of(call[0][0], "payload")[0] == "error"
+            call[0][1] for call in send_message.call_args_list
+            if betterproto.which_one_of(call[0][1], "payload")[0] == "error"
         ]
         assert len(error_msgs) == 1
         assert error_msgs[0].error.code == ErrorCode.TRANSFER_TIMEOUT
@@ -1039,7 +1046,7 @@ class TestTimeout:
         manager.cleanup()
 
     @pytest.mark.asyncio
-    async def test_timeout_resets_on_chunk(self, send_message, send_keys, platform_info, mock_clipboard):
+    async def test_timeout_resets_on_chunk(self, send_message, send_keys, platform_info, mock_clipboard, device_id):
         """Timeout resets when chunk received."""
         import betterproto
         from ras.clipboard_manager import ClipboardManager
@@ -1075,7 +1082,7 @@ class TestTimeout:
                 total_chunks=2,
             )
         )
-        await manager.handle_message(start_msg)
+        await manager.handle_message(device_id, start_msg)
 
         # First timeout task should be created
         assert manager._timeout_task is not None
@@ -1088,15 +1095,15 @@ class TestTimeout:
                 data=b"12345",
             )
         )
-        await manager.handle_message(chunk_msg)
+        await manager.handle_message(device_id, chunk_msg)
 
         # Timeout was cancelled and restarted (cancel_count should be 1)
         assert cancel_count[0] >= 1, "Timeout should have been cancelled and reset"
 
-        # Should NOT have timed out (no error events)
+        # Should NOT have timed out (no error events) (call_args: (device_id, message))
         error_msgs = [
-            call[0][0] for call in send_message.call_args_list
-            if betterproto.which_one_of(call[0][0], "payload")[0] == "error"
+            call[0][1] for call in send_message.call_args_list
+            if betterproto.which_one_of(call[0][1], "payload")[0] == "error"
         ]
         assert len(error_msgs) == 0
 

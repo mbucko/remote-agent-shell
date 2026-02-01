@@ -133,8 +133,10 @@ class TestManagerFactory:
         # Terminal manager requires tmux service
         assert managers.terminal is None
 
-    def test_clipboard_manager_is_none_by_default(self):
-        """Clipboard manager is None by default (not yet implemented)."""
+    def test_clipboard_manager_created_when_deps_available(self):
+        """Clipboard manager is created when dependencies are available."""
+        from ras.clipboard_manager import ClipboardManager
+
         mock_config = Mock()
         mock_connection_manager = Mock()
         mock_session_manager = Mock()
@@ -151,7 +153,8 @@ class TestManagerFactory:
         factory = ManagerFactory()
         managers = factory.create(deps)
 
-        assert managers.clipboard is None
+        assert managers.clipboard is not None
+        assert isinstance(managers.clipboard, ClipboardManager)
 
     def test_manager_dependencies_dataclass(self):
         """ManagerDependencies holds all required fields."""

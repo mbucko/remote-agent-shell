@@ -524,7 +524,7 @@ class Daemon:
             logger.warning("Clipboard manager not initialized")
             return
 
-        await self._clipboard_manager.handle_message(message)
+        await self._clipboard_manager.handle_message(device_id, message)
 
     async def _handle_ping(self, device_id: str, ping: Ping) -> None:
         """Handle ping with pong response."""
