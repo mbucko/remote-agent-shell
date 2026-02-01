@@ -1,6 +1,7 @@
 package com.ras.data.keystore
 
 import android.content.Context
+import com.ras.data.model.DeviceType
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.datastore.core.DataStore
@@ -51,6 +52,8 @@ class KeyManager @Inject constructor(
         private val KEY_VPN_IP = stringPreferencesKey("vpn_ip")
         private val KEY_VPN_PORT = stringPreferencesKey("vpn_port")
         private val KEY_IS_DISCONNECTED = booleanPreferencesKey("is_disconnected")
+        private val KEY_DEVICE_NAME = stringPreferencesKey("device_name")
+        private val KEY_DEVICE_TYPE = stringPreferencesKey("device_type")
     }
 
     private val keyStore: KeyStore by lazy {
@@ -273,6 +276,42 @@ class KeyManager @Inject constructor(
     }
 
     /**
+     * Store device info received from daemon during pairing.
+     *
+     * @param name The device hostname (e.g., "MacBook-Pro.local")
+     * @param type The device type (laptop, desktop, server)
+     */
+    suspend fun storeDeviceInfo(name: String, type: DeviceType) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_DEVICE_NAME] = name
+            prefs[KEY_DEVICE_TYPE] = type.name
+        }
+    }
+
+    /**
+     * Get stored device name.
+     *
+     * @return The device hostname, or null if not stored.
+     */
+    suspend fun getDeviceName(): String? {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_DEVICE_NAME]
+        }.first()
+    }
+
+    /**
+     * Get stored device type.
+     *
+     * @return The device type, or UNKNOWN if not stored.
+     */
+    suspend fun getDeviceType(): DeviceType {
+        val typeName = context.dataStore.data.map { prefs ->
+            prefs[KEY_DEVICE_TYPE]
+        }.first()
+        return DeviceType.fromString(typeName)
+    }
+
+    /**
      * Clear all stored credentials (for unpairing).
      */
     suspend fun clearCredentials() {
@@ -286,6 +325,8 @@ class KeyManager @Inject constructor(
             prefs.remove(KEY_VPN_IP)
             prefs.remove(KEY_VPN_PORT)
             prefs.remove(KEY_IS_DISCONNECTED)
+            prefs.remove(KEY_DEVICE_NAME)
+            prefs.remove(KEY_DEVICE_TYPE)
         }
     }
 

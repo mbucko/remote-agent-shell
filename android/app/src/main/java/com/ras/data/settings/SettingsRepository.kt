@@ -112,6 +112,31 @@ class SettingsRepository @Inject constructor(
     }
 
     // ==========================================================================
+    // Auto-Connect
+    // ==========================================================================
+
+    private val _autoConnectEnabled = MutableStateFlow(loadAutoConnect())
+    val autoConnectEnabled: StateFlow<Boolean> = _autoConnectEnabled.asStateFlow()
+
+    /**
+     * Get whether auto-connect is enabled.
+     */
+    fun getAutoConnectEnabled(): Boolean = _autoConnectEnabled.value
+
+    /**
+     * Set whether to auto-connect on app launch.
+     */
+    fun setAutoConnectEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(SettingsKeys.AUTO_CONNECT, enabled).apply()
+        _autoConnectEnabled.value = enabled
+        Log.d(TAG, "Auto-connect set to: $enabled")
+    }
+
+    private fun loadAutoConnect(): Boolean {
+        return prefs.getBoolean(SettingsKeys.AUTO_CONNECT, SettingsDefaults.AUTO_CONNECT)
+    }
+
+    // ==========================================================================
     // Quick Buttons
     // ==========================================================================
 

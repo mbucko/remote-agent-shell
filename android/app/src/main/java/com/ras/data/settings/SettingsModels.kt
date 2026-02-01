@@ -23,6 +23,9 @@ object SettingsKeys {
     const val NOTIFY_APPROVAL = "notify_approval"
     const val NOTIFY_COMPLETION = "notify_completion"
     const val NOTIFY_ERROR = "notify_error"
+
+    // Connection
+    const val AUTO_CONNECT = "auto_connect"
 }
 
 /**
@@ -101,6 +104,7 @@ data class SettingsQuickButton(
 object SettingsDefaults {
     val DEFAULT_AGENT: String? = null  // "Always ask"
     const val TERMINAL_FONT_SIZE = 12f
+    const val AUTO_CONNECT = true  // Default: auto-connect enabled
     val QUICK_BUTTONS = listOf(
         SettingsQuickButton.YES,
         SettingsQuickButton.NO,
