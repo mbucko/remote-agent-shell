@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,6 +67,9 @@ class ReconnectionController @Inject constructor(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + ioDispatcher + exceptionHandler)
+
+    // Mutex to prevent race conditions in reconnection attempts
+    private val reconnectMutex = Mutex()
 
     private val _isReconnecting = MutableStateFlow(false)
 
@@ -117,39 +121,47 @@ class ReconnectionController @Inject constructor(
      * Attempt to reconnect if all conditions are met.
      *
      * Guards against:
-     * - Already reconnecting (prevents duplicate attempts)
+     * - Already reconnecting (mutex provides synchronization)
      * - Already connected
      * - No credentials
      * - User manually disconnected
      *
+     * Uses tryLock() for fail-fast mutual exclusion - if another coroutine is
+     * already reconnecting, this returns immediately instead of queueing up.
+     *
      * @return true if reconnection succeeded, false otherwise
      */
     suspend fun attemptReconnectIfNeeded(): Boolean {
-        // Guard: already reconnecting
-        if (_isReconnecting.value) {
-            Log.d(TAG, "Skipping reconnection: already in progress")
+        // Use tryLock to fail fast if another reconnection is in progress
+        // This prevents queueing up reconnection attempts
+        if (!reconnectMutex.tryLock()) {
+            Log.d(TAG, "Skipping reconnection: another attempt in progress")
             return false
         }
 
-        // Guard: already connected
-        if (connectionManager.isConnected.value) {
-            Log.d(TAG, "Skipping reconnection: already connected")
-            return false
-        }
+        try {
+            // Guard: already connected
+            if (connectionManager.isConnected.value) {
+                Log.d(TAG, "Skipping reconnection: already connected")
+                return false
+            }
 
-        // Guard: no credentials
-        if (!credentialRepository.hasCredentials()) {
-            Log.d(TAG, "Skipping reconnection: no credentials")
-            return false
-        }
+            // Guard: no credentials
+            if (!credentialRepository.hasCredentials()) {
+                Log.d(TAG, "Skipping reconnection: no credentials")
+                return false
+            }
 
-        // Guard: user manually disconnected
-        if (keyManager.isDisconnectedOnce()) {
-            Log.d(TAG, "Skipping reconnection: user manually disconnected")
-            return false
-        }
+            // Guard: user manually disconnected
+            if (keyManager.isDisconnectedOnce()) {
+                Log.d(TAG, "Skipping reconnection: user manually disconnected")
+                return false
+            }
 
-        return attemptReconnect()
+            return attemptReconnect()
+        } finally {
+            reconnectMutex.unlock()
+        }
     }
 
     private suspend fun attemptReconnect(): Boolean {
