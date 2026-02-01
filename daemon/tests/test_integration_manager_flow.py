@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, Mock, MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from ras.manager_factory import ManagerFactory, ManagerDependencies, Managers
 from ras.adapters import SessionProviderAdapter, TerminalEventSender
 from ras.terminal.manager import TerminalManager
@@ -32,7 +34,6 @@ class MockTmuxExecutor:
     def __init__(self):
         self.send_keys_calls: list[tuple] = []
         self.send_keys_result: str | None = None
-        self.resize_calls: list[str] = []
 
     async def send_keys(
         self, tmux_name: str, keys: bytes, literal: bool = True
@@ -40,9 +41,9 @@ class MockTmuxExecutor:
         """Record send_keys call."""
         self.send_keys_calls.append((tmux_name, keys, literal))
 
-    async def resize_window_to_largest(self, session_name: str) -> None:
-        """Record resize call."""
-        self.resize_calls.append(session_name)
+    async def set_window_size_latest(self, session_name: str) -> None:
+        """Set window-size to latest (no-op for tests)."""
+        pass
 
 
 class MockSessionManager:
