@@ -2,9 +2,49 @@ package com.ras.util
 
 import android.content.ClipboardManager
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
- * Helper for extracting text from Android clipboard with validation.
+ * Service for clipboard operations.
+ *
+ * Abstracts clipboard access for dependency injection and testability.
+ */
+interface ClipboardService {
+    /**
+     * Extract text from clipboard.
+     *
+     * @return Text content or null if clipboard is empty or contains non-text
+     */
+    fun extractText(): String?
+
+    /**
+     * Prepare clipboard text for sending to terminal.
+     *
+     * Encodes to UTF-8 and enforces the 64KB size limit with UTF-8 safe truncation.
+     *
+     * @param text Raw clipboard text
+     * @return UTF-8 encoded bytes, truncated if necessary, or null if empty
+     */
+    fun prepareForTerminal(text: String): ByteArray?
+
+    /**
+     * Check if text would be truncated when prepared for terminal.
+     *
+     * @param text Text to check
+     * @return true if text exceeds 64KB when encoded as UTF-8
+     */
+    fun wouldTruncate(text: String): Boolean
+
+    companion object {
+        /** Maximum paste size in bytes (64KB). */
+        const val MAX_PASTE_BYTES = 65536
+    }
+}
+
+/**
+ * Android implementation of ClipboardService.
  *
  * Handles:
  * - Plain text (text/plain)
@@ -12,18 +52,12 @@ import android.content.Context
  * - URI lists (text/uri-list)
  * - Ignores non-text content (images, etc.)
  */
-object ClipboardHelper {
+@Singleton
+class AndroidClipboardService @Inject constructor(
+    @ApplicationContext private val context: Context
+) : ClipboardService {
 
-    /** Maximum paste size in bytes (64KB). */
-    const val MAX_PASTE_BYTES = 65536
-
-    /**
-     * Extract text from clipboard, returning null if no text available.
-     *
-     * @param context Application context for clipboard access
-     * @return Text content or null if clipboard is empty or contains non-text
-     */
-    fun extractText(context: Context): String? {
+    override fun extractText(): String? {
         val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
             ?: return null
 
@@ -38,34 +72,20 @@ object ClipboardHelper {
         return if (text.isNullOrEmpty()) null else text
     }
 
-    /**
-     * Prepare clipboard text for sending to terminal.
-     *
-     * Encodes to UTF-8 and enforces the 64KB size limit with UTF-8 safe truncation.
-     *
-     * @param text Raw clipboard text
-     * @return UTF-8 encoded bytes, truncated if necessary, or null if empty
-     */
-    fun prepareForTerminal(text: String): ByteArray? {
+    override fun prepareForTerminal(text: String): ByteArray? {
         if (text.isEmpty()) return null
 
         val bytes = text.toByteArray(Charsets.UTF_8)
 
-        return if (bytes.size > MAX_PASTE_BYTES) {
-            truncateUtf8Safe(bytes, MAX_PASTE_BYTES)
+        return if (bytes.size > ClipboardService.MAX_PASTE_BYTES) {
+            truncateUtf8Safe(bytes, ClipboardService.MAX_PASTE_BYTES)
         } else {
             bytes
         }
     }
 
-    /**
-     * Check if text would be truncated when prepared for terminal.
-     *
-     * @param text Text to check
-     * @return true if text exceeds 64KB when encoded as UTF-8
-     */
-    fun wouldTruncate(text: String): Boolean {
-        return text.toByteArray(Charsets.UTF_8).size > MAX_PASTE_BYTES
+    override fun wouldTruncate(text: String): Boolean {
+        return text.toByteArray(Charsets.UTF_8).size > ClipboardService.MAX_PASTE_BYTES
     }
 
     /**
@@ -83,7 +103,8 @@ object ClipboardHelper {
      * @param maxBytes Maximum number of bytes to keep
      * @return Truncated byte array at valid UTF-8 boundary
      */
-    fun truncateUtf8Safe(bytes: ByteArray, maxBytes: Int): ByteArray {
+    internal fun truncateUtf8Safe(bytes: ByteArray, maxBytes: Int): ByteArray {
+        require(maxBytes > 0) { "maxBytes must be positive" }
         if (bytes.size <= maxBytes) return bytes
 
         var end = maxBytes

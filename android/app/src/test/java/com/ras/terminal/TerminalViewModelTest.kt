@@ -13,6 +13,7 @@ import com.ras.proto.KeyType
 import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
 import com.ras.ui.terminal.TerminalViewModel
+import com.ras.util.ClipboardService
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -44,6 +45,7 @@ class TerminalViewModelTest {
     private lateinit var repository: TerminalRepository
     private lateinit var sessionRepository: com.ras.data.sessions.SessionRepository
     private lateinit var buttonSettings: QuickButtonSettings
+    private lateinit var clipboardService: ClipboardService
     private lateinit var savedStateHandle: SavedStateHandle
 
     private lateinit var stateFlow: MutableStateFlow<TerminalState>
@@ -73,6 +75,12 @@ class TerminalViewModelTest {
             every { getButtons() } returns DEFAULT_QUICK_BUTTONS
         }
 
+        clipboardService = mockk(relaxed = true) {
+            every { extractText() } returns "clipboard text"
+            every { wouldTruncate(any()) } returns false
+            every { prepareForTerminal(any()) } answers { firstArg<String>().toByteArray() }
+        }
+
         sessionRepository = mockk(relaxed = true) {
             every { sessions } returns sessionsFlow
         }
@@ -86,7 +94,7 @@ class TerminalViewModelTest {
     }
 
     private fun createViewModel(): TerminalViewModel {
-        return TerminalViewModel(savedStateHandle, repository, sessionRepository, buttonSettings)
+        return TerminalViewModel(savedStateHandle, repository, sessionRepository, buttonSettings, clipboardService)
     }
 
     // ==========================================================================
@@ -425,6 +433,83 @@ class TerminalViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("", viewModel.inputText.value)
+    }
+
+    @Test
+    fun `onPasteClicked extracts text and pastes`() = runTest {
+        every { clipboardService.extractText() } returns "clipboard content"
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onPasteClicked()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("clipboard content", viewModel.inputText.value)
+        verify { clipboardService.extractText() }
+    }
+
+    @Test
+    fun `onPasteClicked shows error when clipboard is empty`() = runTest {
+        every { clipboardService.extractText() } returns null
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.uiEvents.test {
+            viewModel.onPasteClicked()
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            val event = awaitItem() as TerminalUiEvent.ShowError
+            assertTrue(event.message.contains("empty", ignoreCase = true))
+        }
+    }
+
+    @Test
+    fun `onPaste sets pasteTruncated when text exceeds 64KB`() = runTest {
+        every { clipboardService.wouldTruncate(any()) } returns true
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.pasteTruncated.value)
+
+        viewModel.onPaste("large text that would be truncated")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.pasteTruncated.value)
+    }
+
+    @Test
+    fun `dismissPasteTruncated clears the flag`() = runTest {
+        every { clipboardService.wouldTruncate(any()) } returns true
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onPaste("large text")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.pasteTruncated.value)
+
+        viewModel.dismissPasteTruncated()
+
+        assertFalse(viewModel.pasteTruncated.value)
+    }
+
+    @Test
+    fun `onPaste in raw mode uses clipboardService prepareForTerminal`() = runTest {
+        stateFlow.value = TerminalState(isRawMode = true, isAttached = true, sessionId = "abc123def456")
+        val expectedBytes = "prepared bytes".toByteArray()
+        every { clipboardService.prepareForTerminal("raw paste") } returns expectedBytes
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.onPaste("raw paste")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify { clipboardService.prepareForTerminal("raw paste") }
+        coVerify { repository.sendInput(expectedBytes) }
     }
 
     // ==========================================================================

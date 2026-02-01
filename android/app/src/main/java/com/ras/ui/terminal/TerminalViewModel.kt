@@ -15,7 +15,7 @@ import com.ras.data.terminal.TerminalUiEvent
 import com.ras.proto.KeyType
 import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
-import com.ras.util.ClipboardHelper
+import com.ras.util.ClipboardService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +46,8 @@ class TerminalViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: TerminalRepository,
     private val sessionRepository: SessionRepository,
-    private val buttonSettings: QuickButtonSettings
+    private val buttonSettings: QuickButtonSettings,
+    private val clipboardService: ClipboardService
 ) : ViewModel() {
 
     private val sessionId: String = savedStateHandle.get<String>(NavArgs.SESSION_ID)
@@ -397,6 +398,23 @@ class TerminalViewModel @Inject constructor(
     }
 
     /**
+     * Handle paste button click.
+     *
+     * Extracts text from clipboard and handles paste operation.
+     * Shows error if clipboard is empty or unavailable.
+     */
+    fun onPasteClicked() {
+        viewModelScope.launch {
+            val text = clipboardService.extractText()
+            if (text == null) {
+                _uiEvents.emit(TerminalUiEvent.ShowError("Clipboard is empty"))
+                return@launch
+            }
+            onPaste(text)
+        }
+    }
+
+    /**
      * Handle paste from clipboard.
      *
      * In raw mode, sends content directly to terminal.
@@ -412,7 +430,7 @@ class TerminalViewModel @Inject constructor(
 
         viewModelScope.launch {
             // Check if truncation will occur
-            val willTruncate = ClipboardHelper.wouldTruncate(text)
+            val willTruncate = clipboardService.wouldTruncate(text)
             if (willTruncate) {
                 _pasteTruncated.value = true
             }
@@ -420,7 +438,7 @@ class TerminalViewModel @Inject constructor(
             val state = terminalState.value
             if (state.isRawMode) {
                 // Raw mode: encode, validate, and send directly
-                val bytes = ClipboardHelper.prepareForTerminal(text) ?: return@launch
+                val bytes = clipboardService.prepareForTerminal(text) ?: return@launch
                 try {
                     repository.sendInput(bytes)
                 } catch (e: Exception) {

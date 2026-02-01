@@ -5,6 +5,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.ras.data.connection.ConnectionConfig
+import com.ras.util.AndroidClipboardService
+import com.ras.util.ClipboardService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -64,4 +66,10 @@ object AppModule {
     @Provides
     @AttachTimeoutMs
     fun provideAttachTimeoutMs(): Long = 10_000L  // 10 seconds for production
+
+    @Provides
+    @Singleton
+    fun provideClipboardService(@ApplicationContext context: Context): ClipboardService {
+        return AndroidClipboardService(context)
+    }
 }

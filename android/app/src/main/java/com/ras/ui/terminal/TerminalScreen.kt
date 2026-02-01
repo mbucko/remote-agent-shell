@@ -60,7 +60,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -77,14 +76,13 @@ import com.ras.ui.components.ConnectionStatusOverlay
 import com.ras.ui.theme.StatusConnected
 import com.ras.ui.theme.StatusError
 import com.ras.ui.theme.TerminalBackground
-import com.ras.util.ClipboardHelper
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TerminalScreen(
-    sessionId: String,
+    @Suppress("UNUSED_PARAMETER") sessionId: String, // Used by NavGraph for route matching
     onNavigateBack: () -> Unit,
     viewModel: TerminalViewModel = hiltViewModel()
 ) {
@@ -98,7 +96,6 @@ fun TerminalScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
 
     // Font size for terminal (adjustable via pinch zoom)
@@ -275,11 +272,7 @@ fun TerminalScreen(
                     onTextChange = { viewModel.onInputTextChanged(it) },
                     onSend = { viewModel.onSendClicked() },
                     onEnter = { viewModel.onEnterPressed() },
-                    onPaste = {
-                        ClipboardHelper.extractText(context)?.let { text ->
-                            viewModel.onPaste(text)
-                        }
-                    },
+                    onPaste = { viewModel.onPasteClicked() },
                     enabled = isScreenConnected,
                     modifier = Modifier.fillMaxWidth()
                 )
