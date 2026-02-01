@@ -104,7 +104,7 @@ data class SettingsQuickButton(
 object SettingsDefaults {
     val DEFAULT_AGENT: String? = null  // "Always ask"
     const val TERMINAL_FONT_SIZE = 12f
-    const val AUTO_CONNECT = true  // Default: auto-connect enabled
+    const val AUTO_CONNECT = false  // Default: auto-connect disabled (user must enable)
     val QUICK_BUTTONS = listOf(
         SettingsQuickButton.YES,
         SettingsQuickButton.NO,
