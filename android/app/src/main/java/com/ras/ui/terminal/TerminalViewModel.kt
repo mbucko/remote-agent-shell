@@ -6,6 +6,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.sessions.SessionRepository
+import com.ras.data.settings.SettingsRepository
 import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
 import com.ras.data.terminal.KeyMapper
 import com.ras.data.terminal.QuickButton
@@ -55,6 +56,7 @@ class TerminalViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: TerminalRepository,
     private val sessionRepository: SessionRepository,
+    private val settingsRepository: SettingsRepository,
     private val buttonSettings: QuickButtonSettings,
     private val clipboardService: ClipboardService
 ) : ViewModel() {
@@ -105,6 +107,10 @@ class TerminalViewModel @Inject constructor(
     // Button editor visibility
     private val _showButtonEditor = MutableStateFlow(false)
     val showButtonEditor: StateFlow<Boolean> = _showButtonEditor.asStateFlow()
+
+    // Terminal font size (persisted)
+    private val _fontSize = MutableStateFlow(settingsRepository.getTerminalFontSize())
+    val fontSize: StateFlow<Float> = _fontSize.asStateFlow()
 
     // One-time UI events
     private val _uiEvents = MutableSharedFlow<TerminalUiEvent>(extraBufferCapacity = 64)
@@ -369,6 +375,14 @@ class TerminalViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Update terminal font size and persist to settings.
+     */
+    fun onFontSizeChanged(size: Float) {
+        _fontSize.value = size
+        settingsRepository.setTerminalFontSize(size)
     }
 
     /**

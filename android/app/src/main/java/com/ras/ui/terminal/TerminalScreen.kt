@@ -56,8 +56,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -110,13 +108,11 @@ fun TerminalScreen(
     val inputText by viewModel.inputText.collectAsStateWithLifecycle()
     val pasteTruncated by viewModel.pasteTruncated.collectAsStateWithLifecycle()
     val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
+    val fontSize by viewModel.fontSize.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
-    // Font size for terminal (adjustable via +/- buttons)
-    var fontSize by remember { mutableFloatStateOf(FONT_SIZE_DEFAULT) }
 
     // Photo picker launcher
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -185,8 +181,12 @@ fun TerminalScreen(
 
                 // Font size controls
                 FontSizeControls(
-                    onDecrease = { fontSize = (fontSize - FONT_SIZE_STEP).coerceAtLeast(FONT_SIZE_MIN) },
-                    onIncrease = { fontSize = (fontSize + FONT_SIZE_STEP).coerceAtMost(FONT_SIZE_MAX) }
+                    onDecrease = {
+                        viewModel.onFontSizeChanged((fontSize - FONT_SIZE_STEP).coerceAtLeast(FONT_SIZE_MIN))
+                    },
+                    onIncrease = {
+                        viewModel.onFontSizeChanged((fontSize + FONT_SIZE_STEP).coerceAtMost(FONT_SIZE_MAX))
+                    }
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))

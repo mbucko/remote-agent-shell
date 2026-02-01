@@ -17,6 +17,7 @@ object SettingsKeys {
 
     // Terminal
     const val QUICK_BUTTONS = "quick_buttons"
+    const val TERMINAL_FONT_SIZE = "terminal_font_size"
 
     // Notifications
     const val NOTIFY_APPROVAL = "notify_approval"
@@ -100,6 +101,7 @@ data class SettingsQuickButton(
  */
 object SettingsDefaults {
     val DEFAULT_AGENT: String? = null  // "Always ask"
+    const val TERMINAL_FONT_SIZE = 12f
     val QUICK_BUTTONS = listOf(
         SettingsQuickButton.YES,
         SettingsQuickButton.NO,

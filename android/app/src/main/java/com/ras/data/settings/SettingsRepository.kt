@@ -93,6 +93,25 @@ class SettingsRepository @Inject constructor(
     }
 
     // ==========================================================================
+    // Terminal Font Size
+    // ==========================================================================
+
+    /**
+     * Get the terminal font size.
+     */
+    fun getTerminalFontSize(): Float {
+        return prefs.getFloat(SettingsKeys.TERMINAL_FONT_SIZE, SettingsDefaults.TERMINAL_FONT_SIZE)
+    }
+
+    /**
+     * Set the terminal font size.
+     */
+    fun setTerminalFontSize(size: Float) {
+        prefs.edit().putFloat(SettingsKeys.TERMINAL_FONT_SIZE, size).apply()
+        Log.d(TAG, "Terminal font size set to: $size")
+    }
+
+    // ==========================================================================
     // Quick Buttons
     // ==========================================================================
 
@@ -268,7 +287,10 @@ class SettingsRepository @Inject constructor(
                 Log.d(TAG, "Reset sessions section")
             }
             SettingsSection.TERMINAL -> {
-                prefs.edit().remove(SettingsKeys.QUICK_BUTTONS).apply()
+                prefs.edit()
+                    .remove(SettingsKeys.QUICK_BUTTONS)
+                    .remove(SettingsKeys.TERMINAL_FONT_SIZE)
+                    .apply()
                 _quickButtons.value = SettingsDefaults.QUICK_BUTTONS
                 Log.d(TAG, "Reset terminal section")
             }
