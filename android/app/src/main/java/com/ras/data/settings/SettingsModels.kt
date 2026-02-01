@@ -74,20 +74,19 @@ data class SettingsQuickButton(
 ) {
     companion object {
         // Predefined quick buttons
-        val YES = SettingsQuickButton("yes", "Y", "y")
-        val NO = SettingsQuickButton("no", "N", "n")
-        val ENTER = SettingsQuickButton("enter", "Enter", "\n")
+        val YES = SettingsQuickButton("yes", "Yes", "y")
+        val NO = SettingsQuickButton("no", "No", "n")
         val CTRL_C = SettingsQuickButton("ctrl_c", "Ctrl+C", "\u0003")
-        val CTRL_D = SettingsQuickButton("ctrl_d", "Ctrl+D", "\u0004")
-        val CTRL_Z = SettingsQuickButton("ctrl_z", "Ctrl+Z", "\u001a")
-        val CTRL_L = SettingsQuickButton("ctrl_l", "Ctrl+L", "\u000c")
         val ESC = SettingsQuickButton("esc", "Esc", "\u001b")
         val TAB = SettingsQuickButton("tab", "Tab", "\t")
+        val ARROW_UP = SettingsQuickButton("up", "↑", "\u001b[A")
+        val ARROW_DOWN = SettingsQuickButton("down", "↓", "\u001b[B")
+        val BACKSPACE = SettingsQuickButton("backspace", "⌫", "\u007f")
 
         /**
          * All available quick buttons.
          */
-        val ALL = listOf(YES, NO, ENTER, CTRL_C, CTRL_D, CTRL_Z, CTRL_L, ESC, TAB)
+        val ALL = listOf(YES, NO, CTRL_C, ESC, TAB, ARROW_UP, ARROW_DOWN, BACKSPACE)
 
         /**
          * Find button by ID.
@@ -105,7 +104,11 @@ object SettingsDefaults {
     val QUICK_BUTTONS = listOf(
         SettingsQuickButton.YES,
         SettingsQuickButton.NO,
-        SettingsQuickButton.CTRL_C
+        SettingsQuickButton.CTRL_C,
+        SettingsQuickButton.ARROW_UP,
+        SettingsQuickButton.ARROW_DOWN,
+        SettingsQuickButton.BACKSPACE,
+        SettingsQuickButton.TAB
     )
     val NOTIFICATIONS = NotificationSettings(
         approvalEnabled = true,

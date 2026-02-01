@@ -117,41 +117,39 @@ data class QuickButton(
 
 /**
  * Default quick buttons shown on first use.
+ * Optimized for Claude Code usage: approvals, interrupts, navigation, and autocomplete.
  */
 val DEFAULT_QUICK_BUTTONS = listOf(
-    QuickButton(id = "y", label = "Y", character = "y", isDefault = true),
-    QuickButton(id = "n", label = "N", character = "n", isDefault = true),
+    QuickButton(id = "y", label = "Yes", character = "y", isDefault = true),
+    QuickButton(id = "n", label = "No", character = "n", isDefault = true),
     QuickButton(id = "ctrl_c", label = "Ctrl+C", keyType = KeyType.KEY_CTRL_C, isDefault = true),
+    QuickButton(id = "up", label = "↑", keyType = KeyType.KEY_UP, isDefault = true),
+    QuickButton(id = "down", label = "↓", keyType = KeyType.KEY_DOWN, isDefault = true),
     QuickButton(id = "backspace", label = "⌫", keyType = KeyType.KEY_BACKSPACE, isDefault = true),
     QuickButton(id = "tab", label = "Tab", keyType = KeyType.KEY_TAB, isDefault = true)
 )
 
 /**
  * All available quick buttons for customization.
+ * Curated for Claude Code usage - excludes dangerous/rarely-used keys.
  */
 val AVAILABLE_QUICK_BUTTONS = listOf(
-    // Default buttons
-    QuickButton(id = "y", label = "Y", character = "y"),
-    QuickButton(id = "n", label = "N", character = "n"),
+    // Primary actions
+    QuickButton(id = "y", label = "Yes", character = "y"),
+    QuickButton(id = "n", label = "No", character = "n"),
     QuickButton(id = "ctrl_c", label = "Ctrl+C", keyType = KeyType.KEY_CTRL_C),
     QuickButton(id = "backspace", label = "⌫", keyType = KeyType.KEY_BACKSPACE),
     // Navigation
     QuickButton(id = "tab", label = "Tab", keyType = KeyType.KEY_TAB),
     QuickButton(id = "esc", label = "Esc", keyType = KeyType.KEY_ESCAPE),
-    QuickButton(id = "enter", label = "Enter", keyType = KeyType.KEY_ENTER),
     // Arrow keys
     QuickButton(id = "up", label = "↑", keyType = KeyType.KEY_UP),
     QuickButton(id = "down", label = "↓", keyType = KeyType.KEY_DOWN),
     QuickButton(id = "left", label = "←", keyType = KeyType.KEY_LEFT),
     QuickButton(id = "right", label = "→", keyType = KeyType.KEY_RIGHT),
-    // Control characters
-    QuickButton(id = "ctrl_d", label = "Ctrl+D", keyType = KeyType.KEY_CTRL_D),
-    QuickButton(id = "ctrl_z", label = "Ctrl+Z", keyType = KeyType.KEY_CTRL_Z),
-    // Page navigation
+    // Line navigation
     QuickButton(id = "home", label = "Home", keyType = KeyType.KEY_HOME),
-    QuickButton(id = "end", label = "End", keyType = KeyType.KEY_END),
-    QuickButton(id = "pgup", label = "PgUp", keyType = KeyType.KEY_PAGE_UP),
-    QuickButton(id = "pgdn", label = "PgDn", keyType = KeyType.KEY_PAGE_DOWN)
+    QuickButton(id = "end", label = "End", keyType = KeyType.KEY_END)
 )
 
 /**

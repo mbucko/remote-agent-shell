@@ -72,6 +72,11 @@ import com.ras.ui.theme.StatusDisconnected
 import com.ras.ui.theme.StatusError
 import kotlinx.coroutines.flow.collectLatest
 
+/**
+ * Shared button shape for consistent styling across settings.
+ */
+private val SettingsButtonShape = RoundedCornerShape(6.dp)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -458,8 +463,8 @@ private fun QuickButtonChip(
 
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .clip(SettingsButtonShape)
+            .border(1.dp, borderColor, SettingsButtonShape)
             .background(backgroundColor)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -607,7 +612,8 @@ private fun ConnectionCard(
                     onClick = onDisconnect,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = StatusError
-                    )
+                    ),
+                    shape = SettingsButtonShape
                 ) {
                     Text(stringResource(R.string.settings_disconnect))
                 }
@@ -658,10 +664,11 @@ private fun AboutCard() {
 
             OutlinedButton(
                 onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/anthropics/remote-agent-shell"))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mbucko/remote-agent-shell"))
                     context.startActivity(intent)
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = SettingsButtonShape
             ) {
                 Text(stringResource(R.string.settings_github))
             }
@@ -670,10 +677,11 @@ private fun AboutCard() {
 
             OutlinedButton(
                 onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/anthropics/remote-agent-shell/issues"))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mbucko/remote-agent-shell/issues"))
                     context.startActivity(intent)
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shape = SettingsButtonShape
             ) {
                 Text(stringResource(R.string.settings_feedback))
             }

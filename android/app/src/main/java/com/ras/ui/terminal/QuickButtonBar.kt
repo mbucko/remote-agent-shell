@@ -116,13 +116,13 @@ private fun QuickButtonBarManyButtonsPreview() {
     MaterialTheme {
         QuickButtonBar(
             buttons = listOf(
-                QuickButton("y", "Y", character = "y"),
-                QuickButton("n", "N", character = "n"),
+                QuickButton("y", "Yes", character = "y"),
+                QuickButton("n", "No", character = "n"),
                 QuickButton("ctrl_c", "Ctrl+C", keyType = KeyType.KEY_CTRL_C),
-                QuickButton("tab", "Tab", keyType = KeyType.KEY_TAB),
                 QuickButton("up", "↑", keyType = KeyType.KEY_UP),
                 QuickButton("down", "↓", keyType = KeyType.KEY_DOWN),
-                QuickButton("esc", "Esc", keyType = KeyType.KEY_ESCAPE)
+                QuickButton("backspace", "⌫", keyType = KeyType.KEY_BACKSPACE),
+                QuickButton("tab", "Tab", keyType = KeyType.KEY_TAB)
             ),
             onButtonClick = {},
             onAddClick = {}
