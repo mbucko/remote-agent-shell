@@ -10,8 +10,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,6 +43,8 @@ class ConnectionServiceController @Inject constructor(
 ) {
     companion object {
         private const val TAG = "ConnectionServiceController"
+        // Delay before stopping service to avoid rapid stop/start cycles during reconnection
+        private const val STOP_DELAY_MS = 3000L
     }
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
@@ -47,6 +53,7 @@ class ConnectionServiceController @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + ioDispatcher + exceptionHandler)
     private var serviceRunning = false
+    private var pendingStopJob: Job? = null
 
     /**
      * Initialize the controller and start observing connection state.
@@ -56,23 +63,47 @@ class ConnectionServiceController @Inject constructor(
     fun initialize() {
         scope.launch {
             connectionManager.isConnected.collect { isConnected ->
-                if (isConnected && !serviceRunning) {
-                    startService()
-                } else if (!isConnected && serviceRunning) {
-                    stopService()
+                if (isConnected) {
+                    // Cancel any pending stop - we're reconnecting
+                    pendingStopJob?.cancel()
+                    pendingStopJob = null
+
+                    if (!serviceRunning) {
+                        startService()
+                    }
+                } else if (serviceRunning) {
+                    // Delay stopping to avoid rapid stop/start cycles during reconnection
+                    scheduleStop()
                 }
             }
         }
     }
 
-    private fun startService() {
-        val intent = Intent(context, ConnectionService::class.java)
-        ContextCompat.startForegroundService(context, intent)
+    private suspend fun startService() {
+        Log.d(TAG, "Starting foreground service")
+        withContext(Dispatchers.Main) {
+            val intent = Intent(context, ConnectionService::class.java)
+            ContextCompat.startForegroundService(context, intent)
+        }
         serviceRunning = true
     }
 
-    private fun stopService() {
-        context.stopService(Intent(context, ConnectionService::class.java))
-        serviceRunning = false
+    private fun scheduleStop() {
+        // Cancel any existing pending stop
+        pendingStopJob?.cancel()
+
+        pendingStopJob = scope.launch {
+            Log.d(TAG, "Scheduling service stop in ${STOP_DELAY_MS}ms")
+            delay(STOP_DELAY_MS)
+            // Only stop if still disconnected
+            if (!connectionManager.isConnected.value && serviceRunning) {
+                Log.d(TAG, "Stopping foreground service")
+                withContext(Dispatchers.Main) {
+                    context.stopService(Intent(context, ConnectionService::class.java))
+                }
+                serviceRunning = false
+            }
+            pendingStopJob = null
+        }
     }
 }

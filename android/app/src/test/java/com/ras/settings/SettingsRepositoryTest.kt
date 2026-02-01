@@ -52,6 +52,9 @@ class SettingsRepositoryTest {
         every { prefs.getInt(any(), any()) } answers {
             storage[firstArg<String>()] as? Int ?: secondArg()
         }
+        every { prefs.getFloat(any(), any()) } answers {
+            storage[firstArg<String>()] as? Float ?: secondArg()
+        }
 
         // Mock editor chain
         every { editor.putString(any(), any()) } answers {
@@ -64,6 +67,10 @@ class SettingsRepositoryTest {
         }
         every { editor.putInt(any(), any()) } answers {
             storage[firstArg<String>()] = secondArg<Int>()
+            editor
+        }
+        every { editor.putFloat(any(), any()) } answers {
+            storage[firstArg<String>()] = secondArg<Float>()
             editor
         }
         every { editor.remove(any()) } answers {
@@ -378,6 +385,75 @@ class SettingsRepositoryTest {
     }
 
     // ==========================================================================
+    // Terminal Font Size Tests
+    // ==========================================================================
+
+    @Test
+    fun `FS01 - fresh install returns default font size`() {
+        assertEquals(SettingsDefaults.TERMINAL_FONT_SIZE, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS02 - set font size persists`() {
+        repository.setTerminalFontSize(16f)
+        assertEquals(16f, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS03 - set minimum font size`() {
+        repository.setTerminalFontSize(8f)
+        assertEquals(8f, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS04 - set maximum font size`() {
+        repository.setTerminalFontSize(24f)
+        assertEquals(24f, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS05 - set font size zero`() {
+        // Edge case: font size should technically be > 0, but repository doesn't validate
+        repository.setTerminalFontSize(0f)
+        assertEquals(0f, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS06 - set negative font size`() {
+        // Edge case: repository stores whatever is passed (validation happens in UI)
+        repository.setTerminalFontSize(-5f)
+        assertEquals(-5f, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS07 - set font size with decimals`() {
+        repository.setTerminalFontSize(14.5f)
+        assertEquals(14.5f, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS08 - set font size multiple times uses last value`() {
+        repository.setTerminalFontSize(10f)
+        repository.setTerminalFontSize(14f)
+        repository.setTerminalFontSize(18f)
+        assertEquals(18f, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS09 - set same font size is no-op`() {
+        repository.setTerminalFontSize(12f)
+        repository.setTerminalFontSize(12f)
+        assertEquals(12f, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `FS10 - font size persisted to SharedPreferences`() {
+        repository.setTerminalFontSize(20f)
+        verify { editor.putFloat(SettingsKeys.TERMINAL_FONT_SIZE, 20f) }
+        verify { editor.apply() }
+    }
+
+    // ==========================================================================
     // Reset Tests
     // ==========================================================================
 
@@ -393,6 +469,22 @@ class SettingsRepositoryTest {
         repository.setEnabledQuickButtons(listOf(SettingsQuickButton.TAB))
         repository.resetSection(SettingsSection.TERMINAL)
         assertEquals(SettingsDefaults.QUICK_BUTTONS, repository.getEnabledQuickButtons())
+    }
+
+    @Test
+    fun `RS02a - reset terminal section restores default font size`() {
+        repository.setTerminalFontSize(20f)
+        repository.resetSection(SettingsSection.TERMINAL)
+        assertEquals(SettingsDefaults.TERMINAL_FONT_SIZE, repository.getTerminalFontSize())
+    }
+
+    @Test
+    fun `RS02b - reset terminal section restores both buttons and font size`() {
+        repository.setEnabledQuickButtons(listOf(SettingsQuickButton.TAB))
+        repository.setTerminalFontSize(20f)
+        repository.resetSection(SettingsSection.TERMINAL)
+        assertEquals(SettingsDefaults.QUICK_BUTTONS, repository.getEnabledQuickButtons())
+        assertEquals(SettingsDefaults.TERMINAL_FONT_SIZE, repository.getTerminalFontSize())
     }
 
     @Test
@@ -413,6 +505,7 @@ class SettingsRepositoryTest {
         // Set all
         repository.setDefaultAgent("claude")
         repository.setEnabledQuickButtons(listOf(SettingsQuickButton.TAB))
+        repository.setTerminalFontSize(20f)
         repository.setNotificationSettings(
             NotificationSettings(false, false, false)
         )
@@ -423,6 +516,30 @@ class SettingsRepositoryTest {
         // Verify others unchanged
         assertNull(repository.getDefaultAgent())
         assertEquals(listOf(SettingsQuickButton.TAB), repository.getEnabledQuickButtons())
+        assertEquals(20f, repository.getTerminalFontSize())
+        assertEquals(
+            NotificationSettings(false, false, false),
+            repository.getNotificationSettings()
+        )
+    }
+
+    @Test
+    fun `RS04a - reset terminal section preserves sessions and notifications`() {
+        // Set all
+        repository.setDefaultAgent("claude")
+        repository.setEnabledQuickButtons(listOf(SettingsQuickButton.TAB))
+        repository.setTerminalFontSize(20f)
+        repository.setNotificationSettings(
+            NotificationSettings(false, false, false)
+        )
+
+        // Reset only terminal
+        repository.resetSection(SettingsSection.TERMINAL)
+
+        // Verify terminal reset but others unchanged
+        assertEquals("claude", repository.getDefaultAgent())
+        assertEquals(SettingsDefaults.QUICK_BUTTONS, repository.getEnabledQuickButtons())
+        assertEquals(SettingsDefaults.TERMINAL_FONT_SIZE, repository.getTerminalFontSize())
         assertEquals(
             NotificationSettings(false, false, false),
             repository.getNotificationSettings()
@@ -433,6 +550,7 @@ class SettingsRepositoryTest {
     fun `RS05 - reset all clears everything`() {
         repository.setDefaultAgent("claude")
         repository.setEnabledQuickButtons(listOf(SettingsQuickButton.TAB))
+        repository.setTerminalFontSize(20f)
         repository.setNotificationSettings(
             NotificationSettings(false, false, false)
         )
@@ -441,6 +559,7 @@ class SettingsRepositoryTest {
 
         assertNull(repository.getDefaultAgent())
         assertEquals(SettingsDefaults.QUICK_BUTTONS, repository.getEnabledQuickButtons())
+        assertEquals(SettingsDefaults.TERMINAL_FONT_SIZE, repository.getTerminalFontSize())
         assertEquals(SettingsDefaults.NOTIFICATIONS, repository.getNotificationSettings())
     }
 

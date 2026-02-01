@@ -707,3 +707,232 @@ class TestTimingEdgeCases:
 
         # Should have no connections
         assert manager.get_connection("device-0") is None
+
+
+# =============================================================================
+# SECTION 10: Connection Replacement Edge Cases
+# =============================================================================
+
+class TestConnectionReplacementEdgeCases:
+    """Tests for proper connection replacement behavior.
+
+    Critical fix: When replacing a connection, the old connection must be
+    fully awaited before the new one is used, to ensure ICE timers are
+    cancelled and transports are properly cleaned up.
+    """
+
+    @pytest.mark.asyncio
+    async def test_old_connection_awaited_before_new_one_used(self):
+        """Old connection close must complete before returning from add_connection.
+
+        This prevents 'NoneType' errors when old aioice timers fire after
+        the transport is replaced.
+        """
+        from ras.connection_manager import ConnectionManager
+
+        manager = ConnectionManager()
+
+        # Track close order
+        close_order = []
+        add_connection_returned = asyncio.Event()
+
+        async def slow_close():
+            """Simulate a slow close that would cause issues if not awaited."""
+            close_order.append("close_started")
+            await asyncio.sleep(0.1)  # Simulate ICE teardown time
+            close_order.append("close_completed")
+
+        # Add first connection
+        mock_peer1 = AsyncMock()
+        mock_peer1.close = slow_close
+        mock_peer1.on_message = Mock()
+        mock_peer1.on_close = Mock()
+        mock_codec1 = Mock()
+
+        await manager.add_connection(
+            device_id="test-device",
+            peer=mock_peer1,
+            codec=mock_codec1,
+            on_message=Mock()
+        )
+
+        # Add second connection for same device (triggers replacement)
+        mock_peer2 = AsyncMock()
+        mock_peer2.close = AsyncMock()
+        mock_peer2.on_message = Mock()
+        mock_peer2.on_close = Mock()
+        mock_codec2 = Mock()
+
+        await manager.add_connection(
+            device_id="test-device",
+            peer=mock_peer2,
+            codec=mock_codec2,
+            on_message=Mock()
+        )
+
+        # After add_connection returns, old connection must be fully closed
+        # (not just "close_started" but also "close_completed")
+        assert "close_started" in close_order
+        assert "close_completed" in close_order
+        assert close_order.index("close_started") < close_order.index("close_completed")
+
+    @pytest.mark.asyncio
+    async def test_old_connection_close_error_doesnt_break_new_connection(self):
+        """Errors during old connection close should not prevent new connection."""
+        from ras.connection_manager import ConnectionManager
+
+        manager = ConnectionManager()
+
+        # First connection with a failing close
+        mock_peer1 = AsyncMock()
+        mock_peer1.close = AsyncMock(side_effect=Exception("ICE close failed"))
+        mock_peer1.on_message = Mock()
+        mock_peer1.on_close = Mock()
+        mock_codec1 = Mock()
+
+        await manager.add_connection(
+            device_id="test-device",
+            peer=mock_peer1,
+            codec=mock_codec1,
+            on_message=Mock()
+        )
+
+        # Add second connection - should succeed despite close error
+        mock_peer2 = AsyncMock()
+        mock_peer2.close = AsyncMock()
+        mock_peer2.on_message = Mock()
+        mock_peer2.on_close = Mock()
+        mock_codec2 = Mock()
+
+        conn = await manager.add_connection(
+            device_id="test-device",
+            peer=mock_peer2,
+            codec=mock_codec2,
+            on_message=Mock()
+        )
+
+        # New connection should be active
+        assert manager.get_connection("test-device") is conn
+        assert conn.peer is mock_peer2
+
+    @pytest.mark.asyncio
+    async def test_old_connection_handler_removed_before_close(self):
+        """Old connection's close handler must be removed to prevent cascading disconnect."""
+        from ras.connection_manager import ConnectionManager
+
+        disconnect_callback_calls = []
+
+        async def on_lost(device_id: str):
+            disconnect_callback_calls.append(device_id)
+
+        manager = ConnectionManager(on_connection_lost=on_lost)
+
+        close_handler_removed = False
+        original_on_close = None
+
+        def track_on_close(handler):
+            nonlocal close_handler_removed, original_on_close
+            if original_on_close is not None and handler != original_on_close:
+                close_handler_removed = True
+
+        # First connection
+        mock_peer1 = AsyncMock()
+        mock_peer1.on_message = Mock()
+        mock_peer1.on_close = Mock(side_effect=track_on_close)
+        mock_peer1.close = AsyncMock()
+        mock_codec1 = Mock()
+
+        await manager.add_connection(
+            device_id="test-device",
+            peer=mock_peer1,
+            codec=mock_codec1,
+            on_message=Mock()
+        )
+
+        # Capture the original handler
+        original_on_close = mock_peer1.on_close.call_args[0][0]
+
+        # Add second connection
+        mock_peer2 = AsyncMock()
+        mock_peer2.close = AsyncMock()
+        mock_peer2.on_message = Mock()
+        mock_peer2.on_close = Mock()
+        mock_codec2 = Mock()
+
+        await manager.add_connection(
+            device_id="test-device",
+            peer=mock_peer2,
+            codec=mock_codec2,
+            on_message=Mock()
+        )
+
+        # on_close should have been called with a new (no-op) handler before close
+        assert mock_peer1.on_close.call_count >= 2
+
+        # on_connection_lost should NOT have been called (old handler was replaced)
+        await asyncio.sleep(0.01)  # Give any async tasks a chance to run
+        assert "test-device" not in disconnect_callback_calls
+
+    @pytest.mark.asyncio
+    async def test_rapid_replacement_same_device(self):
+        """Rapid replacement of same device connection should be handled correctly."""
+        from ras.connection_manager import ConnectionManager
+
+        manager = ConnectionManager()
+        close_counts = {"peer1": 0, "peer2": 0, "peer3": 0}
+
+        async def make_close(name: str):
+            async def close():
+                close_counts[name] += 1
+            return close
+
+        # Add connection 1
+        mock_peer1 = AsyncMock()
+        mock_peer1.close = await make_close("peer1")
+        mock_peer1.on_message = Mock()
+        mock_peer1.on_close = Mock()
+        mock_codec1 = Mock()
+
+        await manager.add_connection(
+            device_id="device",
+            peer=mock_peer1,
+            codec=mock_codec1,
+            on_message=Mock()
+        )
+
+        # Immediately replace with connection 2
+        mock_peer2 = AsyncMock()
+        mock_peer2.close = await make_close("peer2")
+        mock_peer2.on_message = Mock()
+        mock_peer2.on_close = Mock()
+        mock_codec2 = Mock()
+
+        await manager.add_connection(
+            device_id="device",
+            peer=mock_peer2,
+            codec=mock_codec2,
+            on_message=Mock()
+        )
+
+        # Immediately replace with connection 3
+        mock_peer3 = AsyncMock()
+        mock_peer3.close = await make_close("peer3")
+        mock_peer3.on_message = Mock()
+        mock_peer3.on_close = Mock()
+        mock_codec3 = Mock()
+
+        conn = await manager.add_connection(
+            device_id="device",
+            peer=mock_peer3,
+            codec=mock_codec3,
+            on_message=Mock()
+        )
+
+        # peer1 and peer2 should each be closed exactly once
+        assert close_counts["peer1"] == 1
+        assert close_counts["peer2"] == 1
+        assert close_counts["peer3"] == 0  # Current connection
+
+        # Final connection should be peer3
+        assert manager.get_connection("device") is conn
+        assert conn.peer is mock_peer3

@@ -278,4 +278,132 @@ class ReconnectionControllerTest {
 
         assertFalse(controller.isReconnecting.value)
     }
+
+    // ============================================================================
+    // SECTION 6: Mutex-Based Race Condition Prevention
+    // ============================================================================
+
+    @Test
+    fun `concurrent reconnection attempts from foreground and error are deduplicated`() = runTest(testDispatcher) {
+        // Make reconnection slow so we can test concurrent attempts
+        coEvery { mockReconnectionService.reconnect(any()) } coAnswers {
+            delay(2000)
+            ReconnectionResult.Success
+        }
+
+        controller.initialize()
+        advanceTimeBy(100) // Let initialize complete
+
+        // Simulate both triggers firing close together
+        // (app comes to foreground + connection error at same time)
+        launch {
+            appInForegroundFlow.value = false
+            advanceTimeBy(50)
+            appInForegroundFlow.value = true
+        }
+        launch {
+            advanceTimeBy(100)
+            connectionErrorsFlow.emit(ConnectionError.Disconnected("Network lost"))
+        }
+
+        advanceUntilIdle()
+
+        // Only ONE reconnection should have happened despite two triggers
+        coVerify(exactly = 1) { mockReconnectionService.reconnect(any()) }
+    }
+
+    @Test
+    fun `mutex prevents multiple simultaneous reconnection attempts`() = runTest(testDispatcher) {
+        var reconnectCallCount = 0
+
+        coEvery { mockReconnectionService.reconnect(any()) } coAnswers {
+            reconnectCallCount++
+            delay(500)
+            ReconnectionResult.Success
+        }
+
+        // Launch 5 concurrent reconnection attempts
+        repeat(5) {
+            launch { controller.attemptReconnectIfNeeded() }
+        }
+
+        advanceUntilIdle()
+
+        // Only one should have succeeded due to mutex
+        assertTrue("Only one reconnect call should be made", reconnectCallCount == 1)
+    }
+
+    @Test
+    fun `mutex is released after reconnection completes allowing subsequent attempts`() = runTest(testDispatcher) {
+        coEvery { mockReconnectionService.reconnect(any()) } coAnswers {
+            delay(100)
+            ReconnectionResult.Success
+        }
+
+        // First attempt
+        val firstResult = controller.attemptReconnectIfNeeded()
+        advanceUntilIdle()
+        assertTrue("First attempt should succeed", firstResult)
+
+        // Disconnect so we can reconnect again
+        isConnectedFlow.value = false
+
+        // Second attempt after first completes
+        val secondResult = controller.attemptReconnectIfNeeded()
+        advanceUntilIdle()
+        assertTrue("Second attempt should succeed after first completes", secondResult)
+
+        coVerify(exactly = 2) { mockReconnectionService.reconnect(any()) }
+    }
+
+    @Test
+    fun `mutex is released even on reconnection failure`() = runTest(testDispatcher) {
+        coEvery { mockReconnectionService.reconnect(any()) } returns
+            ReconnectionResult.Failure.NetworkError
+
+        // First attempt (fails)
+        val firstResult = controller.attemptReconnectIfNeeded()
+        advanceUntilIdle()
+        assertFalse("First attempt should fail", firstResult)
+
+        // Second attempt should be able to proceed
+        val secondResult = controller.attemptReconnectIfNeeded()
+        advanceUntilIdle()
+
+        // Both attempts should have been made
+        coVerify(exactly = 2) { mockReconnectionService.reconnect(any()) }
+    }
+
+    @Test
+    fun `tryLock provides fail-fast behavior for concurrent attempts`() = runTest(testDispatcher) {
+        val attemptResults = mutableListOf<Boolean>()
+
+        coEvery { mockReconnectionService.reconnect(any()) } coAnswers {
+            delay(1000)
+            ReconnectionResult.Success
+        }
+
+        // Start first attempt
+        launch {
+            val result = controller.attemptReconnectIfNeeded()
+            attemptResults.add(result)
+        }
+
+        // Give first attempt time to acquire mutex
+        advanceTimeBy(50)
+
+        // Try second attempt - should fail fast (not wait for mutex)
+        launch {
+            val result = controller.attemptReconnectIfNeeded()
+            attemptResults.add(result)
+        }
+
+        // Let everything complete
+        advanceUntilIdle()
+
+        // One success (first attempt), one fail-fast (second attempt)
+        assertTrue("Should have exactly 2 results", attemptResults.size == 2)
+        assertTrue("One should succeed", attemptResults.count { it } == 1)
+        assertTrue("One should fail fast", attemptResults.count { !it } == 1)
+    }
 }

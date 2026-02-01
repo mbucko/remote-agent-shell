@@ -9,11 +9,16 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -23,9 +28,10 @@ import org.junit.Test
  *
  * Verifies:
  * 1. Service starts when connection is established
- * 2. Service stops when connection is lost
+ * 2. Service stops when connection is lost (with debounce)
  * 3. No redundant start/stop calls
- * 4. Notification updates based on health status
+ * 4. Debounce cancellation on reconnect
+ * 5. Proper handling of rapid connection cycles
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionServiceControllerTest {
@@ -37,8 +43,14 @@ class ConnectionServiceControllerTest {
 
     private val isConnectedFlow = MutableStateFlow(false)
 
+    // Debounce delay constant from ConnectionServiceController
+    private val STOP_DELAY_MS = 3000L
+
     @Before
     fun setup() {
+        // Set Main dispatcher for tests (service calls use withContext(Dispatchers.Main))
+        Dispatchers.setMain(testDispatcher)
+
         mockContext = mockk(relaxed = true)
         mockConnectionManager = mockk()
 
@@ -51,8 +63,13 @@ class ConnectionServiceControllerTest {
 
     @After
     fun tearDown() {
+        Dispatchers.resetMain()
         unmockkStatic(ContextCompat::class)
     }
+
+    // ==========================================================================
+    // Basic Service Lifecycle
+    // ==========================================================================
 
     @Test
     fun `starts service when connection established`() = runTest(testDispatcher) {
@@ -71,7 +88,7 @@ class ConnectionServiceControllerTest {
     }
 
     @Test
-    fun `stops service when disconnected`() = runTest(testDispatcher) {
+    fun `stops service when disconnected after debounce delay`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
             context = mockContext,
             connectionManager = mockConnectionManager,
@@ -84,11 +101,19 @@ class ConnectionServiceControllerTest {
         isConnectedFlow.value = true
         advanceUntilIdle()
 
-        // Then disconnect
+        // Disconnect - use runCurrent() to process the flow emission without advancing time
         isConnectedFlow.value = false
-        advanceUntilIdle()
+        runCurrent()
 
-        verify { mockContext.stopService(any<Intent>()) }
+        // Service should NOT be stopped yet (debounce delay hasn't elapsed)
+        verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
+
+        // Advance past debounce delay
+        advanceTimeBy(STOP_DELAY_MS + 100)
+        runCurrent()
+
+        // Now service should be stopped
+        verify(exactly = 1) { mockContext.stopService(any<Intent>()) }
     }
 
     @Test
@@ -125,32 +150,11 @@ class ConnectionServiceControllerTest {
 
         // Never connected, so nothing to stop
         isConnectedFlow.value = false
-        advanceUntilIdle()
+        runCurrent()
+        advanceTimeBy(STOP_DELAY_MS + 100)
+        runCurrent()
 
         verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
-    }
-
-    @Test
-    fun `handles rapid connect disconnect cycles`() = runTest(testDispatcher) {
-        val controller = ConnectionServiceController(
-            context = mockContext,
-            connectionManager = mockConnectionManager,
-            ioDispatcher = testDispatcher
-        )
-
-        controller.initialize()
-
-        // Rapid cycles
-        repeat(5) {
-            isConnectedFlow.value = true
-            advanceUntilIdle()
-            isConnectedFlow.value = false
-            advanceUntilIdle()
-        }
-
-        // Should have 5 starts and 5 stops
-        verify(exactly = 5) { ContextCompat.startForegroundService(mockContext, any()) }
-        verify(exactly = 5) { mockContext.stopService(any<Intent>()) }
     }
 
     @Test
@@ -167,5 +171,312 @@ class ConnectionServiceControllerTest {
         advanceUntilIdle()
 
         verify(exactly = 0) { ContextCompat.startForegroundService(any(), any()) }
+    }
+
+    // ==========================================================================
+    // Debounce Behavior
+    // ==========================================================================
+
+    @Test
+    fun `reconnect before debounce delay cancels pending stop`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        controller.initialize()
+
+        // Connect
+        isConnectedFlow.value = true
+        advanceUntilIdle()
+
+        // Disconnect
+        isConnectedFlow.value = false
+        runCurrent()
+
+        // Wait less than debounce delay
+        advanceTimeBy(1000)
+        runCurrent()
+
+        // Reconnect before debounce completes
+        isConnectedFlow.value = true
+        runCurrent()
+
+        // Wait past the original debounce time
+        advanceTimeBy(STOP_DELAY_MS + 100)
+        runCurrent()
+
+        // Service should NOT have been stopped (reconnect cancelled the pending stop)
+        verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
+    }
+
+    @Test
+    fun `service stops after debounce delay when still disconnected`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        controller.initialize()
+
+        // Connect
+        isConnectedFlow.value = true
+        advanceUntilIdle()
+
+        // Disconnect
+        isConnectedFlow.value = false
+        runCurrent()
+
+        // Advance time to just before debounce delay
+        advanceTimeBy(STOP_DELAY_MS - 100)
+        runCurrent()
+
+        // Still should NOT be stopped
+        verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
+
+        // Advance past debounce delay
+        advanceTimeBy(200)
+        runCurrent()
+
+        // Now should be stopped
+        verify(exactly = 1) { mockContext.stopService(any<Intent>()) }
+    }
+
+    @Test
+    fun `multiple disconnects within debounce resets timer`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        controller.initialize()
+
+        // Connect
+        isConnectedFlow.value = true
+        advanceUntilIdle()
+
+        // First disconnect
+        isConnectedFlow.value = false
+        runCurrent()
+
+        // Wait 2 seconds
+        advanceTimeBy(2000)
+        runCurrent()
+
+        // Quick reconnect/disconnect cycle
+        isConnectedFlow.value = true
+        runCurrent()
+        isConnectedFlow.value = false
+        runCurrent()
+
+        // Wait another 2 seconds (total 4 seconds since first disconnect)
+        advanceTimeBy(2000)
+        runCurrent()
+
+        // Still should NOT be stopped (second disconnect reset the timer)
+        verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
+
+        // Wait remaining time to trigger stop
+        advanceTimeBy(STOP_DELAY_MS - 2000 + 100)
+        runCurrent()
+
+        // Now should be stopped
+        verify(exactly = 1) { mockContext.stopService(any<Intent>()) }
+    }
+
+    // ==========================================================================
+    // Rapid Connection Cycles
+    // ==========================================================================
+
+    @Test
+    fun `handles rapid connect disconnect without debounce completion`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        controller.initialize()
+
+        // Rapid cycles (each within debounce window)
+        // Service starts on first connect, stays running since debounce never completes
+        repeat(5) {
+            isConnectedFlow.value = true
+            runCurrent()
+            isConnectedFlow.value = false
+            runCurrent()
+            advanceTimeBy(500) // Less than debounce delay
+            runCurrent()
+        }
+
+        // Should have started only ONCE (service stays running through rapid cycles)
+        verify(exactly = 1) { ContextCompat.startForegroundService(mockContext, any()) }
+
+        // No stops yet (all within debounce window and last one still pending)
+        verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
+
+        // Now let debounce complete
+        advanceTimeBy(STOP_DELAY_MS + 100)
+        runCurrent()
+
+        // Only 1 stop (the last pending one)
+        verify(exactly = 1) { mockContext.stopService(any<Intent>()) }
+    }
+
+    @Test
+    fun `handles rapid connect disconnect with debounce completion`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        controller.initialize()
+
+        // Cycle 1: connect, disconnect, wait for debounce
+        isConnectedFlow.value = true
+        runCurrent()
+        isConnectedFlow.value = false
+        runCurrent()
+        advanceTimeBy(STOP_DELAY_MS + 100)
+        runCurrent()
+
+        // Cycle 2: connect, disconnect, wait for debounce
+        isConnectedFlow.value = true
+        runCurrent()
+        isConnectedFlow.value = false
+        runCurrent()
+        advanceTimeBy(STOP_DELAY_MS + 100)
+        runCurrent()
+
+        // Should have 2 starts and 2 stops
+        verify(exactly = 2) { ContextCompat.startForegroundService(mockContext, any()) }
+        verify(exactly = 2) { mockContext.stopService(any<Intent>()) }
+    }
+
+    // ==========================================================================
+    // Edge Cases
+    // ==========================================================================
+
+    @Test
+    fun `reconnect immediately after disconnect cancels stop`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        controller.initialize()
+
+        // Connect
+        isConnectedFlow.value = true
+        advanceUntilIdle()
+
+        // Immediate disconnect and reconnect (network hiccup scenario)
+        isConnectedFlow.value = false
+        runCurrent()
+        isConnectedFlow.value = true
+        runCurrent()
+
+        // Wait past debounce
+        advanceTimeBy(STOP_DELAY_MS + 100)
+        runCurrent()
+
+        // Service should NOT have stopped
+        verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
+        // Should only have started once (reconnect doesn't re-start)
+        verify(exactly = 1) { ContextCompat.startForegroundService(mockContext, any()) }
+    }
+
+    @Test
+    fun `service not stopped if reconnected after partial debounce`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        controller.initialize()
+
+        // Connect
+        isConnectedFlow.value = true
+        advanceUntilIdle()
+
+        // Disconnect
+        isConnectedFlow.value = false
+        runCurrent()
+
+        // Wait almost the full debounce (2999ms of 3000ms)
+        advanceTimeBy(STOP_DELAY_MS - 1)
+        runCurrent()
+
+        // Reconnect at last moment
+        isConnectedFlow.value = true
+        runCurrent()
+
+        // Wait long past original debounce
+        advanceTimeBy(STOP_DELAY_MS * 2)
+        runCurrent()
+
+        // Should never have stopped
+        verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
+    }
+
+    @Test
+    fun `multiple initializations are safe`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        // Initialize multiple times (defensive coding scenario)
+        controller.initialize()
+        controller.initialize()
+        controller.initialize()
+
+        isConnectedFlow.value = true
+        advanceUntilIdle()
+
+        // Each initialization creates a new collector, so we might get multiple starts
+        // This test documents the behavior (may want to add idempotency guard)
+        verify(atLeast = 1) { ContextCompat.startForegroundService(mockContext, any()) }
+    }
+
+    @Test
+    fun `stop not triggered when connection restored just before debounce completes`() = runTest(testDispatcher) {
+        val controller = ConnectionServiceController(
+            context = mockContext,
+            connectionManager = mockConnectionManager,
+            ioDispatcher = testDispatcher
+        )
+
+        controller.initialize()
+
+        // Connect
+        isConnectedFlow.value = true
+        advanceUntilIdle()
+
+        // Disconnect
+        isConnectedFlow.value = false
+        runCurrent()
+
+        // Advance to just before debounce time (1ms before)
+        advanceTimeBy(STOP_DELAY_MS - 1)
+        runCurrent()
+
+        // Reconnect before debounce completes
+        isConnectedFlow.value = true
+        runCurrent()
+
+        // Now advance past the original debounce time
+        advanceTimeBy(100)
+        runCurrent()
+
+        // Should not have stopped (reconnected cancelled the pending stop)
+        verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
     }
 }
