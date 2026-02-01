@@ -150,8 +150,8 @@ class TestNtfySignalingServerIntegration:
         assert not subscriber.is_subscribed()
 
     @pytest.mark.asyncio
-    async def test_qr_data_includes_ntfy_topic(self, server):
-        """QR data includes ntfy topic for phone."""
+    async def test_qr_data_contains_only_master_secret(self, server):
+        """QR data contains only master_secret - ntfy topic is derived."""
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"http://127.0.0.1:{server.get_port()}/api/pair"
@@ -159,13 +159,14 @@ class TestNtfySignalingServerIntegration:
                 data = await resp.json()
 
         qr_data = data["qr_data"]
-        assert "ntfy_topic" in qr_data
-        assert qr_data["ntfy_topic"]  # Not empty
+        # QR only contains master_secret - everything else is derived
+        assert "master_secret" in qr_data
+        assert "ntfy_topic" not in qr_data  # Derived, not in QR
 
-        # Verify topic matches derived value
+        # Verify ntfy topic can be derived from master_secret
         master_secret = bytes.fromhex(qr_data["master_secret"])
-        expected_topic = derive_ntfy_topic(master_secret)
-        assert qr_data["ntfy_topic"] == expected_topic
+        derived_topic = derive_ntfy_topic(master_secret)
+        assert derived_topic.startswith("ras-")
 
 
 class TestNtfyOfferProcessing:

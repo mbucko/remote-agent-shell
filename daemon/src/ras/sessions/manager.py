@@ -160,10 +160,13 @@ class SessionManager:
             else:
                 logger.info(f"Session {session.id} no longer in tmux, removing")
 
-        # Adopt orphaned tmux sessions (any tmux session not already tracked)
+        # Adopt orphaned tmux sessions (only ras- prefixed, not already tracked)
         known_tmux_names = {s.tmux_name for s in self._sessions.values()}
         for tmux_session in tmux_sessions:
             if tmux_session.name not in known_tmux_names:
+                # Only adopt ras- prefixed sessions (user's regular sessions are private)
+                if not tmux_session.name.startswith("ras-"):
+                    continue
                 session = self._adopt_orphan(tmux_session.name)
                 self._sessions[session.id] = session
                 logger.info(f"Adopted orphan tmux session: {tmux_session.name}")
@@ -175,13 +178,23 @@ class SessionManager:
         await self._agents.initialize()
 
     def _adopt_orphan(self, tmux_name: str) -> SessionData:
-        """Create SessionData for an orphaned tmux session."""
+        """Create SessionData for an orphaned tmux session.
+
+        Parses agent name from ras-<agent>-<project> format.
+        """
+        # Parse agent from ras-<agent>-<project> format
+        agent = "unknown"
+        if tmux_name.startswith("ras-"):
+            parts = tmux_name[4:].split("-", 1)  # Remove "ras-" prefix, split on first "-"
+            if parts:
+                agent = parts[0]
+
         return SessionData(
             id=generate_session_id(),
             tmux_name=tmux_name,
             display_name=tmux_name,
             directory="",  # Unknown for orphans
-            agent="unknown",
+            agent=agent,
             created_at=int(time.time()),
             last_activity_at=int(time.time()),
         )
@@ -245,10 +258,13 @@ class SessionManager:
             logger.info(f"Session {sid} no longer in tmux, removing")
             del self._sessions[sid]
 
-        # Adopt new tmux sessions not yet tracked
+        # Adopt new tmux sessions not yet tracked (only ras- prefixed)
         known_tmux_names = {s.tmux_name for s in self._sessions.values()}
         for tmux_session in tmux_sessions:
             if tmux_session.name not in known_tmux_names:
+                # Only adopt ras- prefixed sessions
+                if not tmux_session.name.startswith("ras-"):
+                    continue
                 session = self._adopt_orphan(tmux_session.name)
                 self._sessions[session.id] = session
                 logger.info(f"Adopted new tmux session: {tmux_session.name}")
