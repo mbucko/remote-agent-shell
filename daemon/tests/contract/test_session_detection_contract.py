@@ -54,18 +54,19 @@ class TestSessionDetectionContract:
     """Contract: Session manager MUST detect existing tmux sessions on startup."""
 
     @pytest.mark.asyncio
-    async def test_detects_ras_prefixed_session(self, isolated_tmux, persistence_path):
-        """Session manager detects sessions with ras- prefix.
+    async def test_detects_tmux_session(self, isolated_tmux, persistence_path):
+        """Session manager detects existing tmux sessions.
 
         This is the primary adoption mechanism for orphaned sessions.
+        All tmux sessions are adopted (agent parsed from first part of name).
         """
-        # Create a session with ras- prefix BEFORE session manager starts
-        await isolated_tmux.create_session("ras-claude-myproject")
+        # Create a session BEFORE session manager starts
+        await isolated_tmux.create_session("claude-myproject")
 
         # Verify session exists in tmux
         sessions = await isolated_tmux.list_sessions()
         assert len(sessions) == 1
-        assert sessions[0].name == "ras-claude-myproject"
+        assert sessions[0].name == "claude-myproject"
 
         # Create session manager (simulates daemon startup)
         persistence = SessionPersistence(path=persistence_path)
@@ -90,16 +91,16 @@ class TestSessionDetectionContract:
 
         # Verify session details
         session = list(manager._sessions.values())[0]
-        assert session.tmux_name == "ras-claude-myproject"
-        assert session.agent == "claude"  # Parsed from ras-<agent>-<project>
+        assert session.tmux_name == "claude-myproject"
+        assert session.agent == "claude"  # Parsed from <agent>-<project>
 
     @pytest.mark.asyncio
     async def test_detects_multiple_sessions(self, isolated_tmux, persistence_path):
-        """Session manager detects all ras- prefixed sessions."""
+        """Session manager detects all tmux sessions."""
         # Create multiple sessions
-        await isolated_tmux.create_session("ras-claude-project1")
-        await isolated_tmux.create_session("ras-aider-project2")
-        await isolated_tmux.create_session("ras-cursor-project3")
+        await isolated_tmux.create_session("claude-project1")
+        await isolated_tmux.create_session("aider-project2")
+        await isolated_tmux.create_session("cursor-project3")
 
         # Create session manager
         persistence = SessionPersistence(path=persistence_path)
@@ -125,7 +126,7 @@ class TestSessionDetectionContract:
         This is what the phone receives in InitialState.
         """
         # Create a session
-        await isolated_tmux.create_session("ras-claude-testproject")
+        await isolated_tmux.create_session("claude-testproject")
 
         # Initialize session manager
         persistence = SessionPersistence(path=persistence_path)
@@ -152,19 +153,19 @@ class TestSessionDetectionContract:
         )
 
         session = result.list.sessions[0]
-        assert session.tmux_name == "ras-claude-testproject"
+        assert session.tmux_name == "claude-testproject"
 
     @pytest.mark.asyncio
-    async def test_ignores_non_ras_sessions(self, isolated_tmux, persistence_path):
-        """Sessions without ras- prefix are NOT adopted.
+    async def test_adopts_all_tmux_sessions(self, isolated_tmux, persistence_path):
+        """All tmux sessions are adopted.
 
-        User's regular tmux sessions should not appear in the app.
+        The daemon adopts all tmux sessions, parsing agent from the
+        first part of the session name (e.g., "claude-project" -> agent="claude").
         """
-        # Create a non-ras session
+        # Create multiple sessions with different naming patterns
         await isolated_tmux.create_session("myproject")
         await isolated_tmux.create_session("work")
-        # And one ras- session
-        await isolated_tmux.create_session("ras-claude-managed")
+        await isolated_tmux.create_session("claude-managed")
 
         persistence = SessionPersistence(path=persistence_path)
         agents = AgentDetector()
@@ -179,10 +180,10 @@ class TestSessionDetectionContract:
 
         await manager.initialize()
 
-        # Only the ras- prefixed session should be detected
-        assert len(manager._sessions) == 1
-        session = list(manager._sessions.values())[0]
-        assert session.tmux_name == "ras-claude-managed"
+        # All sessions should be detected
+        assert len(manager._sessions) == 3
+        tmux_names = {s.tmux_name for s in manager._sessions.values()}
+        assert tmux_names == {"myproject", "work", "claude-managed"}
 
     @pytest.mark.asyncio
     async def test_reconciles_with_persisted_sessions(self, isolated_tmux, persistence_path):
@@ -192,7 +193,7 @@ class TestSessionDetectionContract:
         If a tmux session exists but not persisted, it should be adopted.
         """
         # First, create a session and persist it
-        await isolated_tmux.create_session("ras-claude-persisted")
+        await isolated_tmux.create_session("claude-persisted")
 
         persistence = SessionPersistence(path=persistence_path)
         agents = AgentDetector()
@@ -209,10 +210,10 @@ class TestSessionDetectionContract:
         assert len(manager._sessions) == 1
 
         # Now kill the tmux session (simulates external kill)
-        await isolated_tmux.kill_session("ras-claude-persisted")
+        await isolated_tmux.kill_session("claude-persisted")
 
         # Create a new session
-        await isolated_tmux.create_session("ras-aider-newproject")
+        await isolated_tmux.create_session("aider-newproject")
 
         # Create a new manager (simulates daemon restart)
         manager2 = SessionManager(
@@ -227,7 +228,7 @@ class TestSessionDetectionContract:
         # Should have only the new session
         assert len(manager2._sessions) == 1
         session = list(manager2._sessions.values())[0]
-        assert session.tmux_name == "ras-aider-newproject"
+        assert session.tmux_name == "aider-newproject"
 
 
 class TestSessionManagerInitializationContract:
@@ -236,7 +237,7 @@ class TestSessionManagerInitializationContract:
     @pytest.mark.asyncio
     async def test_sessions_empty_before_initialize(self, isolated_tmux, persistence_path):
         """Sessions dict is empty before initialize() is called."""
-        await isolated_tmux.create_session("ras-claude-test")
+        await isolated_tmux.create_session("claude-test")
 
         persistence = SessionPersistence(path=persistence_path)
         manager = SessionManager(
@@ -256,7 +257,7 @@ class TestSessionManagerInitializationContract:
     @pytest.mark.asyncio
     async def test_list_sessions_works_after_initialize(self, isolated_tmux, persistence_path):
         """list_sessions() works correctly after initialize()."""
-        await isolated_tmux.create_session("ras-claude-test")
+        await isolated_tmux.create_session("claude-test")
 
         persistence = SessionPersistence(path=persistence_path)
         manager = SessionManager(

@@ -63,11 +63,13 @@ class SessionsViewModelTest {
     }
 
     @Test
-    fun `initial state is Loading`() = runTest {
+    fun `initial state is Loaded with empty list`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertTrue(viewModel.screenState.value is SessionsScreenState.Loading)
+        val state = viewModel.screenState.value
+        assertTrue(state is SessionsScreenState.Loaded)
+        assertEquals(0, (state as SessionsScreenState.Loaded).sessions.size)
     }
 
     @Test

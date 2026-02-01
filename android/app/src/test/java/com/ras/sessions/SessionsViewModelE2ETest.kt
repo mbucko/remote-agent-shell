@@ -80,17 +80,18 @@ class SessionsViewModelE2ETest {
     // ==========================================================================
 
     @Test
-    fun `initial state is loading`() = runTest {
+    fun `initial state is loaded with empty list`() = runTest {
         viewModel.screenState.test {
             val state = awaitItem()
-            assertTrue(state is SessionsScreenState.Loading)
+            assertTrue(state is SessionsScreenState.Loaded)
+            assertEquals(0, (state as SessionsScreenState.Loaded).sessions.size)
         }
     }
 
     @Test
-    fun `transitions to loaded when sessions received`() = runTest {
+    fun `transitions to loaded with sessions when sessions received`() = runTest {
         viewModel.screenState.test {
-            awaitItem() // Loading
+            awaitItem() // Initial Loaded(emptyList())
 
             sessionsFlow.value = listOf(
                 createSession("abc123def456", "Test Session")
@@ -358,23 +359,32 @@ class SessionsViewModelE2ETest {
     }
 
     @Test
-    fun `refreshSessions sets isRefreshing flag during refresh`() = runTest {
-        sessionsFlow.value = listOf(createSession("abc123def456", "Test"))
+    fun `refreshSessions completes without leaving isRefreshing flag stuck`() = runTest {
+        // Wait for initial state to settle and sessions to load
         advanceUntilIdle()
 
-        viewModel.screenState.test {
-            // Get current loaded state
-            val initial = awaitItem() as SessionsScreenState.Loaded
-            assertEquals(false, initial.isRefreshing)
+        // Initial state should be Loaded (either empty or with sessions)
+        val initialState = viewModel.screenState.value
+        assertTrue(
+            "Expected Loaded state but got: ${initialState::class.simpleName}",
+            initialState is SessionsScreenState.Loaded
+        )
 
-            viewModel.refreshSessions()
-            advanceUntilIdle()
+        // Call refresh
+        viewModel.refreshSessions()
+        advanceUntilIdle()
 
-            // After refresh completes, isRefreshing should be false again
-            // Due to StateFlow conflation, we may not see the intermediate true state
-            val afterRefresh = expectMostRecentItem() as SessionsScreenState.Loaded
-            assertEquals(false, afterRefresh.isRefreshing)
-        }
+        // After refresh completes, state should still be Loaded and not stuck refreshing
+        val afterRefresh = viewModel.screenState.value
+        assertTrue(
+            "Expected Loaded state after refresh but got: ${afterRefresh::class.simpleName}",
+            afterRefresh is SessionsScreenState.Loaded
+        )
+        assertEquals(
+            "isRefreshing should be false after refresh completes",
+            false,
+            (afterRefresh as SessionsScreenState.Loaded).isRefreshing
+        )
     }
 
     // ==========================================================================
