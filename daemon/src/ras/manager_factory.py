@@ -155,11 +155,11 @@ class ManagerFactory:
                 raise RuntimeError(f"Device {device_id} is not attached to any session")
 
             # Get tmux session name from session manager
-            session_info = deps.session_manager._sessions.get(session_id)
-            if session_info is None:
+            session_data = deps.session_manager.get_session(session_id)
+            if session_data is None:
                 raise RuntimeError(f"Session {session_id} not found")
 
-            tmux_name = session_info.tmux_name
+            tmux_name = session_data.tmux_name
             await tmux_service.send_keys(tmux_name, keystroke, literal=False)
 
         clipboard_manager = ClipboardManager(

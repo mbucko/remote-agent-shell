@@ -70,7 +70,6 @@ class ClipboardManager:
         self.config = config
         self._send_message = send_message
         self._send_keys = send_keys
-        self._current_device_id: Optional[str] = None
 
         # Platform and clipboard (allow injection for testing)
         self._platform_info = platform_info or detect_platform()
@@ -121,9 +120,6 @@ class ClipboardManager:
         """
         import betterproto
 
-        # Store current device for callbacks
-        self._current_device_id = device_id
-
         # Determine which field is set (oneof)
         field_name, field_value = betterproto.which_one_of(msg, "payload")
 
@@ -138,21 +134,21 @@ class ClipboardManager:
                 transfer_id = field_value.transfer_id
 
             if field_name == "image_start":
-                await self._handle_image_start(field_value)
+                await self._handle_image_start(device_id, field_value)
             elif field_name == "image_chunk":
-                await self._handle_image_chunk(field_value)
+                await self._handle_image_chunk(device_id, field_value)
             elif field_name == "image_cancel":
-                await self._handle_image_cancel(field_value)
+                await self._handle_image_cancel(device_id, field_value)
             elif field_name == "text_paste":
-                await self._handle_text_paste(field_value)
+                await self._handle_text_paste(device_id, field_value)
             elif field_name == "text_paste_approved":
-                await self._handle_text_paste_approved(field_value)
+                await self._handle_text_paste_approved(device_id, field_value)
             else:
                 logger.warning("Unhandled clipboard message type: %s", field_name)
         except ClipboardError as e:
-            await self._send_error(transfer_id, e.code, e.message)
+            await self._send_error(device_id, transfer_id, e.code, e.message)
 
-    async def _handle_image_start(self, start: "ImageStart") -> None:
+    async def _handle_image_start(self, device_id: str, start: "ImageStart") -> None:
         """Handle image transfer start."""
         from .clipboard_types import ImageStart
 
@@ -202,6 +198,7 @@ class ClipboardManager:
         # Create transfer state
         self._current_transfer = ImageTransfer(
             transfer_id=start.transfer_id,
+            device_id=device_id,
             total_size=start.total_size,
             format=start.format,
             total_chunks=start.total_chunks,
@@ -214,7 +211,7 @@ class ClipboardManager:
 
         logger.debug("Image transfer state created: %s", start.transfer_id)
 
-    async def _handle_image_chunk(self, chunk: "ImageChunk") -> None:
+    async def _handle_image_chunk(self, device_id: str, chunk: "ImageChunk") -> None:
         """Handle image chunk."""
         from .clipboard_types import ImageChunk
 
@@ -262,13 +259,13 @@ class ClipboardManager:
         self._start_timeout()
 
         # Send progress
-        await self._send_progress()
+        await self._send_progress(device_id)
 
         # Check if complete
         if self._current_transfer.is_complete:
-            await self._complete_image_transfer()
+            await self._complete_image_transfer(device_id)
 
-    async def _handle_image_cancel(self, cancel: "ImageCancel") -> None:
+    async def _handle_image_cancel(self, device_id: str, cancel: "ImageCancel") -> None:
         """Handle transfer cancellation."""
         from .clipboard_types import ImageCancel
 
@@ -290,13 +287,13 @@ class ClipboardManager:
 
         # Send cancelled acknowledgement
         await self._send_message(
-            self._current_device_id,
+            device_id,
             ClipboardMessage(
                 cancelled=Cancelled(transfer_id=cancel.transfer_id)
             )
         )
 
-    async def _handle_text_paste(self, text_msg: "TextPaste") -> None:
+    async def _handle_text_paste(self, device_id: str, text_msg: "TextPaste") -> None:
         """Handle text paste."""
         from .clipboard_types import TextPaste
 
@@ -317,7 +314,7 @@ class ClipboardManager:
             logger.info("Text requires approval: %d > %d", size, self.config.text_approval_threshold)
             preview = text[:100] + "..." if len(text) > 100 else text
             await self._send_message(
-                self._current_device_id,
+                device_id,
                 ClipboardMessage(
                     approval_required=ApprovalRequired(
                         size=size,
@@ -328,17 +325,17 @@ class ClipboardManager:
             return
 
         # Paste immediately
-        await self._paste_text(text)
+        await self._paste_text(device_id, text)
 
-    async def _handle_text_paste_approved(self, text_msg: "TextPasteApproved") -> None:
+    async def _handle_text_paste_approved(self, device_id: str, text_msg: "TextPasteApproved") -> None:
         """Handle approved text paste."""
         from .clipboard_types import TextPasteApproved
 
         text = text_msg.text
         logger.info("Approved text paste: %d bytes", len(text.encode("utf-8")))
-        await self._paste_text(text)
+        await self._paste_text(device_id, text)
 
-    async def _paste_text(self, text: str) -> None:
+    async def _paste_text(self, device_id: str, text: str) -> None:
         """Set text clipboard and send paste keystroke."""
         try:
             await self._clipboard.set_text(text)
@@ -349,14 +346,14 @@ class ClipboardManager:
         # Send paste keystroke
         keystroke = self.config.paste_keystroke or self._platform_info.paste_keystroke
         try:
-            await self._send_keys(self._current_device_id, keystroke)
+            await self._send_keys(device_id, keystroke)
             logger.debug("Paste keystroke sent: %s", keystroke)
         except Exception as e:
             raise ClipboardError(ErrorCode.PASTE_FAILED, str(e))
 
         # Send complete
         await self._send_message(
-            self._current_device_id,
+            device_id,
             ClipboardMessage(
                 complete=Complete(
                     transfer_id="",
@@ -365,7 +362,7 @@ class ClipboardManager:
             )
         )
 
-    async def _complete_image_transfer(self) -> None:
+    async def _complete_image_transfer(self, device_id: str) -> None:
         """Complete image transfer - reassemble, set clipboard, paste."""
         transfer = self._current_transfer
         if not transfer:
@@ -393,6 +390,7 @@ class ClipboardManager:
                 len(image_data),
             )
             await self._send_error(
+                device_id,
                 transfer.transfer_id,
                 ErrorCode.CHUNK_MISSING,
                 f"Size mismatch: expected {transfer.total_size}, got {len(image_data)}",
@@ -409,6 +407,7 @@ class ClipboardManager:
             logger.debug("Image set to clipboard")
         except asyncio.TimeoutError:
             await self._send_error(
+                device_id,
                 transfer.transfer_id,
                 ErrorCode.CLIPBOARD_FAILED,
                 "Clipboard operation timed out",
@@ -416,6 +415,7 @@ class ClipboardManager:
             return
         except ClipboardUnavailableError as e:
             await self._send_error(
+                device_id,
                 transfer.transfer_id,
                 ErrorCode.CLIPBOARD_FAILED,
                 str(e),
@@ -425,10 +425,11 @@ class ClipboardManager:
         # Send paste keystroke
         keystroke = self.config.paste_keystroke or self._platform_info.paste_keystroke
         try:
-            await self._send_keys(self._current_device_id, keystroke)
+            await self._send_keys(device_id, keystroke)
             logger.debug("Paste keystroke sent: %s", keystroke)
         except Exception as e:
             await self._send_error(
+                device_id,
                 transfer.transfer_id,
                 ErrorCode.PASTE_FAILED,
                 str(e),
@@ -438,7 +439,7 @@ class ClipboardManager:
         # Send complete
         transfer.state = TransferState.COMPLETE
         await self._send_message(
-            self._current_device_id,
+            device_id,
             ClipboardMessage(
                 complete=Complete(
                     transfer_id=transfer.transfer_id,
@@ -451,13 +452,13 @@ class ClipboardManager:
         self._current_transfer = None
         logger.info("Image transfer complete: %s", transfer.transfer_id)
 
-    async def _send_progress(self) -> None:
+    async def _send_progress(self, device_id: str) -> None:
         """Send progress update."""
         if not self._current_transfer:
             return
 
         await self._send_message(
-            self._current_device_id,
+            device_id,
             ClipboardMessage(
                 progress=Progress(
                     transfer_id=self._current_transfer.transfer_id,
@@ -471,6 +472,7 @@ class ClipboardManager:
 
     async def _send_error(
         self,
+        device_id: str,
         transfer_id: Optional[str],
         code: ErrorCode,
         message: str,
@@ -479,7 +481,7 @@ class ClipboardManager:
         logger.error("Clipboard error: code=%s, message=%s", code.name, message)
 
         await self._send_message(
-            self._current_device_id,
+            device_id,
             ClipboardMessage(
                 error=Error(
                     transfer_id=transfer_id or "",
@@ -509,13 +511,15 @@ class ClipboardManager:
         await asyncio.sleep(self.config.transfer_timeout)
 
         if self._current_transfer:
+            transfer = self._current_transfer
             logger.warning(
                 "Transfer timeout: %s (no data for %ds)",
-                self._current_transfer.transfer_id,
+                transfer.transfer_id,
                 self.config.transfer_timeout,
             )
             await self._send_error(
-                self._current_transfer.transfer_id,
+                transfer.device_id,
+                transfer.transfer_id,
                 ErrorCode.TRANSFER_TIMEOUT,
                 f"No data received for {self.config.transfer_timeout} seconds",
             )

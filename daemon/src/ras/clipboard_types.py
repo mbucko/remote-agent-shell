@@ -81,6 +81,7 @@ class ImageTransfer:
     """State of an in-progress image transfer (internal runtime state)."""
 
     transfer_id: str
+    device_id: str
     total_size: int
     format: ImageFormat
     total_chunks: int
