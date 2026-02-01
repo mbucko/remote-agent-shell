@@ -13,7 +13,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
@@ -33,6 +37,32 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ras.R
 import com.termux.terminal.TerminalBuffer
+
+/**
+ * Configuration constants for terminal rendering and scroll behavior.
+ */
+private object TerminalRendererConfig {
+    /** Delay before accepting totalRows decrease (buffer reorganization during resize) */
+    const val TOTAL_ROWS_DEBOUNCE_MS = 200L
+
+    /** Delay before notifying resize (keyboard animation settling) */
+    const val RESIZE_DEBOUNCE_MS = 150L
+
+    /** Delay before scrolling after viewport expand (wait for all debounces to complete) */
+    const val VIEWPORT_EXPAND_SCROLL_DELAY_MS = 500L
+
+    /** Consider "at bottom" if within this many items of item 0 */
+    const val AT_BOTTOM_THRESHOLD = 3
+
+    /** Minimum terminal columns */
+    const val MIN_COLS = 20
+
+    /** Minimum terminal rows */
+    const val MIN_ROWS = 5
+
+    /** Column buffer for edge padding */
+    const val COL_BUFFER = 2
+}
 
 /**
  * Compose component that renders a terminal buffer.
@@ -59,7 +89,26 @@ fun TerminalRenderer(
 
     // Total rows including scrollback
     val firstRow = -screen.activeTranscriptRows
-    val totalRows = terminalRows - firstRow
+    val rawTotalRows = terminalRows - firstRow
+
+    // Stabilize totalRows to prevent bounce during buffer reorganization
+    // - Increases: accept immediately (new content arrived)
+    // - Decreases: debounce (might be temporary fluctuation during resize)
+    var stableTotalRows by remember { mutableIntStateOf(rawTotalRows) }
+
+    LaunchedEffect(rawTotalRows) {
+        if (rawTotalRows > stableTotalRows) {
+            // New content - accept immediately
+            stableTotalRows = rawTotalRows
+        } else if (rawTotalRows < stableTotalRows) {
+            // Possible fluctuation - wait for stability
+            delay(TerminalRendererConfig.TOTAL_ROWS_DEBOUNCE_MS)
+            // Accept decrease only if value is still the same (not a fluctuation)
+            stableTotalRows = rawTotalRows
+        }
+    }
+
+    val totalRows = stableTotalRows
 
     // Use remember instead of rememberLazyListState to prevent scroll position
     // restoration via SaveableStateRegistry - we always want to start at bottom
@@ -68,9 +117,13 @@ fun TerminalRenderer(
     // Track if we've done the initial scroll to bottom
     var hasInitiallyScrolled by remember { mutableStateOf(false) }
 
-    // Track whether user is at/near bottom (for font size changes)
-    // This is continuously updated based on scroll state, capturing position BEFORE font changes
-    var isAtBottom by remember { mutableStateOf(true) }
+    // Track if user is at bottom - updated continuously, captures state BEFORE changes
+    var wasAtBottom by remember { mutableStateOf(true) }
+
+    // Update wasAtBottom continuously based on scroll position
+    LaunchedEffect(listState.firstVisibleItemIndex) {
+        wasAtBottom = listState.firstVisibleItemIndex < TerminalRendererConfig.AT_BOTTOM_THRESHOLD
+    }
 
     val density = LocalDensity.current
 
@@ -100,25 +153,38 @@ fun TerminalRenderer(
         with(density) { (fontSize * 1.2f).sp.toPx() }
     }
 
-    // Track CONTAINER size in pixels - only recalculate when this changes
-    var lastContainerWidth by remember { mutableIntStateOf(0) }
-    var lastContainerHeight by remember { mutableIntStateOf(0) }
+    // Track CONTAINER size in pixels
+    var containerWidth by remember { mutableIntStateOf(0) }
+    var containerHeight by remember { mutableIntStateOf(0) }
+
+    // Track what we've reported to avoid duplicate notifications
     var reportedCols by remember { mutableIntStateOf(0) }
     var reportedRows by remember { mutableIntStateOf(0) }
 
-    // Recalculate when font size changes (pinch zoom)
-    LaunchedEffect(charWidth, charHeight) {
-        if (lastContainerWidth > 0 && lastContainerHeight > 0) {
-            val horizontalPadding = with(density) { 16.dp.toPx() }
-            val rawCols = ((lastContainerWidth - horizontalPadding) / charWidth).toInt()
-            val calculatedCols = (rawCols - 2).coerceAtLeast(20)
-            val calculatedRows = ((lastContainerHeight - with(density) { 16.dp.toPx() }) / charHeight).toInt().coerceAtLeast(5)
+    // Calculate cols/rows from current container size and font
+    val horizontalPadding = with(density) { 16.dp.toPx() }
+    val verticalPadding = with(density) { 16.dp.toPx() }
+    val calculatedCols = if (containerWidth > 0) {
+        val rawCols = ((containerWidth - horizontalPadding) / charWidth).toInt()
+        (rawCols - TerminalRendererConfig.COL_BUFFER).coerceAtLeast(TerminalRendererConfig.MIN_COLS)
+    } else 0
+    val calculatedRows = if (containerHeight > 0) {
+        ((containerHeight - verticalPadding) / charHeight).toInt().coerceAtLeast(TerminalRendererConfig.MIN_ROWS)
+    } else 0
 
-            if (calculatedCols != reportedCols || calculatedRows != reportedRows) {
-                reportedCols = calculatedCols
-                reportedRows = calculatedRows
-                onSizeChanged?.invoke(calculatedCols, calculatedRows)
-            }
+    // SINGLE debounced resize notification - waits for size to stabilize
+    LaunchedEffect(calculatedCols, calculatedRows) {
+        if (calculatedCols == 0 || calculatedRows == 0) return@LaunchedEffect
+        if (calculatedCols == reportedCols && calculatedRows == reportedRows) return@LaunchedEffect
+
+        // Wait for resize to stabilize (keyboard animation)
+        delay(TerminalRendererConfig.RESIZE_DEBOUNCE_MS)
+
+        // Only notify if still different after debounce
+        if (calculatedCols != reportedCols || calculatedRows != reportedRows) {
+            reportedCols = calculatedCols
+            reportedRows = calculatedRows
+            onSizeChanged?.invoke(calculatedCols, calculatedRows)
         }
     }
 
@@ -127,31 +193,14 @@ fun TerminalRenderer(
             .background(TerminalColors.background)
             .clipToBounds()
             .onGloballyPositioned { coordinates ->
-                val width = coordinates.size.width
-                val height = coordinates.size.height
-
-                // Only recalculate if container size actually changed (not just recomposition)
-                if (width != lastContainerWidth || height != lastContainerHeight) {
-                    lastContainerWidth = width
-                    lastContainerHeight = height
-
-                    // Calculate terminal dimensions based on available space
-                    val horizontalPadding = with(density) { 16.dp.toPx() }
-                    val rawCols = ((width - horizontalPadding) / charWidth).toInt()
-                    val calculatedCols = (rawCols - 2).coerceAtLeast(20)
-                    val calculatedRows = ((height - with(density) { 16.dp.toPx() }) / charHeight).toInt().coerceAtLeast(5)
-
-                    // Only send resize if cols/rows actually changed
-                    if (calculatedCols != reportedCols || calculatedRows != reportedRows) {
-                        reportedCols = calculatedCols
-                        reportedRows = calculatedRows
-                        onSizeChanged?.invoke(calculatedCols, calculatedRows)
-                    }
-                }
+                // Just capture size - debounced LaunchedEffect handles notification
+                containerWidth = coordinates.size.width
+                containerHeight = coordinates.size.height
             }
     ) {
         LazyColumn(
             state = listState,
+            reverseLayout = true,  // Bottom-anchored: item 0 at bottom, naturally stays at bottom
             modifier = Modifier
                 .alpha(if (hasInitiallyScrolled || totalRows == 0) 1f else 0f)
                 .clipToBounds()
@@ -159,10 +208,15 @@ fun TerminalRenderer(
         ) {
             items(
                 count = totalRows,
-                // Keys: use absolute row index for stable identity
-                key = { index -> firstRow + index }
+                // Key must match the actual row being displayed
+                key = { index ->
+                    // index 0 displays the last row, index totalRows-1 displays the first row
+                    firstRow + (totalRows - 1 - index)
+                }
             ) { index ->
-                val rowIndex = firstRow + index
+                // With reverseLayout, we need to reverse the item order
+                // index 0 should show the LAST row (most recent), displayed at bottom
+                val rowIndex = firstRow + (totalRows - 1 - index)
                 TerminalRow(
                     screen = screen,
                     rowIndex = rowIndex,
@@ -175,62 +229,33 @@ fun TerminalRenderer(
         }
     }
 
-    // Track scroll position continuously for font size changes
-    // This captures whether user is at bottom BEFORE font size changes
-    LaunchedEffect(listState.firstVisibleItemIndex, listState.canScrollForward) {
-        if (hasInitiallyScrolled) {
-            isAtBottom = !listState.canScrollForward
-        }
-    }
-
-    // Preserve scroll position when font size changes
-    // (row heights change, which can confuse LazyColumn)
-    LaunchedEffect(fontSize) {
-        if (hasInitiallyScrolled && totalRows > 0) {
-            val itemToRestore = listState.firstVisibleItemIndex
-
-            // Wait for layout to settle with new font size
-            awaitFrame()
-
-            if (isAtBottom) {
-                // User was at bottom - stay at bottom
-                listState.scrollToItem(totalRows - 1)
-            } else if (itemToRestore > 0) {
-                // Restore previous position
-                listState.scrollToItem(itemToRestore)
-            }
-        }
-    }
-
-    // Scroll to bottom when screen opens
+    // With reverseLayout=true, item 0 is at the bottom and the list naturally stays there.
+    // We only need to wait for initial layout, then mark as scrolled.
     LaunchedEffect(Unit) {
-        // Wait for layout to stabilize (item count stays constant for 3 frames)
-        var lastCount = 0
-        var stableFrames = 0
-        while (stableFrames < 3) {
+        while (listState.layoutInfo.totalItemsCount == 0) {
             awaitFrame()
-            val currentCount = listState.layoutInfo.totalItemsCount
-            if (currentCount == lastCount && currentCount > 0) {
-                stableFrames++
-            } else {
-                stableFrames = 0
-                lastCount = currentCount
-            }
         }
-
-        // scrollToItem places the target at the TOP of the viewport.
-        // We want it at the BOTTOM, so scroll down by a large amount.
-        // The scroll will stop at the end, putting the last item at bottom.
-        listState.scrollToItem(lastCount - 1)
-        listState.scroll { scrollBy(100_000f) }
+        awaitFrame()
         hasInitiallyScrolled = true
     }
 
-    // Auto-scroll when new content arrives (only if user is at bottom)
-    LaunchedEffect(screenVersion, totalRows) {
-        if (hasInitiallyScrolled && totalRows > 0 && !listState.canScrollForward) {
-            listState.scrollToItem(totalRows - 1)
-        }
+    // Scroll to bottom when viewport expands (keyboard hides) and user was at bottom
+    LaunchedEffect(Unit) {
+        var lastHeight = 0
+        snapshotFlow { listState.layoutInfo.viewportSize.height }
+            .drop(1)
+            .collectLatest { height ->
+                val expanded = height > lastHeight
+                lastHeight = height
+
+                if (expanded && hasInitiallyScrolled && wasAtBottom) {
+                    // Wait for everything to stabilize (resize + totalRows debounces + buffer)
+                    delay(TerminalRendererConfig.VIEWPORT_EXPAND_SCROLL_DELAY_MS)
+                    if (listState.firstVisibleItemIndex > 0) {
+                        listState.scrollToItem(0)
+                    }
+                }
+            }
     }
 }
 
