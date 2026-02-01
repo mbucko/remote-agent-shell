@@ -296,9 +296,11 @@ class TerminalManager:
         if session_id in self._attachments:
             self._attachments[session_id].discard(connection_id)
 
-            # Stop capture if no more attachments
+            # Stop capture and resize if no more attachments
             if not self._attachments[session_id]:
                 await self._stop_capture(session_id)
+                # Resize window back to local terminal size
+                await self._resize_windows_to_local([session_id])
 
         # Send detached event
         event = TerminalEvent(
@@ -495,14 +497,19 @@ class TerminalManager:
         """
         sessions_to_resize: list[str] = []
 
+        logger.debug(f"on_connection_closed: {connection_id}, attachments: {[(k, list(v)) for k, v in self._attachments.items()]}")
+
         # Remove from all attachments
         for session_id, connections in list(self._attachments.items()):
             if connection_id in connections:
                 connections.discard(connection_id)
                 # Track sessions this connection was attached to
                 sessions_to_resize.append(session_id)
+                logger.debug(f"Connection was attached to session {session_id}")
                 if not connections:
                     await self._stop_capture(session_id)
+
+        logger.debug(f"Sessions to resize: {sessions_to_resize}")
 
         # Resize windows back to local terminal size
         await self._resize_windows_to_local(sessions_to_resize)
@@ -516,7 +523,11 @@ class TerminalManager:
         Args:
             session_ids: List of session IDs to resize.
         """
-        if not session_ids or not self._tmux_service:
+        if not session_ids:
+            logger.debug("No sessions to resize")
+            return
+        if not self._tmux_service:
+            logger.warning("No tmux_service available for resize")
             return
 
         for session_id in session_ids:
@@ -524,8 +535,11 @@ class TerminalManager:
             session_info = self._sessions.get_session(session_id)
             if session_info and session_info.get("tmux_name"):
                 tmux_name = session_info["tmux_name"]
+                logger.info(f"Resizing {tmux_name} to local size on disconnect")
                 # TmuxService handles errors internally (non-fatal)
                 await self._tmux_service.resize_window_to_largest(tmux_name)
+            else:
+                logger.warning(f"Session {session_id} not found or has no tmux_name")
 
     async def shutdown(self) -> None:
         """Shutdown all captures."""

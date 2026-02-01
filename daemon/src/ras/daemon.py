@@ -115,6 +115,7 @@ class Daemon:
                 receive_timeout=config.daemon.keepalive_timeout,
             ),
             send_callback=self._send_heartbeat,
+            disconnect_callback=self._disconnect_stale_connection,
         )
 
         # Ntfy reconnection manager for cross-NAT reconnection
@@ -582,6 +583,14 @@ class Daemon:
         conn = self._connection_manager.get_connection(device_id)
         if conn:
             await conn.send(data)
+
+    async def _disconnect_stale_connection(self, device_id: str) -> None:
+        """Disconnect a stale connection (callback for HeartbeatManager).
+
+        Called when a connection exceeds the disconnect timeout without activity.
+        """
+        logger.info(f"Disconnecting stale connection: {device_id[:8]}...")
+        await self._connection_manager.close_connection(device_id)
 
     # ==================== Message Handlers ====================
 
