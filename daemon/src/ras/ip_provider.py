@@ -5,6 +5,7 @@ in QR codes for pairing. Follows dependency injection pattern.
 """
 
 import socket
+import netifaces
 from typing import Protocol
 
 
@@ -37,17 +38,21 @@ class IpDiscoveryError(Exception):
 class LocalNetworkIpProvider:
     """Discovers local LAN IP address.
 
-    Uses UDP socket trick to find the local IP that would be used
-    to reach external addresses. This is the IP other devices on
-    the same network can use to connect.
+    Prefers physical LAN IPs (192.168.x.x, etc.) over VPN tunnel IPs
+    to ensure the daemon can receive connections on the advertised IP.
 
     Example:
         provider = LocalNetworkIpProvider()
         ip = await provider.get_ip()  # "192.168.1.100"
     """
 
+    # Interface name prefixes that indicate physical network (not VPN/tunnel)
+    PHYSICAL_PREFIXES = ("en", "eth", "wlan", "bridge")
+    # VPN/tunnel interface prefixes to avoid
+    VPN_PREFIXES = ("utun", "tun", "tap", "wg", "tailscale")
+
     async def get_ip(self) -> str:
-        """Get local network IP address.
+        """Get local network IP address, preferring physical interfaces.
 
         Returns:
             Local IP address (e.g., '192.168.1.100').
@@ -55,15 +60,17 @@ class LocalNetworkIpProvider:
         Raises:
             IpDiscoveryError: If local IP cannot be determined.
         """
+        # First, try to find an IP on a physical interface
+        physical_ip = self._get_physical_interface_ip()
+        if physical_ip:
+            return physical_ip
+
+        # Fall back to socket trick (may return VPN IP)
         try:
-            # Create a UDP socket and "connect" to an external address
-            # This doesn't send any packets, but determines the local IP
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                # Use Google DNS as the target (doesn't actually connect)
                 s.connect(("8.8.8.8", 80))
                 ip = s.getsockname()[0]
 
-            # Validate result
             if ip == "0.0.0.0":
                 raise IpDiscoveryError("Could not determine local IP (got 0.0.0.0)")
             if ip.startswith("127."):
@@ -73,6 +80,60 @@ class LocalNetworkIpProvider:
 
         except OSError as e:
             raise IpDiscoveryError(f"Network error discovering local IP: {e}")
+
+    def _get_physical_interface_ip(self) -> str | None:
+        """Get IP from a physical network interface (not VPN/tunnel).
+
+        Returns:
+            IP address or None if no physical interface found.
+        """
+        try:
+            for iface in netifaces.interfaces():
+                # Skip loopback
+                if iface == "lo" or iface.startswith("lo"):
+                    continue
+
+                # Skip VPN/tunnel interfaces
+                if any(iface.startswith(prefix) for prefix in self.VPN_PREFIXES):
+                    continue
+
+                # Prefer physical interfaces
+                if any(iface.startswith(prefix) for prefix in self.PHYSICAL_PREFIXES):
+                    addrs = netifaces.ifaddresses(iface)
+                    if netifaces.AF_INET in addrs:
+                        for addr in addrs[netifaces.AF_INET]:
+                            ip = addr.get("addr")
+                            if ip and not ip.startswith("127."):
+                                return ip
+        except Exception:
+            pass
+        return None
+
+    def get_all_ips(self) -> dict[str, str]:
+        """Get all available IPs categorized by type.
+
+        Returns:
+            Dict with 'lan' and 'vpn' keys containing IPs if available.
+        """
+        result = {}
+
+        # Get LAN IP from physical interface
+        lan_ip = self._get_physical_interface_ip()
+        if lan_ip:
+            result["lan"] = lan_ip
+
+        # Get VPN IP from socket trick (routes through default gateway)
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                socket_ip = s.getsockname()[0]
+                # If different from LAN IP, it's likely VPN
+                if socket_ip and socket_ip != lan_ip and not socket_ip.startswith("127."):
+                    result["vpn"] = socket_ip
+        except OSError:
+            pass
+
+        return result
 
 
 class StunIpProvider:

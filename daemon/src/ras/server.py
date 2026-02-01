@@ -23,6 +23,7 @@ from ras.crypto import (
     compute_signaling_hmac,
     derive_key,
     derive_ntfy_topic,
+    derive_session_id,
     generate_master_secret,
 )
 from ras.ip_provider import IpProvider
@@ -207,9 +208,9 @@ class UnifiedServer:
                 status=429,
             )
 
-        # Generate session
-        session_id = secrets.token_hex(16)
+        # Generate session - everything derived from master_secret
         master_secret = generate_master_secret()
+        session_id = derive_session_id(master_secret)
         auth_key = derive_key(master_secret, "auth")
         ntfy_topic = derive_ntfy_topic(master_secret)
         now = time.time()
@@ -254,17 +255,27 @@ class UnifiedServer:
             tailscale_ip = ts_caps.get("tailscale_ip", "")
             tailscale_port = ts_caps.get("tailscale_port", 0)
 
+        # Get VPN IP separately (non-Tailscale VPN)
+        vpn_ip = ""
+        vpn_port = 0
+        if hasattr(self.ip_provider, "get_all_ips"):
+            all_ips = self.ip_provider.get_all_ips()
+            detected_vpn_ip = all_ips.get("vpn")
+            if detected_vpn_ip and detected_vpn_ip != public_ip:
+                vpn_ip = detected_vpn_ip
+                vpn_port = self._port
+                logger.info(f"Including VPN IP: {vpn_ip}")
+
+        # QR code contains ONLY the master_secret.
+        # Everything else is derived from it:
+        # - session_id: derived via HKDF
+        # - ntfy_topic: derived via SHA256
+        # - daemon IP/port: discovered via mDNS or ntfy DISCOVER
         return web.json_response({
             "session_id": session_id,
             "expires_at": session.expires_at,
             "qr_data": {
-                "ip": public_ip,
-                "port": self._port,
                 "master_secret": master_secret.hex(),
-                "session_id": session_id,
-                "ntfy_topic": ntfy_topic,
-                "tailscale_ip": tailscale_ip,
-                "tailscale_port": tailscale_port,
             },
         })
 

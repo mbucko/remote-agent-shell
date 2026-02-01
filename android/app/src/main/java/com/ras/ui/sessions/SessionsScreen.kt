@@ -85,6 +85,7 @@ fun SessionsScreen(
     val showRenameDialog by viewModel.showRenameDialog.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    var showDisconnectDialog by remember { mutableStateOf(false) }
 
     // Handle one-time UI events
     LaunchedEffect(Unit) {
@@ -131,7 +132,7 @@ fun SessionsScreen(
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
-                    IconButton(onClick = { viewModel.disconnect(onDisconnect) }) {
+                    IconButton(onClick = { showDisconnectDialog = true }) {
                         Icon(Icons.Default.LinkOff, contentDescription = "Disconnect")
                     }
                 }
@@ -203,6 +204,33 @@ fun SessionsScreen(
             currentName = session.displayName,
             onConfirm = { newName -> viewModel.confirmRenameSession(newName) },
             onDismiss = { viewModel.dismissRenameDialog() }
+        )
+    }
+
+    // Disconnect confirmation dialog
+    if (showDisconnectDialog) {
+        AlertDialog(
+            onDismissRequest = { showDisconnectDialog = false },
+            title = { Text(stringResource(R.string.settings_disconnect)) },
+            text = { Text(stringResource(R.string.settings_disconnect_confirm)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDisconnectDialog = false
+                        viewModel.disconnect(onDisconnect)
+                    }
+                ) {
+                    Text(
+                        stringResource(R.string.settings_disconnect),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisconnectDialog = false }) {
+                    Text(stringResource(R.string.terminal_cancel))
+                }
+            }
         )
     }
 }

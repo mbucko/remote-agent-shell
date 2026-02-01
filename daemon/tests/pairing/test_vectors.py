@@ -14,6 +14,7 @@ from ras.crypto import (
     compute_signaling_hmac,
     derive_key,
     derive_ntfy_topic,
+    derive_session_id,
 )
 
 # Path to test vectors directory
@@ -88,6 +89,34 @@ class TestKeyDerivationVectors:
         )
         expected = "ras-4884fdaafea4"
         result = derive_ntfy_topic(master_secret)
+        assert result == expected
+
+    def test_vector_derive_session_id_1(self, vectors):
+        """Explicit test for session ID derivation - test vector 1."""
+        master_secret = bytes.fromhex("42" * 32)
+        expected = "319df76c6c8c298057c64857"
+        result = derive_session_id(master_secret)
+        assert result == expected
+
+    def test_vector_derive_session_id_2(self, vectors):
+        """Explicit test for session ID derivation - test vector 2 (all zeros)."""
+        master_secret = bytes.fromhex("00" * 32)
+        expected = "4062f7cc16091b42dbfe74dc"
+        result = derive_session_id(master_secret)
+        assert result == expected
+
+    def test_vector_derive_session_id_3(self, vectors):
+        """Explicit test for session ID derivation - test vector 3 (all 0xff)."""
+        master_secret = bytes.fromhex("ff" * 32)
+        expected = "40dfe15207e626a4161ebb27"
+        result = derive_session_id(master_secret)
+        assert result == expected
+
+    def test_vector_derive_session_id_4(self, vectors):
+        """Explicit test for session ID derivation - test vector 4 (sequential)."""
+        master_secret = bytes(range(32))
+        expected = "de90c04b999a121692e6b08a"
+        result = derive_session_id(master_secret)
         assert result == expected
 
 
@@ -198,21 +227,18 @@ class TestQrPayloadVectors:
 
             inp = case["input"]
             qr = QrGenerator(
-                ip=inp["ip"],
-                port=inp["port"],
                 master_secret=bytes.fromhex(inp["master_secret_hex"]),
-                session_id=inp["session_id"],
-                ntfy_topic=inp["ntfy_topic"],
             )
 
             payload_bytes = qr._create_payload()
             parsed = QrPayload().parse(payload_bytes)
 
             assert parsed.version == 1
-            assert parsed.ip == inp["ip"]
-            assert parsed.port == inp["port"]
-            assert parsed.session_id == inp["session_id"]
-            assert parsed.ntfy_topic == inp["ntfy_topic"]
+            assert parsed.ip == ""  # IP not in QR code
+            assert parsed.port == 0  # Port not in QR code
+            assert parsed.session_id == ""  # Derived from master_secret
+            assert parsed.ntfy_topic == ""  # Derived from master_secret
+            assert parsed.master_secret == bytes.fromhex(inp["master_secret_hex"])
 
 
 class TestAuthHandshakeVectors:
@@ -309,3 +335,46 @@ class TestCrossImplementationCompatibility:
         message = b"test"
         hmac = compute_hmac(key, message)
         assert len(hmac) == 32
+
+    def test_session_id_derivation_is_deterministic(self):
+        """Session ID derivation is deterministic."""
+        master_secret = b"\x42" * 32
+
+        results = []
+        for _ in range(10):
+            session_id = derive_session_id(master_secret)
+            results.append(session_id)
+
+        assert all(r == results[0] for r in results)
+
+    def test_session_id_format_is_correct(self):
+        """Session ID has correct format: 24 hex characters."""
+        master_secret = b"\x00" * 32
+        session_id = derive_session_id(master_secret)
+
+        assert len(session_id) == 24
+        # All characters should be valid hex
+        bytes.fromhex(session_id)  # Should not raise
+
+    def test_session_id_different_for_different_secrets(self):
+        """Different secrets produce different session IDs."""
+        id1 = derive_session_id(b"\x00" * 32)
+        id2 = derive_session_id(b"\xff" * 32)
+        id3 = derive_session_id(b"\x42" * 32)
+
+        assert id1 != id2
+        assert id2 != id3
+        assert id1 != id3
+
+    def test_session_id_rejects_invalid_secret_length(self):
+        """Session ID derivation rejects secrets != 32 bytes."""
+        import pytest
+
+        with pytest.raises(ValueError):
+            derive_session_id(b"\x00" * 31)
+
+        with pytest.raises(ValueError):
+            derive_session_id(b"\x00" * 33)
+
+        with pytest.raises(ValueError):
+            derive_session_id(b"")

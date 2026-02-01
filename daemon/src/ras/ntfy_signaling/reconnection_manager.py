@@ -64,6 +64,7 @@ class NtfyReconnectionManager:
         ntfy_server: str = "https://ntfy.sh",
         on_reconnection: Optional[ReconnectionCallback] = None,
         capabilities_provider: Optional[Callable[[], dict]] = None,
+        discovery_provider: Optional[Callable[[], dict]] = None,
     ):
         """Initialize manager.
 
@@ -75,12 +76,16 @@ class NtfyReconnectionManager:
                             Receives (device_id, device_name, peer, auth_key).
             capabilities_provider: Optional callable returning capabilities dict.
                                   Used to include Tailscale info in ANSWER messages.
+            discovery_provider: Optional callable returning discovery info dict.
+                               Keys: lan_ip, lan_port, vpn_ip, vpn_port, tailscale_ip,
+                               tailscale_port, public_ip, public_port, device_id.
         """
         self._device_store = device_store
         self._stun_servers = stun_servers or []
         self._ntfy_server = ntfy_server
         self._on_reconnection = on_reconnection
         self._capabilities_provider = capabilities_provider
+        self._discovery_provider = discovery_provider
 
         # Map of device_id -> subscriber
         self._subscribers: dict[str, NtfySignalingSubscriber] = {}
@@ -172,6 +177,7 @@ class NtfyReconnectionManager:
                 stun_servers=self._stun_servers,
                 device_store=self._device_store,
                 capabilities_provider=self._capabilities_provider,
+                discovery_provider=self._discovery_provider,
             )
 
             # Set callback

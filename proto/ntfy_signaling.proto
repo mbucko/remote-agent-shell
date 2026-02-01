@@ -21,6 +21,8 @@ message NtfySignalMessage {
     OFFER = 0;        // Phone -> Daemon: WebRTC offer
     ANSWER = 1;       // Daemon -> Phone: WebRTC answer
     CAPABILITIES = 2; // Bidirectional: Exchange connection capabilities
+    DISCOVER = 3;     // Phone -> Daemon: Request current IPs
+    DISCOVER_RESPONSE = 4;  // Daemon -> Phone: Current IPs
   }
 
   // Session ID from QR code (must match pending session)
@@ -43,6 +45,9 @@ message NtfySignalMessage {
 
   // Connection capabilities (used with CAPABILITIES type)
   ConnectionCapabilities capabilities = 8;
+
+  // Discovery response (used with DISCOVER_RESPONSE type)
+  DiscoveryResponse discovery = 9;
 }
 
 // Connection capabilities for strategy negotiation.
@@ -58,4 +63,30 @@ message ConnectionCapabilities {
 
   // Protocol version for compatibility
   int32 protocol_version = 5;  // Current: 1
+}
+
+// Discovery response with all available IPs
+// Sent in response to DISCOVER message
+message DiscoveryResponse {
+  // LAN IP (physical network interface)
+  string lan_ip = 1;
+  int32 lan_port = 2;
+
+  // VPN IP (non-Tailscale VPN like WireGuard, OpenVPN)
+  string vpn_ip = 3;
+  int32 vpn_port = 4;
+
+  // Tailscale IP (if on Tailscale network)
+  string tailscale_ip = 5;
+  int32 tailscale_port = 6;
+
+  // Public IP (via STUN, may not be directly reachable)
+  string public_ip = 7;
+  int32 public_port = 8;
+
+  // Device info
+  string device_id = 9;
+
+  // Timestamp for freshness check
+  int64 timestamp = 10;
 }

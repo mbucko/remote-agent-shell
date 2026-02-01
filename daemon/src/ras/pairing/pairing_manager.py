@@ -111,13 +111,8 @@ class PairingManager:
             )
 
         # Generate and display QR code
-        qr = QrGenerator(
-            ip=public_ip,
-            port=self.port,
-            master_secret=master_secret,
-            session_id=session.session_id,
-            ntfy_topic=ntfy_topic,
-        )
+        # Only master_secret in QR - everything else derived from it
+        qr = QrGenerator(master_secret=master_secret)
 
         if display_mode == "terminal":
             print(qr.to_terminal())

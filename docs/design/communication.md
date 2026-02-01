@@ -60,10 +60,10 @@ First-time setup requires physical access to the laptop.
 │     ┌─────────────────────────────────────┐                     │
 │     │  ┌─────────────────┐                │                     │
 │     │  │  QR CODE        │  Contains:     │                     │
-│     │  │                 │  • Public IP   │                     │
-│     │  │                 │  • Port        │                     │
-│     │  │                 │  • Secret      │                     │
-│     │  └─────────────────┘  • ntfy topic  │                     │
+│     │  │                 │  • Secret only │                     │
+│     │  │                 │                │                     │
+│     │  │                 │  (Everything   │                     │
+│     │  └─────────────────┘   derived)     │                     │
 │     └─────────────────────────────────────┘                     │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -83,23 +83,22 @@ First-time setup requires physical access to the laptop.
 
 **QR Code Payload:**
 
-```json
-{
-  "version": 1,
-  "ip": "98.23.45.1",
-  "port": 8821,
-  "secret": "base64-encoded-32-bytes",
-  "topic": "ras-8f2k4m9x"
-}
+The QR code contains only the master secret. Everything else is derived from it.
+
+```
+base64(protobuf(QrPayload))
+
+QrPayload:
+  version: 1
+  master_secret: <32 bytes>
 ```
 
-| Field | Description |
-|-------|-------------|
-| `version` | Protocol version for future compatibility |
-| `ip` | Laptop's public IP (from STUN) |
-| `port` | Daemon's listening port |
-| `secret` | 32-byte master secret (base64 encoded) |
-| `topic` | ntfy topic for IP updates (derived from secret) |
+| Derived Value | Derivation |
+|---------------|------------|
+| `session_id` | HKDF(secret, "session") → first 24 hex chars |
+| `ntfy_topic` | "ras-" + SHA256(secret)[:12] |
+| `auth_key` | HKDF(secret, "auth") |
+| `daemon IP/port` | Discovered via mDNS or ntfy DISCOVER |
 
 ### Phase 2: P2P Connection (WebRTC)
 
@@ -110,8 +109,9 @@ After scanning QR code, phone connects via HTTP to exchange SDP, then establishe
 │  Phone   │                                          │  Laptop  │
 └────┬─────┘                                          └────┬─────┘
      │                                                     │
-     │  1. Scan QR code                                    │
-     │     (get IP, port, session_id)                      │
+     │  1. Scan QR code (get master_secret)                 │
+     │  1a. Derive session_id, ntfy_topic from secret      │
+     │  1b. Discover daemon via mDNS or ntfy DISCOVER      │
      │                                                     │
      │  2. Create WebRTC offer                             │
      │                                                     │

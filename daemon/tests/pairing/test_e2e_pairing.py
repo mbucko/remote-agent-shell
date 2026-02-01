@@ -895,18 +895,11 @@ class TestQrPayloadIntegrity:
     def test_qr_payload_roundtrip(self):
         """QR payload can be encoded and decoded correctly."""
         from ras.pairing.qr_generator import QrGenerator
+        from ras.crypto import derive_session_id
 
         master_secret = b"\x12\x34" * 16
-        session_id = "test-session-123"
-        ntfy_topic = derive_ntfy_topic(master_secret)
 
-        qr = QrGenerator(
-            ip="192.168.1.100",
-            port=8821,
-            master_secret=master_secret,
-            session_id=session_id,
-            ntfy_topic=ntfy_topic,
-        )
+        qr = QrGenerator(master_secret=master_secret)
 
         # Get raw payload
         payload_bytes = qr._create_payload()
@@ -915,11 +908,17 @@ class TestQrPayloadIntegrity:
         parsed = QrPayload().parse(payload_bytes)
 
         assert parsed.version == 1
-        assert parsed.ip == "192.168.1.100"
-        assert parsed.port == 8821
+        assert parsed.ip == ""
+        assert parsed.port == 0
         assert parsed.master_secret == master_secret
-        assert parsed.session_id == session_id
-        assert parsed.ntfy_topic == ntfy_topic
+        assert parsed.session_id == ""  # Derived on client
+        assert parsed.ntfy_topic == ""  # Derived on client
+
+        # Verify derivation works
+        derived_session = derive_session_id(master_secret)
+        derived_topic = derive_ntfy_topic(master_secret)
+        assert len(derived_session) == 24
+        assert derived_topic.startswith("ras-")
 
     def test_qr_payload_base64_roundtrip(self):
         """QR payload survives base64 encoding."""
@@ -927,13 +926,7 @@ class TestQrPayloadIntegrity:
 
         master_secret = b"\xaa\xbb" * 16
 
-        qr = QrGenerator(
-            ip="10.0.0.1",
-            port=9999,
-            master_secret=master_secret,
-            session_id="session-456",
-            ntfy_topic="ras-test123",
-        )
+        qr = QrGenerator(master_secret=master_secret)
 
         # Simulate what the QR code contains
         payload_bytes = qr._create_payload()

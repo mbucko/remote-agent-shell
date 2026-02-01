@@ -122,6 +122,25 @@ data class ConnectionLog(
                 capabilityExchangeError = "Skipped: ${progress.reason}"
             )
 
+            // Host Discovery (for IP updates)
+            is ConnectionProgress.HostDiscoveryStarted -> copy(
+                capabilityExchangeSteps = capabilityExchangeSteps + "DISCOVER → ntfy... connecting"
+            )
+            is ConnectionProgress.HostDiscoveryReceived -> copy(
+                capabilityExchangeSteps = capabilityExchangeSteps.map { step ->
+                    if (step.startsWith("DISCOVER → ntfy")) {
+                        "DISCOVER ← ${progress.lanIp ?: "no-lan"}:${progress.lanPort ?: 0} ✓"
+                    } else step
+                }
+            )
+            is ConnectionProgress.HostDiscoveryFailed -> copy(
+                capabilityExchangeSteps = capabilityExchangeSteps.map { step ->
+                    if (step.startsWith("DISCOVER → ntfy")) {
+                        "DISCOVER → ${progress.reason}"
+                    } else step
+                }
+            )
+
             // Strategy Detection
             is ConnectionProgress.Detecting -> copy(
                 phase = ConnectionPhase.DETECTING_STRATEGIES,

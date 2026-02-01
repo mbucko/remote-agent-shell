@@ -65,6 +65,8 @@ data class ConnectionContext(
     val daemonPort: Int?,
     val daemonTailscaleIp: String? = null,  // Daemon's Tailscale IP if known
     val daemonTailscalePort: Int? = null,   // Daemon's Tailscale port if known
+    val daemonVpnIp: String? = null,        // Daemon's VPN IP if known (non-Tailscale)
+    val daemonVpnPort: Int? = null,         // Daemon's VPN port if known
     val localTailscaleAvailable: Boolean = false,  // Whether local Tailscale is detected
     val signaling: SignalingChannel,
     val authToken: ByteArray,

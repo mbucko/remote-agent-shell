@@ -94,8 +94,9 @@ class NtfySignalMessageValidator(
             }
         }
 
-        // Validate SDP (only for OFFER/ANSWER messages, not CAPABILITIES)
-        if (expectedType != NtfySignalMessage.MessageType.CAPABILITIES) {
+        // Validate SDP (only for OFFER/ANSWER messages, not CAPABILITIES or DISCOVER_RESPONSE)
+        if (expectedType != NtfySignalMessage.MessageType.CAPABILITIES &&
+            expectedType != NtfySignalMessage.MessageType.DISCOVER_RESPONSE) {
             if (!isValidSdp(msg.sdp)) {
                 return ValidationResult(false, ValidationError.INVALID_SDP)
             }

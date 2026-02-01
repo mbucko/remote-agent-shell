@@ -73,6 +73,30 @@ sealed class ConnectionProgress {
      */
     data class CapabilityNtfyReceived(val topic: String) : ConnectionProgress()
 
+    // ==================== Host Discovery Phase ====================
+
+    /**
+     * Starting host discovery via ntfy.
+     */
+    data class HostDiscoveryStarted(val topic: String) : ConnectionProgress()
+
+    /**
+     * Received host discovery response with all available IPs.
+     */
+    data class HostDiscoveryReceived(
+        val lanIp: String?,
+        val lanPort: Int?,
+        val vpnIp: String?,
+        val vpnPort: Int?,
+        val tailscaleIp: String?,
+        val tailscalePort: Int?
+    ) : ConnectionProgress()
+
+    /**
+     * Host discovery failed.
+     */
+    data class HostDiscoveryFailed(val reason: String) : ConnectionProgress()
+
     /**
      * Daemon capabilities received.
      */

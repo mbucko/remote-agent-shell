@@ -12,6 +12,7 @@ import com.ras.data.connection.ConnectionProgress
 import com.ras.data.connection.NtfySignalingChannel
 import com.ras.data.connection.Transport
 import com.ras.data.credentials.CredentialRepository
+import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.domain.startup.ReconnectionResult
 import com.ras.pairing.AuthClient
 import com.ras.pairing.AuthResult
@@ -54,7 +55,8 @@ class ReconnectionServiceImpl @Inject constructor(
     @DirectSignalingClient private val directSignalingHttpClient: OkHttpClient,
     private val connectionManager: ConnectionManager,
     private val ntfyClient: NtfyClientInterface,
-    private val orchestrator: ConnectionOrchestrator
+    private val orchestrator: ConnectionOrchestrator,
+    private val mdnsDiscoveryService: MdnsDiscoveryService
 ) : ReconnectionService {
 
     companion object {
@@ -74,13 +76,37 @@ class ReconnectionServiceImpl @Inject constructor(
             return ReconnectionResult.Failure.NoCredentials
         }
 
-        Log.d(TAG, "Attempting reconnection to ${credentials.daemonHost}:${credentials.daemonPort}")
+        Log.d(TAG, "Attempting reconnection to ${credentials.daemonHost ?: "unknown"}:${credentials.daemonPort ?: 0}")
+
+        // 2. Try mDNS discovery first (fast, local network only)
+        var daemonHost: String? = credentials.daemonHost
+        var daemonPort: Int? = credentials.daemonPort
+
+        onProgress(ConnectionProgress.DiscoveryStarted)
+        val mdnsResult = try {
+            Log.d(TAG, "Trying mDNS discovery...")
+            mdnsDiscoveryService.discoverDaemon(timeoutMs = 2000L)
+        } catch (e: Exception) {
+            Log.w(TAG, "mDNS discovery error: ${e.message}")
+            null
+        }
+
+        if (mdnsResult != null) {
+            Log.i(TAG, "mDNS: Found daemon at ${mdnsResult.host}:${mdnsResult.port}")
+            daemonHost = mdnsResult.host
+            daemonPort = mdnsResult.port
+        } else if (daemonHost != null && daemonPort != null) {
+            Log.d(TAG, "mDNS: No daemon found, using cached IPs ($daemonHost:$daemonPort)")
+        } else {
+            // No mDNS result and no cached IPs - must use ntfy-only signaling
+            Log.d(TAG, "mDNS: No daemon found and no cached IPs - will use ntfy signaling")
+        }
 
         // Derive auth key from master secret
         val authKey = KeyDerivation.deriveKey(credentials.masterSecret, "auth")
 
         try {
-            // 2. Create signaling channel (use short-timeout client for direct probing)
+            // 3. Create signaling channel (use short-timeout client for direct probing)
             val directClient = HttpDirectReconnectionClient(directSignalingHttpClient)
             val signaler = ReconnectionSignaler(
                 directClient = directClient,
@@ -89,27 +115,31 @@ class ReconnectionServiceImpl @Inject constructor(
 
             val signalingChannel = NtfySignalingChannel(
                 signaler = signaler,
-                host = credentials.daemonHost,
-                port = credentials.daemonPort,
+                host = daemonHost,  // Use discovered or cached host
+                port = daemonPort,  // Use discovered or cached port
                 masterSecret = credentials.masterSecret,
                 deviceId = credentials.deviceId,
-                deviceName = android.os.Build.MODEL ?: "Unknown Device"
+                deviceName = android.os.Build.MODEL ?: "Unknown Device",
+                vpnHost = credentials.daemonVpnIp,
+                vpnPort = credentials.daemonVpnPort
             )
 
-            // 3. Create connection context
+            // 4. Create connection context
             val context = ConnectionContext(
                 androidContext = appContext,
                 deviceId = credentials.deviceId,
-                daemonHost = credentials.daemonHost,
-                daemonPort = credentials.daemonPort,
+                daemonHost = daemonHost,  // Use discovered or cached host
+                daemonPort = daemonPort,  // Use discovered or cached port
                 daemonTailscaleIp = credentials.daemonTailscaleIp,
                 daemonTailscalePort = credentials.daemonTailscalePort,
+                daemonVpnIp = credentials.daemonVpnIp,
+                daemonVpnPort = credentials.daemonVpnPort,
                 signaling = signalingChannel,
                 authToken = authKey,
                 signalingProgress = onProgress  // Pass progress for detailed signaling events
             )
 
-            // 4. Connect using orchestrator
+            // 5. Connect using orchestrator
             val transport = orchestrator.connect(context, onProgress)
 
             if (transport == null) {
@@ -118,7 +148,7 @@ class ReconnectionServiceImpl @Inject constructor(
                 return ReconnectionResult.Failure.NetworkError
             }
 
-            // 5. Perform authentication handshake (only for WebRTC)
+            // 6. Perform authentication handshake (only for WebRTC)
             // TailscaleStrategy already does auth during connect(), so skip for Tailscale
             val isTailscale = transport::class.simpleName?.contains("Tailscale") == true
 
@@ -151,7 +181,7 @@ class ReconnectionServiceImpl @Inject constructor(
                 onProgress(ConnectionProgress.Authenticated)
             }
 
-            // 6. Hand off to ConnectionManager
+            // 7. Hand off to ConnectionManager
             Log.i(TAG, "Handing off to ConnectionManager")
             connectionManager.connectWithTransport(transport, authKey)
 

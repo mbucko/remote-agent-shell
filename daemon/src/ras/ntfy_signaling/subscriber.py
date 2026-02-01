@@ -84,6 +84,7 @@ class NtfySignalingSubscriber:
         device_store: Optional[DeviceStoreProtocol] = None,
         http_session: Optional[aiohttp.ClientSession] = None,
         capabilities_provider: Optional[Callable[[], dict]] = None,
+        discovery_provider: Optional[Callable[[], dict]] = None,
     ):
         """Initialize subscriber.
 
@@ -98,6 +99,9 @@ class NtfySignalingSubscriber:
             http_session: Optional aiohttp session (for testing).
             capabilities_provider: Optional callable returning capabilities dict.
                                   Used to include Tailscale info in ANSWER messages.
+            discovery_provider: Optional callable returning discovery info dict.
+                               Keys: lan_ip, lan_port, vpn_ip, vpn_port, tailscale_ip,
+                               tailscale_port, public_ip, public_port, device_id.
         """
         self._handler = NtfySignalingHandler(
             master_secret=master_secret,
@@ -105,6 +109,7 @@ class NtfySignalingSubscriber:
             stun_servers=stun_servers,
             device_store=device_store,
             capabilities_provider=capabilities_provider,
+            discovery_provider=discovery_provider,
         )
         self._topic = ntfy_topic
         self._server = ntfy_server.rstrip("/")

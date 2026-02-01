@@ -176,7 +176,9 @@ class PairingManager @Inject constructor(
                         port = payload.port,
                         ntfyTopic = payload.ntfyTopic,
                         tailscaleIp = payload.tailscaleIp,
-                        tailscalePort = payload.tailscalePort
+                        tailscalePort = payload.tailscalePort,
+                        vpnIp = payload.vpnIp,
+                        vpnPort = payload.vpnPort
                     )
                 }
 

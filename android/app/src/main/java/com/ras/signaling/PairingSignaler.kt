@@ -65,8 +65,8 @@ class PairingSignaler(
     /**
      * Exchange SDP offer for answer.
      *
-     * @param ip Daemon IP address
-     * @param port Daemon port
+     * @param ip Daemon IP address (optional - if null, skip direct signaling)
+     * @param port Daemon port (optional - if null, skip direct signaling)
      * @param sessionId Session ID from QR code
      * @param masterSecret Master secret from QR code
      * @param sdpOffer WebRTC SDP offer
@@ -75,8 +75,8 @@ class PairingSignaler(
      * @param ntfyTimeoutMs Timeout for ntfy signaling (default 30s)
      */
     suspend fun exchangeSdp(
-        ip: String,
-        port: Int,
+        ip: String?,
+        port: Int?,
         sessionId: String,
         masterSecret: ByteArray,
         sdpOffer: String,
@@ -84,37 +84,39 @@ class PairingSignaler(
         deviceName: String,
         ntfyTimeoutMs: Long = DEFAULT_NTFY_TIMEOUT_MS
     ): PairingSignalerResult {
-        // Derive auth key for direct signaling
-        val authKey = KeyDerivation.deriveKey(masterSecret, "auth")
+        // Try direct signaling first if we have IP/port
+        if (ip != null && port != null) {
+            // Derive auth key for direct signaling
+            val authKey = KeyDerivation.deriveKey(masterSecret, "auth")
 
-        // Try direct signaling first
-        Log.d(TAG, "Trying direct signaling to $ip:$port")
-        val directResult = tryDirectSignaling(
-            ip = ip,
-            port = port,
-            sessionId = sessionId,
-            authKey = authKey,
-            sdpOffer = sdpOffer,
-            deviceId = deviceId,
-            deviceName = deviceName
-        )
+            Log.d(TAG, "Trying direct signaling to $ip:$port")
+            val directResult = tryDirectSignaling(
+                ip = ip,
+                port = port,
+                sessionId = sessionId,
+                authKey = authKey,
+                sdpOffer = sdpOffer,
+                deviceId = deviceId,
+                deviceName = deviceName
+            )
 
-        // If direct succeeded, return
-        if (directResult is SignalingResult.Success) {
-            Log.d(TAG, "Direct signaling succeeded")
             // Zero auth key
             authKey.fill(0)
-            return PairingSignalerResult.Success(
-                sdpAnswer = directResult.sdpAnswer,
-                usedDirectPath = true,
-                usedNtfyPath = false
-            )
+
+            // If direct succeeded, return
+            if (directResult is SignalingResult.Success) {
+                Log.d(TAG, "Direct signaling succeeded")
+                return PairingSignalerResult.Success(
+                    sdpAnswer = directResult.sdpAnswer,
+                    usedDirectPath = true,
+                    usedNtfyPath = false
+                )
+            }
+
+            Log.d(TAG, "Direct signaling failed, falling back to ntfy")
+        } else {
+            Log.d(TAG, "No IP/port available, using ntfy signaling directly")
         }
-
-        Log.d(TAG, "Direct signaling failed, falling back to ntfy")
-
-        // Zero auth key - no longer needed
-        authKey.fill(0)
 
         // Fall back to ntfy
         return tryNtfySignaling(

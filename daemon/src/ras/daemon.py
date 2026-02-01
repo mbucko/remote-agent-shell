@@ -19,6 +19,7 @@ from ras.pairing.auth_handler import AuthHandler
 from ras.device_store import JsonDeviceStore, PairedDevice
 from ras.heartbeat import HeartbeatConfig, HeartbeatManager
 from ras.ip_provider import IpProvider, LocalNetworkIpProvider
+from ras.mdns import MdnsService
 from ras.message_dispatcher import MessageDispatcher
 from ras.ntfy_signaling.reconnection_manager import NtfyReconnectionManager
 from ras.server import UnifiedServer
@@ -121,6 +122,9 @@ class Daemon:
         # Tailscale listener for direct VPN connections
         self._tailscale_listener: Optional[TailscaleListener] = None
 
+        # mDNS service for local network discovery
+        self._mdns_service: Optional[MdnsService] = None
+
         # Connections pending ConnectionReady handshake
         # Device IDs in this set have connected but not yet sent ConnectionReady
         self._pending_ready: set[str] = set()
@@ -151,6 +155,9 @@ class Daemon:
 
         # Start signaling server
         await self._start_signaling_server()
+
+        # Start mDNS service for local network discovery
+        await self._start_mdns_service()
 
         # Start Tailscale listener for direct VPN connections
         await self._start_tailscale_listener()
@@ -285,6 +292,45 @@ class Daemon:
         )
         logger.info(f"Unified server started on {self._config.bind_address}:{self._unified_server.get_port()}")
 
+    async def _start_mdns_service(self) -> None:
+        """Start mDNS service for local network discovery.
+
+        Advertises the daemon as _ras._tcp so phones on the same LAN
+        can discover it without needing ntfy or manual IP configuration.
+        """
+        # Get device ID from first paired device, or generate one
+        device_id = "daemon"
+        if self._device_store:
+            devices = list(self._device_store._devices.values())
+            if devices:
+                device_id = f"daemon-{devices[0].device_id[:8]}"
+
+        # Create IP provider function for mDNS
+        def get_all_ips() -> dict[str, str]:
+            ips = {}
+            # Get LAN IP
+            ip_provider = LocalNetworkIpProvider()
+            all_ips = ip_provider.get_all_ips()
+            ips.update(all_ips)
+
+            # Add Tailscale IP if available
+            if self._tailscale_listener and self._tailscale_listener.tailscale_ip:
+                ips["tailscale"] = self._tailscale_listener.tailscale_ip
+
+            return ips
+
+        self._mdns_service = MdnsService(
+            port=self._get_server_port(),
+            device_id=device_id,
+            ip_provider=get_all_ips,
+        )
+
+        try:
+            await self._mdns_service.start()
+        except Exception as e:
+            logger.warning(f"Failed to start mDNS service: {e}")
+            self._mdns_service = None
+
     async def _start_tailscale_listener(self) -> None:
         """Start Tailscale listener for direct VPN connections.
 
@@ -403,6 +449,44 @@ class Daemon:
             return self._tailscale_listener.get_capabilities()
         return {}
 
+    def get_discovery_info(self) -> dict:
+        """Get discovery info for DISCOVER response.
+
+        Returns all available IPs and ports for the phone to try
+        when reconnecting.
+
+        Returns:
+            Dict with lan_ip, lan_port, vpn_ip, vpn_port, tailscale_ip,
+            tailscale_port, device_id. Missing fields are empty/zero.
+        """
+        info: dict = {}
+        port = self._get_server_port()
+
+        # Get LAN and VPN IPs from ip_provider
+        ip_provider = LocalNetworkIpProvider()
+        all_ips = ip_provider.get_all_ips()
+
+        if "lan" in all_ips:
+            info["lan_ip"] = all_ips["lan"]
+            info["lan_port"] = port
+
+        if "vpn" in all_ips:
+            info["vpn_ip"] = all_ips["vpn"]
+            info["vpn_port"] = port
+
+        # Add Tailscale info if available
+        if self._tailscale_listener and self._tailscale_listener.is_available:
+            info["tailscale_ip"] = self._tailscale_listener.tailscale_ip
+            info["tailscale_port"] = self._tailscale_listener.port
+
+        # Add device_id (use first paired device's daemon identifier)
+        if self._device_store:
+            devices = list(self._device_store._devices.values())
+            if devices:
+                info["device_id"] = f"daemon-{devices[0].device_id[:8]}"
+
+        return info
+
     async def _start_ntfy_reconnection(self) -> None:
         """Start ntfy reconnection manager for cross-NAT reconnection.
 
@@ -418,6 +502,7 @@ class Daemon:
             stun_servers=self._config.stun_servers,
             on_reconnection=self._on_device_reconnected,
             capabilities_provider=self.get_tailscale_capabilities,
+            discovery_provider=self.get_discovery_info,
         )
 
         await self._ntfy_reconnection_manager.start()
@@ -450,6 +535,10 @@ class Daemon:
         # Stop ntfy reconnection manager
         if self._ntfy_reconnection_manager:
             await self._ntfy_reconnection_manager.stop()
+
+        # Stop mDNS service
+        if self._mdns_service:
+            await self._mdns_service.stop()
 
         # Stop Tailscale listener
         if self._tailscale_listener:

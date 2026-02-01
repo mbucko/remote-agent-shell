@@ -18,42 +18,25 @@ class QrGenerator:
 
     The QR code contains a base64-encoded protobuf payload with:
     - Protocol version (1)
-    - Daemon IP address
-    - Daemon port
     - Master secret (32 bytes)
-    - Session ID
-    - ntfy topic
-    - Tailscale IP/port (optional)
+
+    Everything else is derived from master_secret:
+    - session_id: derived via HKDF
+    - ntfy_topic: derived via SHA256
+
+    Daemon IP/port are discovered dynamically via mDNS or ntfy DISCOVER.
     """
 
     def __init__(
         self,
-        ip: str,
-        port: int,
         master_secret: bytes,
-        session_id: str,
-        ntfy_topic: str,
-        tailscale_ip: str | None = None,
-        tailscale_port: int | None = None,
     ):
         """Initialize QR generator.
 
         Args:
-            ip: Daemon's public IP address (IPv4 or IPv6).
-            port: Daemon's HTTP signaling port.
             master_secret: 32-byte master secret.
-            session_id: Pairing session ID.
-            ntfy_topic: ntfy topic for IP change notifications.
-            tailscale_ip: Optional Tailscale IP for direct VPN connection.
-            tailscale_port: Optional Tailscale port (defaults to 9876).
         """
-        self.ip = ip
-        self.port = port
         self.master_secret = master_secret
-        self.session_id = session_id
-        self.ntfy_topic = ntfy_topic
-        self.tailscale_ip = tailscale_ip
-        self.tailscale_port = tailscale_port
 
     def _create_payload(self) -> bytes:
         """Create protobuf payload.
@@ -61,15 +44,16 @@ class QrGenerator:
         Returns:
             Serialized protobuf bytes.
         """
+        # Only master_secret in QR code - everything else derived
         payload = QrPayload(
             version=1,
-            ip=self.ip,
-            port=self.port,
+            ip="",
+            port=0,
             master_secret=self.master_secret,
-            session_id=self.session_id,
-            ntfy_topic=self.ntfy_topic,
-            tailscale_ip=self.tailscale_ip or "",
-            tailscale_port=self.tailscale_port or 0,
+            session_id="",  # Derived from master_secret
+            ntfy_topic="",  # Derived from master_secret
+            tailscale_ip="",
+            tailscale_port=0,
         )
         return bytes(payload)
 
@@ -152,7 +136,7 @@ class QrGenerator:
 <body>
     <h1>Scan to Pair</h1>
     <img src="data:image/png;base64,{img_b64}" alt="QR Code">
-    <p>Session: {self.session_id[:8]}...</p>
+    <p>Scan with RemoteAgentShell app</p>
 </body>
 </html>
 """

@@ -79,6 +79,9 @@ Multiple keys are derived from the master secret using HKDF (HMAC-based Key Deri
 ```
 master_secret (32 bytes)
        │
+       ├── HKDF(secret, "session")  ──▶ session_id (24 hex chars)
+       │                                 Used for: Pairing session ID
+       │
        ├── HKDF(secret, "auth")     ──▶ auth_key (32 bytes)
        │                                 Used for: Authentication handshake
        │

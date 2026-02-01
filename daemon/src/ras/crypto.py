@@ -35,6 +35,7 @@ __all__ = [
     "derive_keys",
     "derive_key",
     "derive_ntfy_topic",
+    "derive_session_id",
     "encrypt",
     "decrypt",
     "compute_hmac",
@@ -309,6 +310,36 @@ def derive_ntfy_topic(master_secret: bytes) -> str:
 
     hash_bytes = hashlib.sha256(master_secret).digest()
     return "ras-" + hash_bytes[:6].hex()
+
+
+def derive_session_id(master_secret: bytes) -> str:
+    """Derive session ID from master secret.
+
+    The session ID is derived deterministically so both daemon and phone
+    can compute it from the master_secret without including it in the QR code.
+
+    Uses HKDF with "session" purpose, then takes first 24 hex chars.
+
+    Args:
+        master_secret: 32-byte master secret.
+
+    Returns:
+        24-character hex session ID.
+
+    Raises:
+        ValueError: If master_secret is not 32 bytes.
+    """
+    if len(master_secret) != KEY_LENGTH:
+        raise ValueError(f"Master secret must be {KEY_LENGTH} bytes")
+
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=KEY_LENGTH,
+        salt=None,
+        info=b"session",
+    )
+    derived = hkdf.derive(master_secret)
+    return derived[:12].hex()  # 24 hex chars
 
 
 def compute_signaling_hmac(

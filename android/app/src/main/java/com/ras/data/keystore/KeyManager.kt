@@ -48,6 +48,8 @@ class KeyManager @Inject constructor(
         private val KEY_DAEMON_PORT = stringPreferencesKey("daemon_port")
         private val KEY_TAILSCALE_IP = stringPreferencesKey("tailscale_ip")
         private val KEY_TAILSCALE_PORT = stringPreferencesKey("tailscale_port")
+        private val KEY_VPN_IP = stringPreferencesKey("vpn_ip")
+        private val KEY_VPN_PORT = stringPreferencesKey("vpn_port")
         private val KEY_IS_DISCONNECTED = booleanPreferencesKey("is_disconnected")
     }
 
@@ -132,17 +134,28 @@ class KeyManager @Inject constructor(
 
     /**
      * Store daemon connection info.
+     * IP/port are optional - daemon can be discovered via mDNS or ntfy.
      */
     suspend fun storeDaemonInfo(
-        ip: String,
-        port: Int,
+        ip: String? = null,
+        port: Int? = null,
         ntfyTopic: String,
         tailscaleIp: String? = null,
-        tailscalePort: Int? = null
+        tailscalePort: Int? = null,
+        vpnIp: String? = null,
+        vpnPort: Int? = null
     ) {
         context.dataStore.edit { prefs ->
-            prefs[KEY_DAEMON_IP] = ip
-            prefs[KEY_DAEMON_PORT] = port.toString()
+            if (ip != null) {
+                prefs[KEY_DAEMON_IP] = ip
+            } else {
+                prefs.remove(KEY_DAEMON_IP)
+            }
+            if (port != null) {
+                prefs[KEY_DAEMON_PORT] = port.toString()
+            } else {
+                prefs.remove(KEY_DAEMON_PORT)
+            }
             prefs[KEY_NTFY_TOPIC] = ntfyTopic
             if (tailscaleIp != null) {
                 prefs[KEY_TAILSCALE_IP] = tailscaleIp
@@ -153,6 +166,16 @@ class KeyManager @Inject constructor(
                 prefs[KEY_TAILSCALE_PORT] = tailscalePort.toString()
             } else {
                 prefs.remove(KEY_TAILSCALE_PORT)
+            }
+            if (vpnIp != null) {
+                prefs[KEY_VPN_IP] = vpnIp
+            } else {
+                prefs.remove(KEY_VPN_IP)
+            }
+            if (vpnPort != null) {
+                prefs[KEY_VPN_PORT] = vpnPort.toString()
+            } else {
+                prefs.remove(KEY_VPN_PORT)
             }
         }
     }
@@ -203,6 +226,24 @@ class KeyManager @Inject constructor(
     }
 
     /**
+     * Get stored VPN IP.
+     */
+    suspend fun getVpnIp(): String? {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_VPN_IP]
+        }.first()
+    }
+
+    /**
+     * Get stored VPN port.
+     */
+    suspend fun getVpnPort(): Int? {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_VPN_PORT]?.toIntOrNull()
+        }.first()
+    }
+
+    /**
      * Set whether user has manually disconnected.
      * When true, app should not auto-reconnect on launch.
      */
@@ -242,6 +283,8 @@ class KeyManager @Inject constructor(
             prefs.remove(KEY_NTFY_TOPIC)
             prefs.remove(KEY_TAILSCALE_IP)
             prefs.remove(KEY_TAILSCALE_PORT)
+            prefs.remove(KEY_VPN_IP)
+            prefs.remove(KEY_VPN_PORT)
             prefs.remove(KEY_IS_DISCONNECTED)
         }
     }

@@ -45,6 +45,7 @@ from ras.ntfy_signaling.validation import (
 )
 from ras.proto.ras.ras import (
     ConnectionCapabilities,
+    DiscoveryResponse,
     NtfySignalMessage,
     NtfySignalMessageMessageType,
 )
@@ -98,6 +99,7 @@ class NtfySignalingHandler:
         stun_servers: Optional[list[str]] = None,
         device_store: Optional[DeviceStoreProtocol] = None,
         capabilities_provider: Optional[Callable[[], dict]] = None,
+        discovery_provider: Optional[Callable[[], dict]] = None,
     ):
         """Initialize handler.
 
@@ -109,6 +111,9 @@ class NtfySignalingHandler:
             device_store: Device store for reconnection mode (required if reconnection enabled).
             capabilities_provider: Optional callable returning capabilities dict.
                                   Used to include Tailscale info in ANSWER messages.
+            discovery_provider: Optional callable returning discovery info dict.
+                               Keys: lan_ip, lan_port, vpn_ip, vpn_port, tailscale_ip,
+                               tailscale_port, public_ip, public_port, device_id.
         """
         signaling_key = derive_signaling_key(master_secret)
         self._crypto = NtfySignalingCrypto(signaling_key)
@@ -117,6 +122,7 @@ class NtfySignalingHandler:
         self._peer: Optional[Any] = None
         self._device_store = device_store
         self._capabilities_provider = capabilities_provider
+        self._discovery_provider = discovery_provider
 
         # Determine mode
         self._reconnection_mode = pending_session_id == ""
@@ -180,6 +186,10 @@ class NtfySignalingHandler:
         # Handle CAPABILITIES messages separately (simpler flow, no WebRTC)
         if msg.type == NtfySignalMessageMessageType.CAPABILITIES:
             return await self._handle_capabilities_message(msg)
+
+        # Handle DISCOVER messages (IP discovery, no WebRTC)
+        if msg.type == NtfySignalMessageMessageType.DISCOVER:
+            return await self._handle_discover_message(msg)
 
         # Determine if this is a reconnection request (empty session_id)
         is_reconnection_request = not msg.session_id
@@ -363,6 +373,130 @@ class NtfySignalingHandler:
             is_reconnection=True,
             is_capability_exchange=True,
         )
+
+    async def _handle_discover_message(
+        self, msg: NtfySignalMessage
+    ) -> Optional[HandlerResult]:
+        """Handle a DISCOVER message for IP discovery.
+
+        Returns all available IPs (LAN, VPN, Tailscale, public) so the phone
+        can try multiple connection strategies.
+
+        Args:
+            msg: The parsed DISCOVER message.
+
+        Returns:
+            HandlerResult with DISCOVER_RESPONSE, or None on error.
+        """
+        logger.info("Handling DISCOVER message")
+
+        # Only allow in reconnection mode (needs device validation)
+        if not self._reconnection_mode:
+            logger.info("Rejecting DISCOVER in pairing mode")
+            return None
+
+        # Validate device_id
+        if not self._device_store:
+            logger.warning("DISCOVER request but no device_store configured")
+            return None
+
+        if not msg.device_id:
+            logger.info("DISCOVER request missing device_id")
+            return None
+
+        device = self._device_store.get(msg.device_id)
+        if not device:
+            logger.info(f"Unknown device_id in DISCOVER: {msg.device_id[:8]}...")
+            return None
+
+        logger.info(f"Device validated for DISCOVER: {msg.device_id[:8]}...")
+
+        # Validate timestamp and nonce
+        now = int(time.time())
+        if abs(now - msg.timestamp) > 30:
+            logger.info(f"DISCOVER timestamp too old/new: {msg.timestamp}")
+            return None
+
+        if len(msg.nonce) != NONCE_SIZE:
+            logger.info(f"Invalid nonce size in DISCOVER: {len(msg.nonce)}")
+            return None
+
+        # Build discovery response
+        discovery = self._build_discovery_response()
+
+        # Create DISCOVER_RESPONSE message
+        response_msg = NtfySignalMessage(
+            type=NtfySignalMessageMessageType.DISCOVER_RESPONSE,
+            session_id="",  # Empty for reconnection mode
+            device_id="",  # Not needed in response
+            device_name="",  # Not needed in response
+            timestamp=int(time.time()),
+            nonce=os.urandom(NONCE_SIZE),
+            discovery=discovery,
+        )
+
+        # Encrypt response
+        try:
+            response_encrypted = self._crypto.encrypt(bytes(response_msg))
+            logger.info(
+                f"DISCOVER_RESPONSE encrypted: lan={discovery.lan_ip}:{discovery.lan_port}, "
+                f"vpn={discovery.vpn_ip}:{discovery.vpn_port}, "
+                f"tailscale={discovery.tailscale_ip}:{discovery.tailscale_port}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to encrypt DISCOVER_RESPONSE: {e}")
+            return None
+
+        return HandlerResult(
+            should_respond=True,
+            answer_encrypted=response_encrypted,
+            device_id=msg.device_id,
+            device_name=None,
+            peer=None,
+            is_reconnection=True,
+            is_capability_exchange=True,  # Reuse flag for non-WebRTC exchanges
+        )
+
+    def _build_discovery_response(self) -> DiscoveryResponse:
+        """Build discovery response with all available IPs.
+
+        Returns:
+            DiscoveryResponse with LAN, VPN, Tailscale, and public IPs.
+        """
+        discovery = DiscoveryResponse(
+            timestamp=int(time.time()),
+        )
+
+        if self._discovery_provider:
+            try:
+                info = self._discovery_provider()
+                if info:
+                    if "lan_ip" in info:
+                        discovery.lan_ip = info["lan_ip"]
+                    if "lan_port" in info:
+                        discovery.lan_port = info["lan_port"]
+                    if "vpn_ip" in info:
+                        discovery.vpn_ip = info["vpn_ip"]
+                    if "vpn_port" in info:
+                        discovery.vpn_port = info["vpn_port"]
+                    if "tailscale_ip" in info:
+                        discovery.tailscale_ip = info["tailscale_ip"]
+                    if "tailscale_port" in info:
+                        discovery.tailscale_port = info["tailscale_port"]
+                    if "public_ip" in info:
+                        discovery.public_ip = info["public_ip"]
+                    if "public_port" in info:
+                        discovery.public_port = info["public_port"]
+                    if "device_id" in info:
+                        discovery.device_id = info["device_id"]
+                    logger.debug(
+                        f"Discovery: lan={discovery.lan_ip}, vpn={discovery.vpn_ip}, "
+                        f"tailscale={discovery.tailscale_ip}"
+                    )
+            except Exception as e:
+                logger.warning(f"Error getting discovery info: {e}")
+
+        return discovery
 
     def _build_capabilities(self) -> ConnectionCapabilities:
         """Build connection capabilities for ANSWER message.

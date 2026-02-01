@@ -80,6 +80,8 @@ class NtfySignalMessageMessageType(betterproto.Enum):
     OFFER = 0
     ANSWER = 1
     CAPABILITIES = 2
+    DISCOVER = 3
+    DISCOVER_RESPONSE = 4
 
 
 class SignalErrorErrorCode(betterproto.Enum):
@@ -495,6 +497,9 @@ class NtfySignalMessage(betterproto.Message):
     capabilities: "ConnectionCapabilities" = betterproto.message_field(8)
     """Connection capabilities (used with CAPABILITIES type)"""
 
+    discovery: "DiscoveryResponse" = betterproto.message_field(9)
+    """Discovery response (used with DISCOVER_RESPONSE type)"""
+
 
 @dataclass(eq=False, repr=False)
 class ConnectionCapabilities(betterproto.Message):
@@ -513,6 +518,36 @@ class ConnectionCapabilities(betterproto.Message):
     supports_turn: bool = betterproto.bool_field(4)
     protocol_version: int = betterproto.int32_field(5)
     """Protocol version for compatibility"""
+
+
+@dataclass(eq=False, repr=False)
+class DiscoveryResponse(betterproto.Message):
+    """
+    Discovery response with all available IPs
+     Sent in response to DISCOVER message
+    """
+
+    lan_ip: str = betterproto.string_field(1)
+    """LAN IP (physical network interface)"""
+
+    lan_port: int = betterproto.int32_field(2)
+    vpn_ip: str = betterproto.string_field(3)
+    """VPN IP (non-Tailscale VPN like WireGuard, OpenVPN)"""
+
+    vpn_port: int = betterproto.int32_field(4)
+    tailscale_ip: str = betterproto.string_field(5)
+    """Tailscale IP (if on Tailscale network)"""
+
+    tailscale_port: int = betterproto.int32_field(6)
+    public_ip: str = betterproto.string_field(7)
+    """Public IP (via STUN, may not be directly reachable)"""
+
+    public_port: int = betterproto.int32_field(8)
+    device_id: str = betterproto.string_field(9)
+    """Device info"""
+
+    timestamp: int = betterproto.int64_field(10)
+    """Timestamp for freshness check"""
 
 
 @dataclass(eq=False, repr=False)
@@ -548,6 +583,15 @@ class QrPayload(betterproto.Message):
 
     tailscale_port: int = betterproto.uint32_field(8)
     """Optional: Daemon's Tailscale port (defaults to 9876 if not set)"""
+
+    vpn_ip: str = betterproto.string_field(9)
+    """
+    Optional: Daemon's VPN IP (non-Tailscale VPN like WireGuard, OpenVPN)
+     Fallback when LAN IP is not reachable but VPN is
+    """
+
+    vpn_port: int = betterproto.uint32_field(10)
+    """Optional: Daemon's VPN port (same as main port if not set)"""
 
 
 @dataclass(eq=False, repr=False)

@@ -13,10 +13,11 @@ sealed class CredentialStatus {
     /**
      * Valid credentials exist.
      * App can attempt reconnection.
+     * Daemon host/port may be null - discovered via mDNS or ntfy.
      */
     data class HasCredentials(
         val deviceId: String,
-        val daemonHost: String,
-        val daemonPort: Int
+        val daemonHost: String? = null,
+        val daemonPort: Int? = null
     ) : CredentialStatus()
 }

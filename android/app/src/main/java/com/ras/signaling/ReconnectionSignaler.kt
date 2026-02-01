@@ -5,6 +5,7 @@ import com.ras.crypto.KeyDerivation
 import com.ras.data.connection.ConnectionProgress
 import com.ras.data.connection.SdpInfo
 import com.ras.proto.ConnectionCapabilities
+import com.ras.proto.DiscoveryResponse
 import com.ras.proto.NtfySignalMessage
 import com.google.protobuf.ByteString
 import kotlinx.coroutines.CancellationException
@@ -67,6 +68,16 @@ sealed class CapabilityExchangeResult {
     object NetworkError : CapabilityExchangeResult()
     object DeviceNotFound : CapabilityExchangeResult()
     object AuthenticationFailed : CapabilityExchangeResult()
+}
+
+/**
+ * Result of host discovery.
+ */
+sealed class DiscoveryResult {
+    data class Success(val discovery: com.ras.proto.DiscoveryResponse) : DiscoveryResult()
+    object NetworkError : DiscoveryResult()
+    object DeviceNotFound : DiscoveryResult()
+    object AuthenticationFailed : DiscoveryResult()
 }
 
 /**
@@ -229,6 +240,145 @@ class ReconnectionSignaler(
 
         // Direct failed/timed out - ntfy was already warming up, await its result
         ntfyDeferred.await()
+    }
+
+    /**
+     * Discover daemon's current IPs via ntfy.
+     *
+     * Sends a DISCOVER message to get all available daemon IPs (LAN, VPN, Tailscale, public).
+     * This allows the phone to update its connection targets when IPs have changed.
+     *
+     * @param masterSecret Master secret from keystore
+     * @param deviceId This device's ID
+     * @param timeoutMs Timeout for discovery (default 10s)
+     * @param onProgress Optional callback for progress events
+     * @return Discovery result with all available IPs, or error
+     */
+    suspend fun discoverHosts(
+        masterSecret: ByteArray,
+        deviceId: String,
+        timeoutMs: Long = DEFAULT_CAPABILITY_NTFY_TIMEOUT_MS,
+        onProgress: SignalingProgressCallback? = null
+    ): DiscoveryResult {
+        // Derive signaling key
+        val signalingKey = NtfySignalingCrypto.deriveSignalingKey(masterSecret)
+        val crypto = NtfySignalingCrypto(signalingKey)
+
+        // Create validator for incoming DISCOVER_RESPONSE
+        val validator = NtfySignalMessageValidator(
+            pendingSessionId = "", // Empty for reconnection mode
+            expectedType = NtfySignalMessage.MessageType.DISCOVER_RESPONSE
+        )
+
+        // Compute topic
+        val topic = NtfySignalingClient.computeTopic(masterSecret)
+        Log.d(TAG, "Ntfy host discovery on topic: $topic")
+
+        try {
+            return withTimeout(timeoutMs) {
+                // Subscribe first
+                Log.d(TAG, "Subscribing to ntfy for host discovery...")
+                onProgress?.invoke(ConnectionProgress.HostDiscoveryStarted(topic))
+
+                val messageFlow = ntfyClient.subscribe(topic)
+                Log.d(TAG, "Connected to ntfy for host discovery")
+
+                // Create and encrypt DISCOVER request
+                val discoverMsg = NtfySignalMessage.newBuilder()
+                    .setType(NtfySignalMessage.MessageType.DISCOVER)
+                    .setSessionId("") // Empty = reconnection mode
+                    .setDeviceId(deviceId)
+                    .setTimestamp(System.currentTimeMillis() / 1000)
+                    .setNonce(ByteString.copyFrom(generateNonce()))
+                    .build()
+
+                val encryptedMsg = crypto.encryptToBase64(discoverMsg.toByteArray())
+
+                // Publish discover request
+                Log.d(TAG, "Publishing discovery request via ntfy")
+                ntfyClient.publishWithRetry(topic, encryptedMsg)
+                Log.d(TAG, "Discovery request published, waiting for response")
+
+                // Wait for valid DISCOVER_RESPONSE
+                messageFlow.collect { ntfyMessage ->
+                    if (ntfyMessage.event != "message" || ntfyMessage.message.isEmpty()) {
+                        return@collect
+                    }
+
+                    // Try to decrypt and validate message
+                    val discovery = processDiscoveryResponse(ntfyMessage.message, crypto, validator)
+                    if (discovery != null) {
+                        throw DiscoveryResponseReceivedException(discovery)
+                    }
+                }
+
+                // If we get here without a response, timeout
+                DiscoveryResult.NetworkError
+            }
+        } catch (e: DiscoveryResponseReceivedException) {
+            Log.i(TAG, "Received discovery via ntfy: lan=${e.discovery.lanIp}:${e.discovery.lanPort}, " +
+                    "vpn=${e.discovery.vpnIp}:${e.discovery.vpnPort}, " +
+                    "tailscale=${e.discovery.tailscaleIp}:${e.discovery.tailscalePort}")
+            // Clean up
+            ntfyClient.unsubscribe()
+            crypto.zeroKey()
+            validator.clearNonceCache()
+            return DiscoveryResult.Success(e.discovery)
+        } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "Ntfy host discovery timed out")
+            ntfyClient.unsubscribe()
+            crypto.zeroKey()
+            validator.clearNonceCache()
+            return DiscoveryResult.NetworkError
+        } catch (e: CancellationException) {
+            Log.d(TAG, "Ntfy host discovery cancelled")
+            ntfyClient.unsubscribe()
+            crypto.zeroKey()
+            validator.clearNonceCache()
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Ntfy host discovery failed: ${e.message}", e)
+            ntfyClient.unsubscribe()
+            crypto.zeroKey()
+            validator.clearNonceCache()
+            return DiscoveryResult.NetworkError
+        }
+    }
+
+    /**
+     * Process a discovery response message.
+     */
+    private fun processDiscoveryResponse(
+        encryptedMessage: String,
+        crypto: NtfySignalingCrypto,
+        validator: NtfySignalMessageValidator
+    ): DiscoveryResponse? {
+        return try {
+            // Decrypt
+            val decrypted = crypto.decryptFromBase64(encryptedMessage)
+
+            // Parse protobuf
+            val msg = NtfySignalMessage.parseFrom(decrypted)
+
+            // Filter out requests (which have device_id set)
+            // Responses from daemon have empty device_id
+            if (msg.deviceId.isNotEmpty()) {
+                Log.d(TAG, "Ignoring DISCOVER request (has device_id)")
+                return null
+            }
+
+            // Validate
+            val result = validator.validate(msg)
+            if (!result.isValid) {
+                return null
+            }
+
+            // Return discovery response
+            if (msg.hasDiscovery()) msg.discovery else null
+        } catch (e: Exception) {
+            // Silent ignore - could be wrong key, tampered, etc.
+            null
+        }
     }
 
     /**
@@ -788,4 +938,11 @@ private class ReconnectionAnswerReceivedException(
  */
 private class CapabilityResponseReceivedException(
     val capabilities: ConnectionCapabilities
+) : Exception()
+
+/**
+ * Internal exception used to break out of flow collection when discovery response is received.
+ */
+private class DiscoveryResponseReceivedException(
+    val discovery: DiscoveryResponse
 ) : Exception()

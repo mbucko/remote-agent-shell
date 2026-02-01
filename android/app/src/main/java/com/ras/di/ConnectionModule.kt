@@ -6,6 +6,7 @@ import com.ras.data.connection.DatagramSocketFactory
 import com.ras.data.connection.DefaultDatagramSocketFactory
 import com.ras.data.connection.TailscaleStrategy
 import com.ras.data.connection.WebRTCStrategy
+import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.data.webrtc.WebRTCClient
 import dagger.Module
 import dagger.Provides
@@ -42,6 +43,20 @@ object ConnectionModule {
     @Singleton
     fun provideDatagramSocketFactory(): DatagramSocketFactory {
         return DefaultDatagramSocketFactory()
+    }
+
+    /**
+     * Provides MdnsDiscoveryService for local network daemon discovery.
+     *
+     * Uses Android's NsdManager to discover _ras._tcp services on the local network.
+     * This enables fast local discovery (~10-50ms) without needing ntfy.
+     */
+    @Provides
+    @Singleton
+    fun provideMdnsDiscoveryService(
+        @ApplicationContext context: Context
+    ): MdnsDiscoveryService {
+        return MdnsDiscoveryService(context)
     }
 
     /**

@@ -129,6 +129,18 @@ data class ConnectionProgressInfo(
                     step = "Discovery",
                     detail = "CAPABILITIES ← ntfy.sh/${progress.topic.truncateTopic()} ✓"
                 )
+                is ConnectionProgress.HostDiscoveryStarted -> ConnectionProgressInfo(
+                    step = "Discovery",
+                    detail = "DISCOVER → ntfy.sh/${progress.topic.truncateTopic()}..."
+                )
+                is ConnectionProgress.HostDiscoveryReceived -> ConnectionProgressInfo(
+                    step = "Discovery",
+                    detail = "DISCOVER ← ${progress.lanIp ?: "no-lan"}:${progress.lanPort ?: 0} ✓"
+                )
+                is ConnectionProgress.HostDiscoveryFailed -> ConnectionProgressInfo(
+                    step = "Discovery",
+                    detail = "DISCOVER failed: ${progress.reason}"
+                )
                 is ConnectionProgress.Detecting -> ConnectionProgressInfo(
                     strategyName = progress.strategyName,
                     step = "Detecting",

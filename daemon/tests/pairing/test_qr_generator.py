@@ -1,7 +1,6 @@
 """Tests for QR code generation."""
 
 import base64
-import io
 import tempfile
 from pathlib import Path
 
@@ -17,25 +16,19 @@ class TestQrGeneratorPayload:
     @pytest.fixture
     def qr_generator(self):
         """Create a QR generator with test data."""
-        return QrGenerator(
-            ip="192.168.1.100",
-            port=8821,
-            master_secret=b"\x00" * 32,
-            session_id="abc123def456ghij",
-            ntfy_topic="ras-9f86d081884c",
-        )
+        return QrGenerator(master_secret=b"\x00" * 32)
 
-    def test_payload_contains_all_fields(self, qr_generator):
-        """Payload contains all required fields."""
+    def test_payload_contains_only_master_secret(self, qr_generator):
+        """Payload contains only master_secret - everything else derived."""
         payload_bytes = qr_generator._create_payload()
         parsed = QrPayload().parse(payload_bytes)
 
         assert parsed.version == 1
-        assert parsed.ip == "192.168.1.100"
-        assert parsed.port == 8821
+        assert parsed.ip == ""  # Not in QR
+        assert parsed.port == 0  # Not in QR
         assert parsed.master_secret == b"\x00" * 32
-        assert parsed.session_id == "abc123def456ghij"
-        assert parsed.ntfy_topic == "ras-9f86d081884c"
+        assert parsed.session_id == ""  # Derived from master_secret
+        assert parsed.ntfy_topic == ""  # Derived from master_secret
 
     def test_payload_version_is_1(self, qr_generator):
         """Payload version is always 1."""
@@ -49,19 +42,6 @@ class TestQrGeneratorPayload:
         # Should not raise
         QrPayload().parse(payload_bytes)
 
-    def test_ipv6_address(self):
-        """Works with IPv6 address."""
-        qr = QrGenerator(
-            ip="2001:db8::1",
-            port=8821,
-            master_secret=b"\x00" * 32,
-            session_id="abc123",
-            ntfy_topic="ras-test",
-        )
-        payload_bytes = qr._create_payload()
-        parsed = QrPayload().parse(payload_bytes)
-        assert parsed.ip == "2001:db8::1"
-
 
 class TestQrGeneratorTerminal:
     """Tests for terminal output."""
@@ -69,13 +49,7 @@ class TestQrGeneratorTerminal:
     @pytest.fixture
     def qr_generator(self):
         """Create a QR generator with test data."""
-        return QrGenerator(
-            ip="192.168.1.100",
-            port=8821,
-            master_secret=b"\x00" * 32,
-            session_id="abc123def456ghij",
-            ntfy_topic="ras-9f86d081884c",
-        )
+        return QrGenerator(master_secret=b"\x00" * 32)
 
     def test_terminal_output_not_empty(self, qr_generator):
         """Terminal output is not empty."""
@@ -100,13 +74,7 @@ class TestQrGeneratorPng:
     @pytest.fixture
     def qr_generator(self):
         """Create a QR generator with test data."""
-        return QrGenerator(
-            ip="192.168.1.100",
-            port=8821,
-            master_secret=b"\x00" * 32,
-            session_id="abc123def456ghij",
-            ntfy_topic="ras-9f86d081884c",
-        )
+        return QrGenerator(master_secret=b"\x00" * 32)
 
     def test_png_creates_file(self, qr_generator):
         """PNG output creates a file."""
@@ -141,13 +109,7 @@ class TestQrGeneratorHtml:
     @pytest.fixture
     def qr_generator(self):
         """Create a QR generator with test data."""
-        return QrGenerator(
-            ip="192.168.1.100",
-            port=8821,
-            master_secret=b"\x00" * 32,
-            session_id="abc123def456ghij",
-            ntfy_topic="ras-9f86d081884c",
-        )
+        return QrGenerator(master_secret=b"\x00" * 32)
 
     def test_html_contains_doctype(self, qr_generator):
         """HTML output contains DOCTYPE."""
@@ -164,24 +126,13 @@ class TestQrGeneratorHtml:
         html = qr_generator.to_html()
         assert "data:image/png;base64," in html
 
-    def test_html_contains_session_preview(self, qr_generator):
-        """HTML output shows session ID preview."""
-        html = qr_generator.to_html()
-        assert "abc123de" in html  # First 8 chars
-
 
 class TestQrGeneratorRoundTrip:
     """Tests for encoding/decoding round trip."""
 
     def test_payload_base64_roundtrip(self):
         """Payload can be base64 encoded and decoded."""
-        qr = QrGenerator(
-            ip="192.168.1.100",
-            port=8821,
-            master_secret=b"\x01\x02\x03" + b"\x00" * 29,
-            session_id="test-session-id-12345",
-            ntfy_topic="ras-abc123",
-        )
+        qr = QrGenerator(master_secret=b"\x01\x02\x03" + b"\x00" * 29)
 
         # Get the base64 payload
         payload_bytes = qr._create_payload()
@@ -191,8 +142,4 @@ class TestQrGeneratorRoundTrip:
         decoded = base64.b64decode(payload_b64)
         parsed = QrPayload().parse(decoded)
 
-        assert parsed.ip == "192.168.1.100"
-        assert parsed.port == 8821
         assert parsed.master_secret == b"\x01\x02\x03" + b"\x00" * 29
-        assert parsed.session_id == "test-session-id-12345"
-        assert parsed.ntfy_topic == "ras-abc123"

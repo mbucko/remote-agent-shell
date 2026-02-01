@@ -31,6 +31,10 @@ class CredentialRepositoryImpl @Inject constructor(
         val tailscaleIp = keyManager.getTailscaleIp()
         val tailscalePort = keyManager.getTailscalePort()
 
+        // Get optional VPN info
+        val vpnIp = keyManager.getVpnIp()
+        val vpnPort = keyManager.getVpnPort()
+
         return StoredCredentials(
             deviceId = keyManager.getOrCreateDeviceId(),
             masterSecret = masterSecret,
@@ -38,7 +42,9 @@ class CredentialRepositoryImpl @Inject constructor(
             daemonPort = daemonPort,
             ntfyTopic = ntfyTopic,
             daemonTailscaleIp = tailscaleIp,
-            daemonTailscalePort = tailscalePort
+            daemonTailscalePort = tailscalePort,
+            daemonVpnIp = vpnIp,
+            daemonVpnPort = vpnPort
         )
     }
 

@@ -36,4 +36,11 @@ message QrPayload {
 
   // Optional: Daemon's Tailscale port (defaults to 9876 if not set)
   uint32 tailscale_port = 8;
+
+  // Optional: Daemon's VPN IP (non-Tailscale VPN like WireGuard, OpenVPN)
+  // Fallback when LAN IP is not reachable but VPN is
+  string vpn_ip = 9;
+
+  // Optional: Daemon's VPN port (same as main port if not set)
+  uint32 vpn_port = 10;
 }

@@ -51,6 +51,27 @@ object KeyDerivation {
     }
 
     /**
+     * Derive session ID from master secret.
+     *
+     * Uses HKDF with "session" purpose, returns first 24 hex chars.
+     *
+     * @return 24-character hex session ID
+     */
+    fun deriveSessionId(masterSecret: ByteArray): String {
+        require(masterSecret.size == 32) { "Master secret must be 32 bytes" }
+
+        val info = "session".toByteArray(Charsets.UTF_8)
+
+        // HKDF-Extract with empty salt
+        val salt = ByteArray(HASH_LENGTH)
+        val prk = hmac(salt, masterSecret)
+
+        // HKDF-Expand
+        val derived = hkdfExpand(prk, info, KEY_LENGTH)
+        return derived.copyOf(12).toHex()  // 24 hex chars
+    }
+
+    /**
      * HMAC-SHA256.
      */
     private fun hmac(key: ByteArray, data: ByteArray): ByteArray {
