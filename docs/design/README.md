@@ -77,7 +77,8 @@ Native Android app for remote control.
 Direct peer-to-peer connection between phone and laptop.
 
 - WebRTC for P2P connectivity
-- STUN for NAT traversal (no relay/TURN)
+- STUN for NAT traversal (Google servers by default, configurable)
+- ntfy for signaling relay (ntfy.sh by default, configurable)
 - QR code for initial pairing
 - Encrypted IP updates via ntfy when address changes
 - **Protocol Buffers** for efficient message serialization (shared schema in `/proto/`)
@@ -149,28 +150,3 @@ End-to-end encryption and authentication.
 | [communication.md](communication.md) | P2P protocol, WebRTC, STUN, signaling, multi-device |
 | [security.md](security.md) | Encryption, authentication, key management |
 | [daemon.md](daemon.md) | Laptop daemon architecture, CLI, config |
-
-## Implementation Tasks
-
-Tasks are tracked in `.tasks/` directory with detailed contracts and test scenarios.
-
-### Completed Phases
-
-| Phase | Description |
-|-------|-------------|
-| 1-5 | Daemon foundation (CLI, P2P, Security, tmux) |
-| 6 | Android app setup |
-| 7 | QR code pairing |
-| 8 | ntfy (IP change notifications) |
-| 9 | Session management |
-
-### Remaining MVP Phases
-
-| Phase | Description | Task Files |
-|-------|-------------|------------|
-| 10 | Terminal I/O | `010a-terminal-contract.md`, `010b-terminal-daemon.md`, `010c-terminal-android.md` |
-| 11 | Clipboard sync | `011a-clipboard-contract.md` (no daemon changes needed) |
-| 12 | Push notifications | `012a-notifications-contract.md`, `012b-notifications-daemon.md`, `012c-notifications-android.md` |
-| 13 | Settings UI | `013a-settings-contract.md` |
-
-**After Phase 13, MVP (v0.1) is complete.**
