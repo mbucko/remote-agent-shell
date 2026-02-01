@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.graphics.Color
@@ -33,9 +34,12 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -56,8 +60,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -113,6 +119,9 @@ fun TerminalScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // Trigger for scroll-to-bottom button
+    var scrollToBottomTrigger by remember { mutableIntStateOf(0) }
 
     // Photo picker launcher
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -179,8 +188,9 @@ fun TerminalScreen(
                     modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
                 )
 
-                // Font size controls
-                FontSizeControls(
+                // Terminal controls: scroll to bottom, font size
+                TerminalControls(
+                    onScrollToBottom = { scrollToBottomTrigger++ },
                     onDecrease = {
                         viewModel.onFontSizeChanged((fontSize - FONT_SIZE_STEP).coerceAtLeast(FONT_SIZE_MIN))
                     },
@@ -191,17 +201,22 @@ fun TerminalScreen(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Raw mode toggle
+                // Raw mode toggle - fixed width to prevent button shifting
                 val isRawMode = (screenState as? TerminalScreenState.Connected)?.isRawMode == true
-                Text(
-                    text = if (isRawMode) stringResource(R.string.terminal_normal_mode)
-                           else stringResource(R.string.terminal_raw_mode),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                Box(
                     modifier = Modifier
+                        .width(80.dp)
                         .clickable { viewModel.onRawModeToggle() }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (isRawMode) stringResource(R.string.terminal_normal_mode)
+                               else stringResource(R.string.terminal_raw_mode),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -233,6 +248,7 @@ fun TerminalScreen(
                             emulator = viewModel.terminalEmulator,
                             modifier = Modifier.fillMaxSize(),
                             fontSize = fontSize,
+                            scrollToBottomTrigger = scrollToBottomTrigger,
                             onSizeChanged = { cols, rows ->
                                 viewModel.onTerminalSizeChanged(cols, rows)
                             }
@@ -319,22 +335,39 @@ fun TerminalScreen(
 }
 
 /**
- * Compact font size controls using Material 3 tonal icon buttons.
+ * Terminal control buttons: scroll to bottom, font size decrease/increase.
+ * Uses less rounded buttons for a more compact look.
  */
 @Composable
-private fun FontSizeControls(
+private fun TerminalControls(
+    onScrollToBottom: () -> Unit,
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val buttonShape = RoundedCornerShape(6.dp)
+
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(FONT_BUTTON_SPACING),
         verticalAlignment = Alignment.CenterVertically
     ) {
         FilledTonalIconButton(
+            onClick = onScrollToBottom,
+            modifier = Modifier.size(FONT_BUTTON_SIZE),
+            shape = buttonShape
+        ) {
+            Icon(
+                Icons.Default.KeyboardDoubleArrowDown,
+                contentDescription = "Scroll to bottom",
+                modifier = Modifier.size(FONT_ICON_SIZE)
+            )
+        }
+
+        FilledTonalIconButton(
             onClick = onDecrease,
-            modifier = Modifier.size(FONT_BUTTON_SIZE)
+            modifier = Modifier.size(FONT_BUTTON_SIZE),
+            shape = buttonShape
         ) {
             Icon(
                 Icons.Default.Remove,
@@ -345,7 +378,8 @@ private fun FontSizeControls(
 
         FilledTonalIconButton(
             onClick = onIncrease,
-            modifier = Modifier.size(FONT_BUTTON_SIZE)
+            modifier = Modifier.size(FONT_BUTTON_SIZE),
+            shape = buttonShape
         ) {
             Icon(
                 Icons.Default.Add,

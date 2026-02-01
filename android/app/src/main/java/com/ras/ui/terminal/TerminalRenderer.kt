@@ -78,6 +78,7 @@ fun TerminalRenderer(
     emulator: RemoteTerminalEmulator,
     modifier: Modifier = Modifier,
     fontSize: Float = 14f,
+    scrollToBottomTrigger: Int = 0,
     onSizeChanged: ((cols: Int, rows: Int) -> Unit)? = null
 ) {
     // Observe screen version to trigger recomposition
@@ -256,6 +257,13 @@ fun TerminalRenderer(
                     }
                 }
             }
+    }
+
+    // Scroll to bottom when triggered by parent (e.g., scroll-to-bottom button)
+    LaunchedEffect(scrollToBottomTrigger) {
+        if (scrollToBottomTrigger > 0 && hasInitiallyScrolled) {
+            listState.scrollToItem(0)
+        }
     }
 }
 
