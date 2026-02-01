@@ -196,11 +196,6 @@ class TerminalManager:
 
         tmux_name = session["tmux_name"]
 
-        # Ensure window-size is set to 'latest' for older sessions
-        # (sessions created before this code change won't have this option set)
-        if self._tmux_service:
-            await self._tmux_service.set_window_size_latest(tmux_name)
-
         # Initialize buffer if needed
         if session_id not in self._buffers:
             self._buffers[session_id] = CircularBuffer(self._buffer_size)
@@ -301,9 +296,10 @@ class TerminalManager:
         if session_id in self._attachments:
             self._attachments[session_id].discard(connection_id)
 
-            # Stop capture if no more attachments
+            # Stop capture and restore window-size if no more attachments
             if not self._attachments[session_id]:
                 await self._stop_capture(session_id)
+                await self._restore_window_size_to_latest(session_id)
 
         # Send detached event
         event = TerminalEvent(
@@ -510,6 +506,29 @@ class TerminalManager:
                 logger.debug(f"Connection was attached to session {session_id}")
                 if not connections:
                     await self._stop_capture(session_id)
+                    # Set window-size to 'latest' so it follows local terminal
+                    await self._restore_window_size_to_latest(session_id)
+
+    async def _restore_window_size_to_latest(self, session_id: str) -> None:
+        """Restore window-size to 'latest' after phone disconnects.
+
+        When the phone is connected, we resize to phone dimensions (manual).
+        When disconnected, set to 'latest' so window follows local terminal.
+
+        Args:
+            session_id: The session ID.
+        """
+        if not self._tmux_service:
+            logger.warning("Cannot restore window-size: no tmux_service")
+            return
+
+        session_info = self._sessions.get_session(session_id)
+        if session_info and session_info.get("tmux_name"):
+            tmux_name = session_info["tmux_name"]
+            logger.info(f"Restoring {tmux_name} window-size to latest on disconnect")
+            await self._tmux_service.set_window_size_latest(tmux_name)
+        else:
+            logger.warning(f"Cannot restore window-size: session {session_id} not found or no tmux_name")
 
     async def shutdown(self) -> None:
         """Shutdown all captures."""

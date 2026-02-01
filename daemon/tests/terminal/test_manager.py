@@ -205,37 +205,6 @@ class TestTerminalManagerAttach:
         assert attached_events[0].attached.rows == 24
 
     @pytest.mark.asyncio
-    async def test_attach_sets_window_size_latest(self):
-        """Attaching should set window-size to latest for auto-resize on disconnect."""
-        session_provider = MockSessionProvider()
-        session_provider.add_session("abc123def456", "ras-test-session")
-        tmux_service = MockTmuxService()
-        events = []
-
-        manager = TerminalManager(
-            session_provider=session_provider,
-            tmux_executor=MockTmuxExecutor(),
-            send_event=lambda conn_id, event: events.append((conn_id, event)),
-            tmux_service=tmux_service,
-        )
-
-        command = TerminalCommand(
-            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
-        )
-
-        with patch(
-            "ras.terminal.manager.OutputCapture"
-        ) as mock_capture_class:
-            mock_capture = AsyncMock()
-            mock_capture.start = AsyncMock()
-            mock_capture_class.return_value = mock_capture
-
-            await manager.handle_command("conn1", command)
-
-        # Should have called set_window_size_latest for the session
-        tmux_service.set_window_size_latest.assert_called_once_with("ras-test-session")
-
-    @pytest.mark.asyncio
     async def test_attach_to_externally_killed_session_sends_session_gone(self, setup):
         """Attaching to session killed externally should send SESSION_GONE error."""
         manager, _, events = setup
@@ -367,6 +336,36 @@ class TestTerminalManagerDetach:
 
         mock_capture.stop.assert_called_once()
         assert "abc123def456" not in manager._captures
+
+    @pytest.mark.asyncio
+    async def test_detach_restores_window_size_when_last(self):
+        """Detaching last connection should restore window-size to latest."""
+        session_provider = MockSessionProvider()
+        session_provider.add_session("abc123def456", "ras-test-session")
+        tmux_service = MockTmuxService()
+        events = []
+
+        manager = TerminalManager(
+            session_provider=session_provider,
+            tmux_executor=MockTmuxExecutor(),
+            send_event=lambda conn_id, event: events.append((conn_id, event)),
+            tmux_service=tmux_service,
+        )
+
+        # Set up with single attachment
+        manager._attachments["abc123def456"] = {"conn1"}
+        mock_capture = AsyncMock()
+        mock_capture.stop = AsyncMock()
+        manager._captures["abc123def456"] = mock_capture
+
+        command = TerminalCommand(
+            detach=DetachTerminal(session_id="abc123def456")
+        )
+
+        await manager.handle_command("conn1", command)
+
+        # Should restore window-size to latest when last connection detaches
+        tmux_service.set_window_size_latest.assert_called_once_with("ras-test-session")
 
 
 class TestTerminalManagerInput:
@@ -571,14 +570,25 @@ class TestTerminalManagerConnectionClosed:
         mock_capture.stop.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_connection_closed_does_not_resize(self, setup_with_tmux_service):
-        """Connection closed should not trigger resize (window-size=latest handles it)."""
+    async def test_connection_closed_restores_window_size_when_last(self, setup_with_tmux_service):
+        """Connection closed should restore window-size to latest when last connection leaves."""
         manager, tmux_service, _ = setup_with_tmux_service
-        manager._attachments["session1"] = {"conn1", "conn2"}
+        manager._attachments["session1"] = {"conn1"}  # Only one connection
 
         await manager.on_connection_closed("conn1")
 
-        # With window-size=latest, tmux auto-resizes - no explicit resize call needed
+        # Should restore window-size to latest when last connection closes
+        tmux_service.set_window_size_latest.assert_called_once_with("ras-test1")
+
+    @pytest.mark.asyncio
+    async def test_connection_closed_does_not_restore_when_others_attached(self, setup_with_tmux_service):
+        """Connection closed should not restore window-size when other connections remain."""
+        manager, tmux_service, _ = setup_with_tmux_service
+        manager._attachments["session1"] = {"conn1", "conn2"}  # Two connections
+
+        await manager.on_connection_closed("conn1")
+
+        # Should NOT restore - another connection is still attached
         tmux_service.set_window_size_latest.assert_not_called()
 
     @pytest.mark.asyncio
