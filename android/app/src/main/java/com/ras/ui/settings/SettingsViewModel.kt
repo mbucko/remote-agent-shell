@@ -237,10 +237,14 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * Disconnect from the daemon and set disconnected flag.
+     *
+     * Sends a graceful disconnect message to the daemon first, allowing it
+     * to clean up immediately (e.g., resize terminal windows) without waiting
+     * for heartbeat timeout.
      */
     fun disconnect() {
         viewModelScope.launch {
-            connectionManager.disconnect()
+            connectionManager.disconnectGracefully("user_request")
             keyManager.setDisconnected(true)
         }
     }

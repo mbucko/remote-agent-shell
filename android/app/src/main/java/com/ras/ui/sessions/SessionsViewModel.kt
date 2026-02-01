@@ -229,10 +229,13 @@ class SessionsViewModel @Inject constructor(
 
     /**
      * Disconnect from the daemon and navigate to disconnected screen.
+     *
+     * Sends a graceful disconnect message to the daemon first, allowing it
+     * to clean up immediately (e.g., resize terminal windows).
      */
     fun disconnect(onNavigate: () -> Unit) {
         viewModelScope.launch {
-            connectionManager.disconnect()
+            connectionManager.disconnectGracefully("user_request")
             keyManager.setDisconnected(true)
             onNavigate()
         }

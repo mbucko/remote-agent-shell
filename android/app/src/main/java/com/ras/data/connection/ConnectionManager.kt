@@ -6,6 +6,7 @@ import com.ras.crypto.CryptoException
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.di.IoDispatcher
 import com.ras.proto.ConnectionReady
+import com.ras.proto.Disconnect
 import com.ras.util.GlobalConnectionTimer
 import com.ras.proto.InitialState
 import com.ras.proto.Heartbeat
@@ -469,6 +470,44 @@ class ConnectionManager @Inject constructor(
             .build()
         val plaintext = command.toByteArray()
         sendEncrypted(plaintext)
+    }
+
+    /**
+     * Send a graceful disconnect message to the daemon.
+     *
+     * This allows the daemon to clean up immediately (e.g., resize terminal windows)
+     * without waiting for heartbeat timeout detection.
+     *
+     * @param reason Optional reason for disconnect (e.g., "user_request", "app_closing")
+     */
+    suspend fun sendGracefulDisconnect(reason: String = "user_request") {
+        try {
+            val disconnect = Disconnect.newBuilder()
+                .setReason(reason)
+                .build()
+            val command = RasCommand.newBuilder()
+                .setDisconnect(disconnect)
+                .build()
+            val plaintext = command.toByteArray()
+            sendEncrypted(plaintext)
+            Log.i(TAG, "Sent graceful disconnect: $reason")
+        } catch (e: Exception) {
+            // Best effort - don't fail the disconnect if we can't send the message
+            Log.w(TAG, "Failed to send graceful disconnect message", e)
+        }
+    }
+
+    /**
+     * Disconnect gracefully by notifying the daemon first.
+     *
+     * Sends a Disconnect message to the daemon, allowing it to clean up immediately,
+     * then closes the local connection.
+     */
+    suspend fun disconnectGracefully(reason: String = "user_request") {
+        sendGracefulDisconnect(reason)
+        // Small delay to let the message be sent
+        delay(100)
+        disconnect()
     }
 
     /**

@@ -28,7 +28,8 @@ class HeartbeatConfig:
     All intervals should be less than SCTP timeout (~30s).
     """
     send_interval: float = 15.0  # How often to send heartbeats (seconds)
-    receive_timeout: float = 60.0  # Consider dead if no data for this long
+    receive_timeout: float = 60.0  # Consider stale if no data for this long
+    disconnect_timeout: float = 120.0  # Close connection if stale for this long
 
     def __post_init__(self):
         if self.send_interval >= 30.0:
@@ -36,6 +37,8 @@ class HeartbeatConfig:
                 f"send_interval ({self.send_interval}s) >= SCTP timeout (~30s), "
                 "connections may drop"
             )
+        if self.disconnect_timeout <= self.receive_timeout:
+            self.disconnect_timeout = self.receive_timeout * 2
 
 
 @dataclass
@@ -59,8 +62,9 @@ class ConnectionHealth:
         return time.time() - self.last_activity
 
 
-# Type alias for send callback
+# Type alias for callbacks
 SendCallback = Callable[[str, bytes], Coroutine[Any, Any, None]]
+DisconnectCallback = Callable[[str], Coroutine[Any, Any, None]]
 
 
 class HeartbeatManager:
@@ -89,15 +93,18 @@ class HeartbeatManager:
         self,
         config: HeartbeatConfig,
         send_callback: SendCallback,
+        disconnect_callback: Optional[DisconnectCallback] = None,
     ):
         """Initialize the heartbeat manager.
 
         Args:
             config: Heartbeat configuration
             send_callback: Async function to send bytes to a device
+            disconnect_callback: Optional async function to disconnect a device
         """
         self._config = config
         self._send = send_callback
+        self._disconnect = disconnect_callback
         self._sequence = 0
         self._connections: Dict[str, ConnectionHealth] = {}
         self._running = False
@@ -202,12 +209,30 @@ class HeartbeatManager:
         """Send heartbeat to all tracked connections."""
         now = time.time()
         stale_threshold = self._config.receive_timeout
+        disconnect_threshold = self._config.disconnect_timeout
 
         for device_id, health in list(self._connections.items()):
-            # Check for stale connections
-            if now - health.last_activity > stale_threshold:
+            idle_time = now - health.last_activity
+
+            # Disconnect if stale for too long
+            if idle_time > disconnect_threshold:
                 logger.warning(
-                    f"Connection stale ({health.seconds_since_activity:.0f}s idle): "
+                    f"Connection dead ({idle_time:.0f}s idle), disconnecting: "
+                    f"{device_id[:8]}..."
+                )
+                if self._disconnect:
+                    try:
+                        await self._disconnect(device_id)
+                    except Exception as e:
+                        logger.error(f"Failed to disconnect {device_id[:8]}: {e}")
+                # Remove from tracking (disconnect callback should also do this)
+                self._connections.pop(device_id, None)
+                continue
+
+            # Check for stale connections (warn but don't disconnect yet)
+            if idle_time > stale_threshold:
+                logger.warning(
+                    f"Connection stale ({idle_time:.0f}s idle): "
                     f"{device_id[:8]}..."
                 )
                 continue  # Don't send heartbeat to stale connections

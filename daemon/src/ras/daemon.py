@@ -26,6 +26,7 @@ from ras.server import UnifiedServer
 from ras.tailscale import TailscaleListener, TailscalePeer
 from ras.proto.ras import (
     ConnectionReady,
+    Disconnect,
     Heartbeat,
     InitialState,
     Ping,
@@ -214,6 +215,7 @@ class Daemon:
         self._dispatcher.register("ping", self._handle_ping)
         self._dispatcher.register("heartbeat", self._handle_heartbeat)
         self._dispatcher.register("connection_ready", self._handle_connection_ready)
+        self._dispatcher.register("disconnect", self._handle_disconnect)
         logger.debug("Message handlers registered")
 
     async def _initialize_managers(self) -> None:
@@ -627,6 +629,18 @@ class Daemon:
     async def _handle_heartbeat(self, device_id: str, heartbeat: Heartbeat) -> None:
         """Handle incoming heartbeat from phone."""
         self._heartbeat_manager.on_heartbeat_received(device_id, heartbeat)
+
+    async def _handle_disconnect(self, device_id: str, disconnect: Disconnect) -> None:
+        """Handle graceful disconnect request from phone.
+
+        Closes the connection immediately instead of waiting for heartbeat timeout.
+        This allows the daemon to clean up and resize terminal windows promptly.
+        """
+        reason = disconnect.reason or "user_request"
+        logger.info(f"Graceful disconnect from {device_id[:8]}...: {reason}")
+
+        # Close the connection - this triggers _on_connection_lost which handles cleanup
+        await self._connection_manager.close_connection(device_id)
 
     async def _handle_connection_ready(
         self, device_id: str, ready: ConnectionReady

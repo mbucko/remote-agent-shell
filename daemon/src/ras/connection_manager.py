@@ -154,6 +154,29 @@ class ConnectionManager:
         """Get connection by device ID."""
         return self.connections.get(device_id)
 
+    async def close_connection(self, device_id: str) -> None:
+        """Close a specific connection by device ID.
+
+        This triggers the normal disconnect handling (on_connection_lost callback).
+
+        Args:
+            device_id: The device ID to close.
+        """
+        conn = None
+        async with self._lock:
+            if device_id in self.connections:
+                conn = self.connections.pop(device_id)
+
+        if conn is not None:
+            try:
+                await conn.close()
+            except Exception as e:
+                logger.debug(f"Error closing connection {device_id}: {e}")
+
+            # Trigger the disconnect callback
+            if self._on_connection_lost:
+                await self._on_connection_lost(device_id)
+
     async def _handle_disconnect(self, device_id: str) -> None:
         """Handle connection disconnect (thread-safe)."""
         async with self._lock:

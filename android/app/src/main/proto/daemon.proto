@@ -39,6 +39,14 @@ message Heartbeat {
     uint64 sequence = 2;    // Monotonic sequence number for debugging
 }
 
+// ============ Graceful Disconnect ============
+// Sent by phone when user explicitly disconnects
+// Allows daemon to clean up immediately without waiting for heartbeat timeout
+
+message Disconnect {
+    string reason = 1;      // Optional reason for disconnect (e.g., "user_request", "app_closing")
+}
+
 // ============ Initial State ============
 
 // Sent to phone immediately after connection established
@@ -65,6 +73,7 @@ message RasCommand {
         Ping ping = 4;
         ConnectionReady connection_ready = 5;
         Heartbeat heartbeat = 6;
+        Disconnect disconnect = 7;
     }
 }
 
