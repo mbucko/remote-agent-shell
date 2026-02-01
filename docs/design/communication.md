@@ -109,7 +109,7 @@ After scanning QR code, phone connects via HTTP to exchange SDP, then establishe
 │  Phone   │                                          │  Laptop  │
 └────┬─────┘                                          └────┬─────┘
      │                                                     │
-     │  1. Scan QR code (get master_secret)                 │
+     │  1. Scan QR code (get master_secret)                │
      │  1a. Derive session_id, ntfy_topic from secret      │
      │  1b. Discover daemon via mDNS or ntfy DISCOVER      │
      │                                                     │
