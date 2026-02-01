@@ -60,6 +60,8 @@ class NtfyPublisher:
         """Exit async context, closing owned session."""
         if self._owns_session and self._session:
             await self._session.close()
+            # Allow event loop to clean up connector (prevents "Unclosed client session" warning)
+            await asyncio.sleep(0)
             self._session = None
 
     @property
@@ -145,4 +147,6 @@ class NtfyPublisher:
         """Close the HTTP session if owned."""
         if self._owns_session and self._session:
             await self._session.close()
+            # Allow event loop to clean up connector (prevents "Unclosed client session" warning)
+            await asyncio.sleep(0)
             self._session = None

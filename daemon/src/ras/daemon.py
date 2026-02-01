@@ -192,6 +192,7 @@ class Daemon:
     async def stop(self) -> None:
         """Stop the daemon gracefully."""
         self._running = False
+        await self._shutdown()
 
     async def _validate_environment(self) -> None:
         """Validate required tools and resources."""

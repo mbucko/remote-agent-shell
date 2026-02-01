@@ -306,7 +306,11 @@ class TestHeartbeatIntegration:
     @pytest.mark.asyncio
     async def test_daemon_registers_connection_with_heartbeat(self, daemon):
         """When connection is added, daemon should register with heartbeat manager."""
-        mock_peer = AsyncMock()
+        # Use Mock (not AsyncMock) for peer - on_message/on_close are sync methods
+        # that just set callbacks, they don't return coroutines
+        mock_peer = Mock()
+        mock_peer.send = AsyncMock()
+        mock_peer.close = AsyncMock()
         mock_codec = Mock()
         mock_codec.encode.return_value = b"encoded"
         mock_codec.decode.return_value = b"decoded"

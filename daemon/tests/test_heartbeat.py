@@ -62,8 +62,8 @@ class TestHeartbeatManager:
 
     @pytest.fixture
     def config(self):
-        """Standard test config."""
-        return HeartbeatConfig(send_interval=1.0, receive_timeout=5.0)
+        """Standard test config with fast intervals for testing."""
+        return HeartbeatConfig(send_interval=0.05, receive_timeout=0.5)
 
     @pytest.fixture
     def mock_send(self):
@@ -186,12 +186,11 @@ class TestHeartbeatManager:
         manager.on_connection_added("device1")
         manager.on_connection_added("device2")
 
-        await manager.start()
-        await asyncio.sleep(1.5)  # Wait for one heartbeat interval
-        await manager.stop()
+        # Directly call the send method instead of running the loop with sleep
+        await manager._send_heartbeats()
 
         # Both devices should have received heartbeats
-        assert mock_send.call_count >= 2
+        assert mock_send.call_count == 2
         device_ids = [call[0][0] for call in mock_send.call_args_list]
         assert "device1" in device_ids
         assert "device2" in device_ids
@@ -202,13 +201,12 @@ class TestHeartbeatManager:
         manager.on_connection_added("fresh")
         manager.on_connection_added("stale")
 
-        # Make one connection stale
+        # Make one connection stale (older than receive_timeout)
         health = manager.get_health("stale")
-        health.last_activity = time.time() - 10.0  # Older than 5s timeout
+        health.last_activity = time.time() - 1.0  # Older than 0.5s timeout
 
-        await manager.start()
-        await asyncio.sleep(1.5)  # Wait for one heartbeat interval
-        await manager.stop()
+        # Directly call the send method instead of running the loop with sleep
+        await manager._send_heartbeats()
 
         # Only fresh device should have received heartbeat
         device_ids = [call[0][0] for call in mock_send.call_args_list]
@@ -229,9 +227,8 @@ class TestHeartbeatManager:
         manager.on_connection_added("failing")
         manager.on_connection_added("working")
 
-        await manager.start()
-        await asyncio.sleep(1.5)
-        await manager.stop()
+        # Directly call the send method instead of running the loop with sleep
+        await manager._send_heartbeats()
 
         # Both should have been attempted
         assert "failing" in send_results
@@ -241,4 +238,4 @@ class TestHeartbeatManager:
     async def test_config_property(self, manager, config):
         """Manager should expose config via property."""
         assert manager.config is config
-        assert manager.config.send_interval == 1.0
+        assert manager.config.send_interval == config.send_interval

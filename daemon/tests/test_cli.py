@@ -115,7 +115,8 @@ class TestPairCommand:
         from unittest.mock import MagicMock
 
         # Mock aiohttp.ClientSession to return expected API response
-        with patch("aiohttp.ClientSession") as mock_session_class:
+        with patch("aiohttp.ClientSession") as mock_session_class, \
+             patch("asyncio.sleep", new_callable=AsyncMock):  # Skip polling delays
             mock_session = MagicMock()
             mock_session_class.return_value.__aenter__.return_value = mock_session
 
@@ -151,7 +152,8 @@ class TestPairCommand:
     def test_pair_command_uses_only_master_secret(self, runner):
         """ras pair only uses master_secret from QR data (no ip/port)."""
         # This test verifies the fix for the KeyError bug
-        with patch("aiohttp.ClientSession") as mock_session_class:
+        with patch("aiohttp.ClientSession") as mock_session_class, \
+             patch("asyncio.sleep", new_callable=AsyncMock):  # Skip polling delays
             from unittest.mock import MagicMock
 
             mock_session = MagicMock()

@@ -1,5 +1,7 @@
 """Pytest configuration and shared fixtures."""
 
+import asyncio
+
 import pytest
 
 
@@ -11,6 +13,19 @@ def reset_logging_state():
     reset_logging()
     yield
     reset_logging()
+
+
+@pytest.fixture(autouse=True)
+async def cleanup_aiohttp_sessions():
+    """Give aiohttp sessions time to clean up their connectors.
+
+    aiohttp's ClientSession.close() doesn't wait for the underlying
+    connector to fully close. This can cause "Unclosed client session"
+    warnings when the event loop closes before cleanup completes.
+    """
+    yield
+    # Give connector time to close (prevents "Unclosed client session" warnings)
+    await asyncio.sleep(0)
 
 
 @pytest.fixture(autouse=True)

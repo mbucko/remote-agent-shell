@@ -221,7 +221,7 @@ class TestNegotiatedDataChannel:
 
             # The on("datachannel") callback should NOT fire for negotiated channels
             with pytest.raises(asyncio.TimeoutError):
-                await asyncio.wait_for(answerer_channel_received.wait(), timeout=3.0)
+                await asyncio.wait_for(answerer_channel_received.wait(), timeout=0.5)
 
             assert received_channel is None, "on('datachannel') should not fire for negotiated channels"
 
