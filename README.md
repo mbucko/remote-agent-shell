@@ -351,6 +351,11 @@ implementations are compatible:
 - `ntfy_signaling.json` - ntfy signaling relay encryption
 - `sessions.json` - Session management protocol
 
+## Roadmap
+
+- [ ] Support multiple paired devices (currently one device at a time)
+- [ ] Linux daemon support
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
