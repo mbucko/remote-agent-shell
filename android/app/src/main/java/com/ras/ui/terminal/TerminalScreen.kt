@@ -31,8 +31,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,6 +85,17 @@ import com.ras.ui.theme.TerminalBackground
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
+// Font size constants
+private const val FONT_SIZE_MIN = 8f
+private const val FONT_SIZE_MAX = 24f
+private const val FONT_SIZE_DEFAULT = 12f
+private const val FONT_SIZE_STEP = 2f
+
+// Font size control button dimensions
+private val FONT_BUTTON_SIZE = 32.dp
+private val FONT_ICON_SIZE = 18.dp
+private val FONT_BUTTON_SPACING = 12.dp
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TerminalScreen(
@@ -101,8 +115,8 @@ fun TerminalScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Font size for terminal (adjustable via pinch zoom)
-    var fontSize by remember { mutableFloatStateOf(12f) }
+    // Font size for terminal (adjustable via +/- buttons)
+    var fontSize by remember { mutableFloatStateOf(FONT_SIZE_DEFAULT) }
 
     // Photo picker launcher
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -168,6 +182,15 @@ fun TerminalScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
                 )
+
+                // Font size controls
+                FontSizeControls(
+                    onDecrease = { fontSize = (fontSize - FONT_SIZE_STEP).coerceAtLeast(FONT_SIZE_MIN) },
+                    onIncrease = { fontSize = (fontSize + FONT_SIZE_STEP).coerceAtMost(FONT_SIZE_MAX) }
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
                 // Raw mode toggle
                 val isRawMode = (screenState as? TerminalScreenState.Connected)?.isRawMode == true
                 Text(
@@ -210,7 +233,6 @@ fun TerminalScreen(
                             emulator = viewModel.terminalEmulator,
                             modifier = Modifier.fillMaxSize(),
                             fontSize = fontSize,
-                            onFontSizeChanged = { newSize -> fontSize = newSize },
                             onSizeChanged = { cols, rows ->
                                 viewModel.onTerminalSizeChanged(cols, rows)
                             }
@@ -292,6 +314,44 @@ fun TerminalScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        }
+    }
+}
+
+/**
+ * Compact font size controls using Material 3 tonal icon buttons.
+ */
+@Composable
+private fun FontSizeControls(
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(FONT_BUTTON_SPACING),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        FilledTonalIconButton(
+            onClick = onDecrease,
+            modifier = Modifier.size(FONT_BUTTON_SIZE)
+        ) {
+            Icon(
+                Icons.Default.Remove,
+                contentDescription = "Decrease font size",
+                modifier = Modifier.size(FONT_ICON_SIZE)
+            )
+        }
+
+        FilledTonalIconButton(
+            onClick = onIncrease,
+            modifier = Modifier.size(FONT_BUTTON_SIZE)
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = "Increase font size",
+                modifier = Modifier.size(FONT_ICON_SIZE)
+            )
         }
     }
 }

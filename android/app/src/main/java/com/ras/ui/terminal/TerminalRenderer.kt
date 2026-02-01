@@ -1,8 +1,6 @@
 package com.ras.ui.terminal
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,7 +48,6 @@ fun TerminalRenderer(
     emulator: RemoteTerminalEmulator,
     modifier: Modifier = Modifier,
     fontSize: Float = 14f,
-    onFontSizeChanged: ((Float) -> Unit)? = null,
     onSizeChanged: ((cols: Int, rows: Int) -> Unit)? = null
 ) {
     // Observe screen version to trigger recomposition
@@ -68,6 +65,10 @@ fun TerminalRenderer(
 
     // Track if we've done the initial scroll to bottom
     var hasInitiallyScrolled by remember { mutableStateOf(false) }
+
+    // Track whether user is at/near bottom (for font size changes)
+    // This is continuously updated based on scroll state, capturing position BEFORE font changes
+    var isAtBottom by remember { mutableStateOf(true) }
 
     val density = LocalDensity.current
 
@@ -119,21 +120,10 @@ fun TerminalRenderer(
         }
     }
 
-    // Pinch zoom state for font size adjustment
-    val transformableState = rememberTransformableState { zoomChange, _, _ ->
-        if (onFontSizeChanged != null) {
-            val newSize = (fontSize * zoomChange).coerceIn(8f, 24f)
-            if (newSize != fontSize) {
-                onFontSizeChanged(newSize)
-            }
-        }
-    }
-
     Box(
         modifier = modifier
             .background(TerminalColors.background)
             .clipToBounds()
-            .transformable(state = transformableState)
             .onGloballyPositioned { coordinates ->
                 val width = coordinates.size.width
                 val height = coordinates.size.height
@@ -179,6 +169,33 @@ fun TerminalRenderer(
                     fontSize = fontSize,
                     fontFamily = jetBrainsMono
                 )
+            }
+        }
+    }
+
+    // Track scroll position continuously for font size changes
+    // This captures whether user is at bottom BEFORE font size changes
+    LaunchedEffect(listState.firstVisibleItemIndex, listState.canScrollForward) {
+        if (hasInitiallyScrolled) {
+            isAtBottom = !listState.canScrollForward
+        }
+    }
+
+    // Preserve scroll position when font size changes
+    // (row heights change, which can confuse LazyColumn)
+    LaunchedEffect(fontSize) {
+        if (hasInitiallyScrolled && totalRows > 0) {
+            val itemToRestore = listState.firstVisibleItemIndex
+
+            // Wait for layout to settle with new font size
+            awaitFrame()
+
+            if (isAtBottom) {
+                // User was at bottom - stay at bottom
+                listState.scrollToItem(totalRows - 1)
+            } else if (itemToRestore > 0) {
+                // Restore previous position
+                listState.scrollToItem(itemToRestore)
             }
         }
     }

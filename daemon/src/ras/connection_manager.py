@@ -121,7 +121,12 @@ class ConnectionManager:
         if old_conn is not None:
             # Remove close handler before closing to avoid race
             old_conn.peer.on_close(lambda: None)
-            asyncio.create_task(old_conn.close())
+            # Must await close to ensure ICE timers are cancelled before setting up new connection
+            # Otherwise aioice may try to use closed transports
+            try:
+                await old_conn.close()
+            except Exception as e:
+                logger.debug(f"Error closing old connection: {e}")
 
         # Set up message handler (wraps with decryption)
         # Must be async because peer.py awaits the callback

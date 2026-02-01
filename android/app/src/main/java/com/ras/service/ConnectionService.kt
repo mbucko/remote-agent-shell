@@ -27,11 +27,25 @@ class ConnectionService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Must call startForeground immediately to avoid ForegroundServiceDidNotStartInTimeException
+        promoteToForeground()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = buildNotification(getString(R.string.notification_connecting))
+        // Safe to call again - just updates the notification
+        promoteToForeground()
+        return START_STICKY
+    }
 
+    /**
+     * Promote service to foreground with notification.
+     *
+     * CRITICAL: Must be called within 5 seconds of startForegroundService() or Android
+     * will throw ForegroundServiceDidNotStartInTimeException and crash the app.
+     * Safe to call multiple times - subsequent calls just update the notification.
+     */
+    private fun promoteToForeground() {
+        val notification = buildNotification(getString(R.string.notification_connecting))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
@@ -41,8 +55,6 @@ class ConnectionService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-
-        return START_STICKY
     }
 
     override fun onBind(intent: Intent): IBinder = binder
