@@ -31,15 +31,13 @@ class QrPayloadParserTest {
     }
 
     @Test
-    fun `parse valid IPv4 payload`() {
+    fun `parse valid payload with only master secret`() {
+        // New QR format: only master_secret is required, everything else derived
         val masterSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
         val payload = QrPayload.newBuilder()
             .setVersion(1)
-            .setIp("192.168.1.100")
-            .setPort(8821)
             .setMasterSecret(ByteString.copyFrom(masterSecret))
-            .setSessionId("abc123def456")
-            .setNtfyTopic("ras-abc123")
+            // IP, port, sessionId, ntfyTopic are all empty (derived or discovered)
             .build()
 
         val base64 = java.util.Base64.getEncoder().encodeToString(payload.toByteArray())
@@ -48,11 +46,10 @@ class QrPayloadParserTest {
 
         assertTrue(result is QrParseResult.Success)
         val success = result as QrParseResult.Success
-        assertEquals("192.168.1.100", success.payload.ip)
-        assertEquals(8821, success.payload.port)
-        assertEquals("abc123def456", success.payload.sessionId)
-        assertEquals("ras-abc123", success.payload.ntfyTopic)
         assertTrue(masterSecret.contentEquals(success.payload.masterSecret))
+        // Session ID and ntfy topic should be derived from master secret
+        assertTrue(success.payload.sessionId.isNotEmpty())
+        assertTrue(success.payload.ntfyTopic.startsWith("ras-"))
     }
 
     @Test
@@ -105,23 +102,21 @@ class QrPayloadParserTest {
     }
 
     @Test
-    fun `reject missing IP`() {
+    fun `accept empty IP - discovered via mDNS`() {
+        // New QR format: IP is optional (discovered via mDNS)
         val masterSecret = ByteArray(32)
         val payload = QrPayload.newBuilder()
             .setVersion(1)
             .setIp("")
-            .setPort(8821)
+            .setPort(0)
             .setMasterSecret(ByteString.copyFrom(masterSecret))
-            .setSessionId("abc123")
-            .setNtfyTopic("ras-abc123")
             .build()
 
         val base64 = java.util.Base64.getEncoder().encodeToString(payload.toByteArray())
 
         val result = QrPayloadParser.parse(base64)
 
-        assertTrue(result is QrParseResult.Error)
-        assertEquals(QrParseResult.ErrorCode.MISSING_FIELD, (result as QrParseResult.Error).code)
+        assertTrue(result is QrParseResult.Success)
     }
 
     @Test
@@ -145,43 +140,41 @@ class QrPayloadParserTest {
     }
 
     @Test
-    fun `reject invalid port - zero`() {
+    fun `accept port zero - discovered via mDNS`() {
+        // New QR format: port 0 means "discover via mDNS"
         val masterSecret = ByteArray(32)
         val payload = QrPayload.newBuilder()
             .setVersion(1)
-            .setIp("192.168.1.1")
+            .setIp("")
             .setPort(0)
             .setMasterSecret(ByteString.copyFrom(masterSecret))
-            .setSessionId("abc123")
-            .setNtfyTopic("ras-abc123")
             .build()
 
         val base64 = java.util.Base64.getEncoder().encodeToString(payload.toByteArray())
 
         val result = QrPayloadParser.parse(base64)
 
-        assertTrue(result is QrParseResult.Error)
-        assertEquals(QrParseResult.ErrorCode.INVALID_PORT, (result as QrParseResult.Error).code)
+        assertTrue(result is QrParseResult.Success)
     }
 
     @Test
-    fun `reject invalid port - too high`() {
+    fun `accept port in valid range if provided`() {
+        // If a port is provided, it should be valid (1-65535)
         val masterSecret = ByteArray(32)
         val payload = QrPayload.newBuilder()
             .setVersion(1)
             .setIp("192.168.1.1")
-            .setPort(65536)
+            .setPort(8765)
             .setMasterSecret(ByteString.copyFrom(masterSecret))
-            .setSessionId("abc123")
-            .setNtfyTopic("ras-abc123")
             .build()
 
         val base64 = java.util.Base64.getEncoder().encodeToString(payload.toByteArray())
 
         val result = QrPayloadParser.parse(base64)
 
-        assertTrue(result is QrParseResult.Error)
-        assertEquals(QrParseResult.ErrorCode.INVALID_PORT, (result as QrParseResult.Error).code)
+        assertTrue(result is QrParseResult.Success)
+        val success = result as QrParseResult.Success
+        assertEquals(8765, success.payload.port)
     }
 
     @Test

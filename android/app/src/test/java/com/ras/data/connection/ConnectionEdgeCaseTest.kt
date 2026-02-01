@@ -3,6 +3,7 @@ package com.ras.data.connection
 import android.content.Context
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.credentials.StoredCredentials
+import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.data.reconnection.ReconnectionServiceImpl
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.domain.startup.ReconnectionResult
@@ -56,6 +57,7 @@ class ConnectionEdgeCaseTest {
     private lateinit var mockWebRTCClient: WebRTCClient
     private lateinit var mockWebRTCClientFactory: WebRTCClient.Factory
     private lateinit var mockContext: Context
+    private lateinit var mdnsDiscoveryService: MdnsDiscoveryService
 
     @Before
     fun setup() {
@@ -74,6 +76,9 @@ class ConnectionEdgeCaseTest {
         mockkObject(TailscaleTransport.Companion)
 
         every { mockWebRTCClientFactory.create() } returns mockWebRTCClient
+
+        mdnsDiscoveryService = mockk(relaxed = true)
+        coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
     }
 
     @After
@@ -108,7 +113,8 @@ class ConnectionEdgeCaseTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = orchestrator
+            orchestrator = orchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
         val result = service.reconnect()
 
@@ -139,7 +145,8 @@ class ConnectionEdgeCaseTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = orchestrator
+            orchestrator = orchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
         service.reconnect()
 
@@ -170,7 +177,8 @@ class ConnectionEdgeCaseTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = orchestrator
+            orchestrator = orchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
         service.reconnect()
 
@@ -206,7 +214,8 @@ class ConnectionEdgeCaseTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = orchestrator
+            orchestrator = orchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
         service.reconnect()
 
@@ -235,7 +244,8 @@ class ConnectionEdgeCaseTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = orchestrator
+            orchestrator = orchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
         service.reconnect()
 
@@ -877,7 +887,8 @@ class ConnectionEdgeCaseTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = orchestrator
+            orchestrator = orchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
 
         val progressUpdates = mutableListOf<ConnectionProgress>()

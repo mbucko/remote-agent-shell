@@ -10,6 +10,7 @@ import com.ras.data.connection.Transport
 import com.ras.data.connection.TransportType
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.credentials.StoredCredentials
+import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.domain.startup.ReconnectionResult
 import com.ras.pairing.AuthResult
 import com.ras.proto.AuthError
@@ -58,6 +59,7 @@ class ReconnectionServiceImplTest {
     private lateinit var ntfyClient: NtfyClientInterface
     private lateinit var orchestrator: ConnectionOrchestrator
     private lateinit var mockContext: Context
+    private lateinit var mdnsDiscoveryService: MdnsDiscoveryService
 
     private val testCredentials = StoredCredentials(
         deviceId = "test-device-123",
@@ -76,6 +78,8 @@ class ReconnectionServiceImplTest {
         connectionManager = mockk(relaxed = true)
         ntfyClient = mockk(relaxed = true)
         orchestrator = mockk()
+        mdnsDiscoveryService = mockk(relaxed = true)
+        coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
     }
 
     @After
@@ -90,7 +94,8 @@ class ReconnectionServiceImplTest {
         directSignalingHttpClient = httpClient,
         connectionManager = connectionManager,
         ntfyClient = ntfyClient,
-        orchestrator = orchestrator
+        orchestrator = orchestrator,
+        mdnsDiscoveryService = mdnsDiscoveryService
     )
 
     // ============================================================================

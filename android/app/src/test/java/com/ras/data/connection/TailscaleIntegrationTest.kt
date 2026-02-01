@@ -3,6 +3,7 @@ package com.ras.data.connection
 import android.content.Context
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.credentials.StoredCredentials
+import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.data.reconnection.ReconnectionServiceImpl
 import com.ras.domain.startup.ReconnectionResult
 import com.ras.signaling.NtfyClientInterface
@@ -54,6 +55,7 @@ class TailscaleIntegrationTest {
     private lateinit var httpClient: OkHttpClient
     private lateinit var ntfyClient: NtfyClientInterface
     private lateinit var mockContext: Context
+    private lateinit var mdnsDiscoveryService: MdnsDiscoveryService
 
     private val testCredentials = StoredCredentials(
         deviceId = "test-device-abc123",
@@ -98,6 +100,9 @@ class TailscaleIntegrationTest {
         // Mock TailscaleDetector and TailscaleTransport.Companion
         mockkObject(TailscaleDetector)
         mockkObject(TailscaleTransport.Companion)
+
+        mdnsDiscoveryService = mockk(relaxed = true)
+        coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
     }
 
     @After
@@ -144,7 +149,8 @@ class TailscaleIntegrationTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = orchestrator
+            orchestrator = orchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
 
         // Create context for direct orchestrator test
@@ -635,7 +641,8 @@ class TailscaleIntegrationTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = customOrchestrator
+            orchestrator = customOrchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
 
         val progressUpdates = mutableListOf<ConnectionProgress>()
@@ -682,7 +689,8 @@ class TailscaleIntegrationTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = customOrchestrator
+            orchestrator = customOrchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
 
         val progressUpdates = mutableListOf<ConnectionProgress>()

@@ -3,6 +3,7 @@ package com.ras.data.connection
 import android.content.Context
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.credentials.StoredCredentials
+import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.data.reconnection.ReconnectionServiceImpl
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.domain.startup.ReconnectionResult
@@ -63,6 +64,7 @@ class WebRTCIntegrationTest {
     // Mock Tailscale strategy (unavailable for these tests)
     private lateinit var tailscaleStrategy: ConnectionStrategy
     private lateinit var mockContext: Context
+    private lateinit var mdnsDiscoveryService: MdnsDiscoveryService
 
     private val testCredentials = StoredCredentials(
         deviceId = "test-device-abc123",
@@ -169,6 +171,9 @@ class WebRTCIntegrationTest {
 
         // Use REAL ConnectionOrchestrator
         orchestrator = ConnectionOrchestrator(setOf(tailscaleStrategy, webRTCStrategy))
+
+        mdnsDiscoveryService = mockk(relaxed = true)
+        coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
     }
 
     @After
@@ -440,7 +445,8 @@ class WebRTCIntegrationTest {
             directSignalingHttpClient = httpClient,
             connectionManager = connectionManager,
             ntfyClient = ntfyClient,
-            orchestrator = customOrchestrator
+            orchestrator = customOrchestrator,
+            mdnsDiscoveryService = mdnsDiscoveryService
         )
 
         val progressUpdates = mutableListOf<ConnectionProgress>()
