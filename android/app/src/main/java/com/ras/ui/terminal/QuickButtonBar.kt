@@ -1,13 +1,13 @@
 package com.ras.ui.terminal
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -19,41 +19,81 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.ras.R
 import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
+import com.ras.data.terminal.ModifierKey
+import com.ras.data.terminal.ModifierMode
+import com.ras.data.terminal.ModifierState
 import com.ras.data.terminal.QuickButton
 import com.ras.proto.KeyType
 
 /**
- * Horizontal scrollable bar of quick action buttons.
+ * Bar of quick action buttons with optional modifier keys.
  *
- * Displays configurable buttons like Y, N, Ctrl+C for quick terminal input.
- * Has an "Add" button at the end to open the button editor.
+ * Displays:
+ * - Modifier buttons (Ctrl, Shift, Alt) with tap/long-press for sticky/locked state
+ * - Configurable buttons like Y, N, Ctrl+C for quick terminal input
+ * - "Add" button to open the button editor
+ *
+ * Uses FlowRow to wrap buttons to multiple rows when needed.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun QuickButtonBar(
     buttons: List<QuickButton>,
+    modifierState: ModifierState,
     onButtonClick: (QuickButton) -> Unit,
+    onModifierTap: (ModifierKey) -> Unit,
+    onModifierLongPress: (ModifierKey) -> Unit,
     onAddClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showCtrl: Boolean = true,
+    showShift: Boolean = true,
+    showAlt: Boolean = false
 ) {
     Surface(
         modifier = modifier,
         tonalElevation = 1.dp
     ) {
-        Row(
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 2.dp, vertical = 1.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // Modifier buttons
+            if (showCtrl) {
+                ModifierButton(
+                    label = "Ctrl",
+                    mode = modifierState.ctrl,
+                    onTap = { onModifierTap(ModifierKey.CTRL) },
+                    onLongPress = { onModifierLongPress(ModifierKey.CTRL) }
+                )
+            }
+            if (showShift) {
+                ModifierButton(
+                    label = "⇧",
+                    mode = modifierState.shift,
+                    onTap = { onModifierTap(ModifierKey.SHIFT) },
+                    onLongPress = { onModifierLongPress(ModifierKey.SHIFT) }
+                )
+            }
+            if (showAlt) {
+                ModifierButton(
+                    label = "Alt",
+                    mode = modifierState.alt,
+                    onTap = { onModifierTap(ModifierKey.ALT) },
+                    onLongPress = { onModifierLongPress(ModifierKey.ALT) }
+                )
+            }
+
+            // Regular quick buttons
             buttons.forEach { button ->
                 QuickActionButton(
                     button = button,
@@ -72,6 +112,56 @@ fun QuickButtonBar(
                 )
             }
         }
+    }
+}
+
+/**
+ * Modifier button with tap (sticky) and long-press (lock) support.
+ *
+ * Visual states:
+ * - OFF: Secondary container color
+ * - STICKY: Primary container color (active for next key only)
+ * - LOCKED: Primary color (stays active until toggled off)
+ */
+@Composable
+fun ModifierButton(
+    label: String,
+    mode: ModifierMode,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val backgroundColor = when (mode) {
+        ModifierMode.OFF -> MaterialTheme.colorScheme.secondaryContainer
+        ModifierMode.STICKY -> MaterialTheme.colorScheme.primaryContainer
+        ModifierMode.LOCKED -> MaterialTheme.colorScheme.primary
+    }
+
+    val contentColor = when (mode) {
+        ModifierMode.OFF -> MaterialTheme.colorScheme.onSecondaryContainer
+        ModifierMode.STICKY -> MaterialTheme.colorScheme.onPrimaryContainer
+        ModifierMode.LOCKED -> MaterialTheme.colorScheme.onPrimary
+    }
+
+    // Use Surface with pointerInput for both tap and long-press
+    // (Button's onClick conflicts with detectTapGestures)
+    Surface(
+        modifier = modifier
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onLongPress = { onLongPress() }
+                )
+            },
+        shape = RoundedCornerShape(4.dp),
+        color = backgroundColor
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = contentColor
+        )
     }
 }
 
@@ -104,7 +194,40 @@ private fun QuickButtonBarPreview() {
     MaterialTheme {
         QuickButtonBar(
             buttons = DEFAULT_QUICK_BUTTONS,
+            modifierState = ModifierState(),
             onButtonClick = {},
+            onModifierTap = {},
+            onModifierLongPress = {},
+            onAddClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun QuickButtonBarWithStickyModifierPreview() {
+    MaterialTheme {
+        QuickButtonBar(
+            buttons = DEFAULT_QUICK_BUTTONS,
+            modifierState = ModifierState(shift = ModifierMode.STICKY),
+            onButtonClick = {},
+            onModifierTap = {},
+            onModifierLongPress = {},
+            onAddClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun QuickButtonBarWithLockedModifierPreview() {
+    MaterialTheme {
+        QuickButtonBar(
+            buttons = DEFAULT_QUICK_BUTTONS,
+            modifierState = ModifierState(ctrl = ModifierMode.LOCKED),
+            onButtonClick = {},
+            onModifierTap = {},
+            onModifierLongPress = {},
             onAddClick = {}
         )
     }
@@ -124,8 +247,12 @@ private fun QuickButtonBarManyButtonsPreview() {
                 QuickButton("backspace", "⌫", keyType = KeyType.KEY_BACKSPACE),
                 QuickButton("tab", "Tab", keyType = KeyType.KEY_TAB)
             ),
+            modifierState = ModifierState(),
             onButtonClick = {},
-            onAddClick = {}
+            onModifierTap = {},
+            onModifierLongPress = {},
+            onAddClick = {},
+            showAlt = true
         )
     }
 }

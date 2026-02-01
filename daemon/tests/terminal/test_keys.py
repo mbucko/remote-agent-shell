@@ -15,11 +15,17 @@ from ras.terminal.keys import (
 class TestKeyConstants:
     """Test key-related constants."""
 
-    def test_modifier_bits_are_powers_of_two(self):
-        """Modifier bits should be distinct powers of 2 for bitwise operations."""
-        assert MOD_CTRL == 1
+    def test_modifier_bits_match_xterm_standard(self):
+        """Modifier bits should match XTerm standard encoding.
+
+        XTerm modifier parameter = 1 + bits, where:
+        - Shift = 1 → param 2
+        - Alt = 2 → param 3
+        - Ctrl = 4 → param 5
+        """
+        assert MOD_SHIFT == 1
         assert MOD_ALT == 2
-        assert MOD_SHIFT == 4
+        assert MOD_CTRL == 4
 
     def test_modifiers_can_be_combined(self):
         """Modifiers should be combinable with bitwise OR."""
@@ -227,16 +233,6 @@ class TestGetKeySequence:
         """Unknown key type should return empty bytes."""
         assert get_key_sequence(KeyType.KEY_UNKNOWN) == b""
 
-    # Modifiers (currently just pass through)
-    def test_modifier_doesnt_change_basic_key(self):
-        """Modifiers currently don't change the sequence."""
-        base = get_key_sequence(KeyType.KEY_ENTER)
-        with_ctrl = get_key_sequence(KeyType.KEY_ENTER, MOD_CTRL)
-        with_alt = get_key_sequence(KeyType.KEY_ENTER, MOD_ALT)
-        with_shift = get_key_sequence(KeyType.KEY_ENTER, MOD_SHIFT)
-
-        # Currently all should be the same
-        assert base == with_ctrl == with_alt == with_shift
 
 
 class TestKeySequenceFormats:
@@ -292,3 +288,79 @@ class TestKeySequenceFormats:
         for key in f_keys:
             seq = get_key_sequence(key)
             assert seq.startswith(b"\x1b["), f"{key} should start with CSI"
+
+
+class TestModifierSequences:
+    """Tests for modifier key escape sequences."""
+
+    def test_no_modifier_returns_base(self):
+        """Without modifiers, should return base sequence."""
+        assert get_key_sequence(KeyType.KEY_UP) == b"\x1b[A"
+        assert get_key_sequence(KeyType.KEY_TAB) == b"\t"
+
+    def test_shift_tab_returns_backtab(self):
+        """Shift+Tab should return ESC [ Z (backtab)."""
+        assert get_key_sequence(KeyType.KEY_TAB, MOD_SHIFT) == b"\x1b[Z"
+
+    def test_shift_up_arrow(self):
+        """Shift+Up should return ESC [ 1 ; 2 A."""
+        # Shift = 1, param = 1 + 1 = 2 (XTerm standard)
+        assert get_key_sequence(KeyType.KEY_UP, MOD_SHIFT) == b"\x1b[1;2A"
+
+    def test_ctrl_up_arrow(self):
+        """Ctrl+Up should return ESC [ 1 ; 5 A."""
+        # Ctrl = 4, param = 1 + 4 = 5 (XTerm standard)
+        assert get_key_sequence(KeyType.KEY_UP, MOD_CTRL) == b"\x1b[1;5A"
+
+    def test_ctrl_shift_up_arrow(self):
+        """Ctrl+Shift+Up should return ESC [ 1 ; 6 A."""
+        # Ctrl = 4, Shift = 1, param = 1 + 5 = 6 (XTerm standard)
+        assert get_key_sequence(KeyType.KEY_UP, MOD_CTRL | MOD_SHIFT) == b"\x1b[1;6A"
+
+    def test_shift_page_up(self):
+        """Shift+PageUp should return ESC [ 5 ; 2 ~."""
+        # Shift = 1, param = 1 + 1 = 2 (XTerm standard)
+        assert get_key_sequence(KeyType.KEY_PAGE_UP, MOD_SHIFT) == b"\x1b[5;2~"
+
+    def test_shift_f1_ss3_sequence(self):
+        """Shift+F1 (SS3) should convert to CSI format with modifier."""
+        # Shift = 1, param = 1 + 1 = 2 (XTerm standard)
+        assert get_key_sequence(KeyType.KEY_F1, MOD_SHIFT) == b"\x1b[1;2P"
+
+    def test_ctrl_on_ctrl_c_returns_base(self):
+        """Ctrl modifier on KEY_CTRL_C should just return base (no double-ctrl)."""
+        assert get_key_sequence(KeyType.KEY_CTRL_C, MOD_CTRL) == b"\x03"
+
+    def test_alt_up_arrow(self):
+        """Alt+Up should return ESC [ 1 ; 3 A."""
+        # Alt = 2, param = 1 + 2 = 3 (XTerm standard)
+        assert get_key_sequence(KeyType.KEY_UP, MOD_ALT) == b"\x1b[1;3A"
+
+    def test_all_modifiers(self):
+        """Ctrl+Alt+Shift+Up should return ESC [ 1 ; 8 A."""
+        # All mods = 4 + 2 + 1 = 7, param = 1 + 7 = 8 (XTerm standard)
+        all_mods = MOD_CTRL | MOD_ALT | MOD_SHIFT
+        assert get_key_sequence(KeyType.KEY_UP, all_mods) == b"\x1b[1;8A"
+
+    def test_modifier_on_enter_returns_base(self):
+        """Modifiers on single-char keys like Enter return base (no CSI format)."""
+        # Enter is \r, not a CSI sequence, so modifiers don't apply
+        assert get_key_sequence(KeyType.KEY_ENTER, MOD_CTRL) == b"\r"
+
+    def test_ctrl_d_ignores_ctrl_modifier(self):
+        """KEY_CTRL_D ignores Ctrl modifier (already has Ctrl)."""
+        assert get_key_sequence(KeyType.KEY_CTRL_D, MOD_CTRL) == b"\x04"
+
+    def test_ctrl_z_ignores_ctrl_modifier(self):
+        """KEY_CTRL_Z ignores Ctrl modifier (already has Ctrl)."""
+        assert get_key_sequence(KeyType.KEY_CTRL_Z, MOD_CTRL) == b"\x1a"
+
+    def test_delete_with_shift(self):
+        """Shift+Delete should return ESC [ 3 ; 2 ~."""
+        # Shift = 1, param = 1 + 1 = 2 (XTerm standard)
+        assert get_key_sequence(KeyType.KEY_DELETE, MOD_SHIFT) == b"\x1b[3;2~"
+
+    def test_f5_with_ctrl(self):
+        """Ctrl+F5 should return ESC [ 15 ; 5 ~."""
+        # Ctrl = 4, param = 1 + 4 = 5 (XTerm standard)
+        assert get_key_sequence(KeyType.KEY_F5, MOD_CTRL) == b"\x1b[15;5~"

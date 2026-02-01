@@ -111,6 +111,7 @@ fun TerminalScreen(
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val terminalState by viewModel.terminalState.collectAsStateWithLifecycle()
     val quickButtons by viewModel.quickButtons.collectAsStateWithLifecycle()
+    val modifierState by viewModel.modifierState.collectAsStateWithLifecycle()
     val inputText by viewModel.inputText.collectAsStateWithLifecycle()
     val pasteTruncated by viewModel.pasteTruncated.collectAsStateWithLifecycle()
     val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
@@ -290,10 +291,13 @@ fun TerminalScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Quick buttons bar
+            // Quick buttons bar with modifier keys
             QuickButtonBar(
                 buttons = quickButtons,
+                modifierState = modifierState,
                 onButtonClick = { viewModel.onQuickButtonClicked(it) },
+                onModifierTap = { viewModel.onModifierTap(it) },
+                onModifierLongPress = { viewModel.onModifierLongPress(it) },
                 onAddClick = {
                     scope.launch {
                         snackbarHostState.showSnackbar("Button editor coming soon. Configure in Settings.")

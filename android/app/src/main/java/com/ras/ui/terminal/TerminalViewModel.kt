@@ -9,12 +9,16 @@ import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.SettingsRepository
 import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
 import com.ras.data.terminal.KeyMapper
+import com.ras.data.terminal.ModifierKey
+import com.ras.data.terminal.ModifierMode
+import com.ras.data.terminal.ModifierState
 import com.ras.data.terminal.QuickButton
 import com.ras.data.terminal.TerminalEvent
 import com.ras.data.terminal.TerminalRepository
 import com.ras.data.terminal.TerminalScreenState
 import com.ras.data.terminal.TerminalState
 import com.ras.data.terminal.TerminalUiEvent
+import com.ras.data.terminal.toggle
 import com.ras.proto.KeyType
 import com.ras.proto.clipboard.ClipboardMessage
 import com.ras.proto.clipboard.ImageChunk
@@ -95,6 +99,10 @@ class TerminalViewModel @Inject constructor(
     // Quick buttons
     private val _quickButtons = MutableStateFlow(buttonSettings.getButtons())
     val quickButtons: StateFlow<List<QuickButton>> = _quickButtons.asStateFlow()
+
+    // Modifier key state (sticky/locked modifiers for quick buttons)
+    private val _modifierState = MutableStateFlow(ModifierState())
+    val modifierState: StateFlow<ModifierState> = _modifierState.asStateFlow()
 
     // Input text (for line-buffered mode)
     private val _inputText = MutableStateFlow("")
@@ -324,17 +332,64 @@ class TerminalViewModel @Inject constructor(
 
     /**
      * Handle quick button click.
+     * Sends key with current modifier state, then clears sticky modifiers.
      */
     fun onQuickButtonClicked(button: QuickButton) {
         viewModelScope.launch {
             try {
+                val modifiers = _modifierState.value.bitmask
+
                 when {
-                    button.keyType != null -> repository.sendSpecialKey(button.keyType)
+                    button.keyType != null -> repository.sendSpecialKey(button.keyType, modifiers)
                     button.character != null -> repository.sendInput(button.character)
                 }
+
+                // Clear sticky (non-locked) modifiers after key press
+                clearStickyModifiers()
             } catch (e: Exception) {
                 _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
             }
+        }
+    }
+
+    /**
+     * Handle modifier button tap.
+     * Toggles modifier: OFF -> STICKY, STICKY/LOCKED -> OFF
+     */
+    fun onModifierTap(modifier: ModifierKey) {
+        _modifierState.update { state ->
+            when (modifier) {
+                ModifierKey.CTRL -> state.copy(ctrl = state.ctrl.toggle())
+                ModifierKey.ALT -> state.copy(alt = state.alt.toggle())
+                ModifierKey.SHIFT -> state.copy(shift = state.shift.toggle())
+            }
+        }
+    }
+
+    /**
+     * Handle modifier button long-press.
+     * Locks the modifier until tapped again.
+     */
+    fun onModifierLongPress(modifier: ModifierKey) {
+        _modifierState.update { state ->
+            when (modifier) {
+                ModifierKey.CTRL -> state.copy(ctrl = ModifierMode.LOCKED)
+                ModifierKey.ALT -> state.copy(alt = ModifierMode.LOCKED)
+                ModifierKey.SHIFT -> state.copy(shift = ModifierMode.LOCKED)
+            }
+        }
+    }
+
+    /**
+     * Clear sticky (non-locked) modifiers after key press.
+     */
+    private fun clearStickyModifiers() {
+        _modifierState.update { state ->
+            state.copy(
+                ctrl = if (state.ctrl == ModifierMode.STICKY) ModifierMode.OFF else state.ctrl,
+                alt = if (state.alt == ModifierMode.STICKY) ModifierMode.OFF else state.alt,
+                shift = if (state.shift == ModifierMode.STICKY) ModifierMode.OFF else state.shift
+            )
         }
     }
 
