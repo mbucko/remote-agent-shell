@@ -1,5 +1,7 @@
 package com.ras.ui.terminal
 
+import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,9 +15,16 @@ import com.ras.data.terminal.TerminalScreenState
 import com.ras.data.terminal.TerminalState
 import com.ras.data.terminal.TerminalUiEvent
 import com.ras.proto.KeyType
+import com.ras.proto.clipboard.ClipboardMessage
+import com.ras.proto.clipboard.ImageChunk
+import com.ras.proto.clipboard.ImageFormat
+import com.ras.proto.clipboard.ImageStart
 import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
+import com.ras.util.ClipboardImage
 import com.ras.util.ClipboardService
+import com.google.protobuf.ByteString
+import java.util.UUID
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +58,8 @@ class TerminalViewModel @Inject constructor(
     private val buttonSettings: QuickButtonSettings,
     private val clipboardService: ClipboardService
 ) : ViewModel() {
+
+    private val TAG = "TerminalViewModel"
 
     private val sessionId: String = savedStateHandle.get<String>(NavArgs.SESSION_ID)
         ?: throw IllegalArgumentException("sessionId is required")
@@ -400,17 +411,117 @@ class TerminalViewModel @Inject constructor(
     /**
      * Handle paste button click.
      *
-     * Extracts text from clipboard and handles paste operation.
+     * Extracts content from clipboard (text or image) and handles paste operation.
+     * For text: sends directly to terminal as input.
+     * For images: uses chunked clipboard protocol to transfer to daemon.
      * Shows error if clipboard is empty or unavailable.
      */
     fun onPasteClicked() {
+        Log.d(TAG, "onPasteClicked called")
         viewModelScope.launch {
+            // Check for image first (more specific)
+            val image = clipboardService.extractImage()
+            if (image != null) {
+                Log.d(TAG, "Clipboard contains image: ${image.data.size} bytes, format=${image.format}")
+                onPasteImage(image)
+                return@launch
+            }
+
+            // Fall back to text
             val text = clipboardService.extractText()
+            Log.d(TAG, "Clipboard text: ${text?.take(50) ?: "null"}")
             if (text == null) {
                 _uiEvents.emit(TerminalUiEvent.ShowError("Clipboard is empty"))
                 return@launch
             }
             onPaste(text)
+        }
+    }
+
+    /**
+     * Handle image paste from clipboard.
+     *
+     * Sends image to daemon using chunked transfer protocol:
+     * 1. Send ImageStart with metadata
+     * 2. Send ImageChunk for each 64KB chunk
+     * 3. Daemon reassembles and pastes to system clipboard
+     */
+    private suspend fun onPasteImage(image: ClipboardImage) {
+        val transferId = UUID.randomUUID().toString()
+        val chunkSize = ClipboardService.IMAGE_CHUNK_SIZE
+        val totalChunks = (image.data.size + chunkSize - 1) / chunkSize
+
+        Log.d(TAG, "Starting image transfer: id=$transferId, size=${image.data.size}, chunks=$totalChunks")
+
+        try {
+            // Send ImageStart
+            val format = when (image.format) {
+                ClipboardImage.ImageFormat.JPEG -> ImageFormat.IMAGE_FORMAT_JPEG
+                ClipboardImage.ImageFormat.PNG -> ImageFormat.IMAGE_FORMAT_PNG
+            }
+
+            val startMessage = ClipboardMessage.newBuilder()
+                .setImageStart(
+                    ImageStart.newBuilder()
+                        .setTransferId(transferId)
+                        .setTotalSize(image.data.size.toLong())
+                        .setFormat(format)
+                        .setTotalChunks(totalChunks)
+                        .build()
+                )
+                .build()
+
+            repository.sendClipboardMessage(startMessage)
+            Log.d(TAG, "Sent ImageStart")
+
+            // Send chunks - WebRTC backpressure handles flow control
+            for (i in 0 until totalChunks) {
+                val start = i * chunkSize
+                val end = minOf(start + chunkSize, image.data.size)
+                val chunkData = image.data.copyOfRange(start, end)
+
+                val chunkMessage = ClipboardMessage.newBuilder()
+                    .setImageChunk(
+                        ImageChunk.newBuilder()
+                            .setTransferId(transferId)
+                            .setIndex(i)
+                            .setData(ByteString.copyFrom(chunkData))
+                            .build()
+                    )
+                    .build()
+
+                repository.sendClipboardMessage(chunkMessage)
+                Log.d(TAG, "Sent chunk ${i + 1}/$totalChunks (${chunkData.size} bytes)")
+            }
+
+            Log.d(TAG, "Image transfer complete")
+        } catch (e: Exception) {
+            Log.e(TAG, "Image paste failed", e)
+            _uiEvents.emit(TerminalUiEvent.ShowError("Failed to paste image: ${e.message}"))
+        }
+    }
+
+    /**
+     * Handle image selected from photo picker.
+     *
+     * Reads the image from the URI, converts to PNG if needed,
+     * and sends via the chunked clipboard protocol.
+     */
+    fun onImageSelected(uri: Uri) {
+        Log.d(TAG, "Image selected: $uri")
+        viewModelScope.launch {
+            try {
+                val clipboardImage = clipboardService.readImageFromUri(uri)
+                if (clipboardImage == null) {
+                    _uiEvents.emit(TerminalUiEvent.ShowError("Failed to read image or image too large"))
+                    return@launch
+                }
+
+                onPasteImage(clipboardImage)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to process selected image", e)
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to process image: ${e.message}"))
+            }
         }
     }
 
@@ -426,6 +537,7 @@ class TerminalViewModel @Inject constructor(
      * @param text Text content from clipboard
      */
     fun onPaste(text: String) {
+        Log.d(TAG, "onPaste called, text length: ${text.length}")
         if (text.isEmpty()) return
 
         viewModelScope.launch {
@@ -435,18 +547,15 @@ class TerminalViewModel @Inject constructor(
                 _pasteTruncated.value = true
             }
 
-            val state = terminalState.value
-            if (state.isRawMode) {
-                // Raw mode: encode, validate, and send directly
-                val bytes = clipboardService.prepareForTerminal(text) ?: return@launch
-                try {
-                    repository.sendInput(bytes)
-                } catch (e: Exception) {
-                    _uiEvents.emit(TerminalUiEvent.ShowError("Failed to paste: ${e.message}"))
-                }
-            } else {
-                // Normal mode: append to input field
-                _inputText.update { it + text }
+            // Always send directly to terminal when paste button is pressed
+            val bytes = clipboardService.prepareForTerminal(text) ?: return@launch
+            Log.d(TAG, "Sending ${bytes.size} bytes to terminal")
+            try {
+                repository.sendInput(bytes)
+                Log.d(TAG, "sendInput completed")
+            } catch (e: Exception) {
+                Log.e(TAG, "sendInput failed", e)
+                _uiEvents.emit(TerminalUiEvent.ShowError("Failed to paste: ${e.message}"))
             }
         }
     }

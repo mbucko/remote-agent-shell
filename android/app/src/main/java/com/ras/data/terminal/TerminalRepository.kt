@@ -15,6 +15,7 @@ import com.ras.proto.TerminalInput
 import com.ras.proto.TerminalNotification
 import com.ras.proto.TerminalResize
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
+import com.ras.proto.clipboard.ClipboardMessage
 import com.google.protobuf.ByteString
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -538,6 +539,15 @@ class TerminalRepository @Inject constructor(
 
         connectionManager.sendTerminalCommand(command)
         Log.d(TAG, "Sent resize request: ${cols}x${rows}")
+    }
+
+    /**
+     * Send a clipboard message to the daemon.
+     *
+     * Used for image paste which requires the chunked transfer protocol.
+     */
+    suspend fun sendClipboardMessage(message: ClipboardMessage) {
+        connectionManager.sendClipboardMessage(message)
     }
 
     private fun requireAttached(): String {

@@ -17,6 +17,7 @@ import com.ras.proto.SessionEvent as ProtoSessionEvent
 import com.ras.proto.SessionListEvent
 import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
+import com.ras.proto.clipboard.ClipboardMessage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -412,6 +413,21 @@ class ConnectionManager @Inject constructor(
             .build()
         val plaintext = wrapped.toByteArray()
         validateMessageSize(plaintext, "TerminalCommand")
+        sendEncrypted(plaintext)
+    }
+
+    /**
+     * Send a clipboard message to the daemon (encrypted, wrapped in RasCommand).
+     *
+     * @throws IllegalStateException if not connected
+     * @throws IllegalArgumentException if message too large
+     */
+    suspend fun sendClipboardMessage(message: ClipboardMessage) {
+        val wrapped = RasCommand.newBuilder()
+            .setClipboard(message)
+            .build()
+        val plaintext = wrapped.toByteArray()
+        validateMessageSize(plaintext, "ClipboardMessage")
         sendEncrypted(plaintext)
     }
 

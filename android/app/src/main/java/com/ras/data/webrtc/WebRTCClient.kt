@@ -5,6 +5,8 @@ import android.util.Log
 import com.ras.util.GlobalConnectionTimer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
@@ -39,6 +41,8 @@ class WebRTCClient(
         private const val MAX_MESSAGE_SIZE = 16 * 1024 * 1024 // 16 MB max message size
         private const val RECEIVE_TIMEOUT_MS = 30_000L // 30 second receive timeout
         private const val HEARTBEAT_INTERVAL_MS = 15_000L // 15 second heartbeat interval
+        // Buffer threshold for backpressure - wait if buffer exceeds this
+        private const val BUFFER_LOW_THRESHOLD = 64 * 1024L // 64 KB
         // ICE gathering timeout - reduced from 10s because COMPLETE state may not fire
         // during offer creation on Android. Host candidates are gathered immediately,
         // STUN candidates within 1-2 seconds.
@@ -64,6 +68,11 @@ class WebRTCClient(
     private val dataChannelOpened = CompletableDeferred<Boolean>()
     private val messageChannel = Channel<ByteArray>(Channel.UNLIMITED)
     private var iceGatheringComplete = CompletableDeferred<Unit>()
+
+    // Backpressure: signal when buffer drains below threshold
+    @Volatile
+    private var bufferDrainedDeferred: CompletableDeferred<Unit>? = null
+    private val sendMutex = Mutex()
 
     // ICE candidate tracking
     @Volatile
@@ -222,7 +231,10 @@ class WebRTCClient(
     }
 
     /**
-     * Send data over the data channel.
+     * Send data over the data channel with backpressure support.
+     *
+     * If the send buffer is full, waits for it to drain before sending.
+     * This prevents buffer overflow when sending large amounts of data (e.g., images).
      *
      * @param data The data to send
      * @throws IllegalStateException if connection is closed
@@ -234,17 +246,40 @@ class WebRTCClient(
             "Message too large: ${data.size} bytes exceeds maximum $MAX_MESSAGE_SIZE"
         }
 
-        val channel = synchronized(lock) { dataChannel }
-        if (channel == null) {
-            throw IllegalStateException("Data channel not available")
-        }
+        // Serialize sends to ensure proper ordering with backpressure
+        sendMutex.withLock {
+            val channel = synchronized(lock) { dataChannel }
+                ?: throw IllegalStateException("Data channel not available")
 
-        val buffer = DataChannel.Buffer(ByteBuffer.wrap(data), true)
-        val sent = channel.send(buffer)
-        if (!sent) {
-            throw IllegalStateException("Failed to send data: buffer full or channel closed")
+            // Wait for buffer to drain if above threshold
+            while (channel.bufferedAmount() > BUFFER_LOW_THRESHOLD) {
+                checkNotClosed()
+                if (channel.state() != DataChannel.State.OPEN) {
+                    throw IllegalStateException("Data channel closed while waiting for buffer")
+                }
+
+                // Create deferred to wait for buffer drain callback
+                val deferred = CompletableDeferred<Unit>()
+                bufferDrainedDeferred = deferred
+
+                // Wait for onBufferedAmountChange to signal drain (with timeout)
+                val drained = withTimeoutOrNull(5000L) {
+                    deferred.await()
+                    true
+                } ?: false
+
+                if (!drained) {
+                    Log.w(TAG, "Buffer drain timeout, retrying send")
+                }
+            }
+
+            val buffer = DataChannel.Buffer(ByteBuffer.wrap(data), true)
+            val sent = channel.send(buffer)
+            if (!sent) {
+                throw IllegalStateException("Failed to send data: channel closed")
+            }
+            lastSendTime = System.currentTimeMillis()
         }
-        lastSendTime = System.currentTimeMillis()
     }
 
     /**
@@ -515,7 +550,16 @@ class WebRTCClient(
 
     private fun createDataChannelObserver(): DataChannel.Observer {
         return object : DataChannel.Observer {
-            override fun onBufferedAmountChange(previousAmount: Long) {}
+            override fun onBufferedAmountChange(previousAmount: Long) {
+                val channel = synchronized(lock) { dataChannel } ?: return
+                val currentAmount = channel.bufferedAmount()
+
+                // Signal waiting coroutines if buffer dropped below threshold
+                if (currentAmount <= BUFFER_LOW_THRESHOLD && previousAmount > BUFFER_LOW_THRESHOLD) {
+                    bufferDrainedDeferred?.complete(Unit)
+                    bufferDrainedDeferred = null
+                }
+            }
 
             override fun onStateChange() {
                 val channel = synchronized(lock) { dataChannel }

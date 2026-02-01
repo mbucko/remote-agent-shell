@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.automirrored.filled.KeyboardReturn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -38,6 +39,7 @@ import com.ras.R
  * Input bar for line-buffered terminal input.
  *
  * Contains:
+ * - Image picker button (to select and send images)
  * - Paste button (to paste from clipboard)
  * - Text field for input
  * - Send button (enabled when input is not empty)
@@ -49,6 +51,7 @@ fun InputBar(
     onSend: () -> Unit,
     onEnter: () -> Unit,
     onPaste: () -> Unit,
+    onPickImage: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
@@ -63,6 +66,18 @@ fun InputBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // Image picker button
+            IconButton(
+                onClick = onPickImage,
+                enabled = enabled,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Image,
+                    contentDescription = stringResource(R.string.terminal_pick_image)
+                )
+            }
+
             // Paste button (smaller)
             IconButton(
                 onClick = onPaste,
@@ -148,7 +163,8 @@ private fun InputBarEmptyPreview() {
             onTextChange = {},
             onSend = {},
             onEnter = {},
-            onPaste = {}
+            onPaste = {},
+            onPickImage = {}
         )
     }
 }
@@ -162,7 +178,8 @@ private fun InputBarWithTextPreview() {
             onTextChange = {},
             onSend = {},
             onEnter = {},
-            onPaste = {}
+            onPaste = {},
+            onPickImage = {}
         )
     }
 }
@@ -177,6 +194,7 @@ private fun InputBarDisabledPreview() {
             onSend = {},
             onEnter = {},
             onPaste = {},
+            onPickImage = {},
             enabled = false
         )
     }

@@ -2,6 +2,9 @@ package com.ras.ui.terminal
 
 import android.content.Context
 import android.view.KeyEvent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -100,6 +103,13 @@ fun TerminalScreen(
 
     // Font size for terminal (adjustable via pinch zoom)
     var fontSize by remember { mutableFloatStateOf(12f) }
+
+    // Photo picker launcher
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let { viewModel.onImageSelected(it) }
+    }
 
     // Resume attachment when screen appears
     LaunchedEffect(Unit) {
@@ -273,6 +283,11 @@ fun TerminalScreen(
                     onSend = { viewModel.onSendClicked() },
                     onEnter = { viewModel.onEnterPressed() },
                     onPaste = { viewModel.onPasteClicked() },
+                    onPickImage = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
                     enabled = isScreenConnected,
                     modifier = Modifier.fillMaxWidth()
                 )

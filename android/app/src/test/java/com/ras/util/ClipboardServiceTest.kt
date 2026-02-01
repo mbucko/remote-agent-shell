@@ -1,6 +1,7 @@
 package com.ras.util
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import io.mockk.every
@@ -393,5 +394,164 @@ class ClipboardServiceTest {
         val result = service.prepareForTerminal(withNull)
         assertNotNull(result)
         assertArrayEquals(withNull.toByteArray(), result)
+    }
+
+    // =========================================================================
+    // extractImage tests
+    // =========================================================================
+
+    @Test
+    fun `extractImage returns null when clipboard manager unavailable`() {
+        every { context.getSystemService(Context.CLIPBOARD_SERVICE) } returns null
+        val service = AndroidClipboardService(context)
+
+        val result = service.extractImage()
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `extractImage returns null when primaryClip is null`() {
+        every { clipboardManager.primaryClip } returns null
+
+        val result = service.extractImage()
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `extractImage returns null when clip has no items`() {
+        val emptyClip = mockk<ClipData> {
+            every { itemCount } returns 0
+        }
+        every { clipboardManager.primaryClip } returns emptyClip
+
+        val result = service.extractImage()
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `extractImage returns null when no image MIME type`() {
+        val description = mockk<ClipDescription> {
+            every { mimeTypeCount } returns 1
+            every { getMimeType(0) } returns "text/plain"
+        }
+        val item = mockk<ClipData.Item> {
+            every { uri } returns null
+        }
+        val clip = mockk<ClipData> {
+            every { itemCount } returns 1
+            every { getItemAt(0) } returns item
+            every { getDescription() } returns description
+        }
+        every { clipboardManager.primaryClip } returns clip
+
+        val result = service.extractImage()
+
+        assertNull(result)
+    }
+
+    // =========================================================================
+    // hasImage tests
+    // =========================================================================
+
+    @Test
+    fun `hasImage returns false when clipboard manager unavailable`() {
+        every { context.getSystemService(Context.CLIPBOARD_SERVICE) } returns null
+        val service = AndroidClipboardService(context)
+
+        val result = service.hasImage()
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `hasImage returns false when primaryClip is null`() {
+        every { clipboardManager.primaryClip } returns null
+
+        val result = service.hasImage()
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `hasImage returns false when no image MIME type`() {
+        val description = mockk<ClipDescription> {
+            every { mimeTypeCount } returns 1
+            every { getMimeType(0) } returns "text/plain"
+        }
+        val clip = mockk<ClipData> {
+            every { itemCount } returns 1
+            every { getDescription() } returns description
+        }
+        every { clipboardManager.primaryClip } returns clip
+
+        val result = service.hasImage()
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `hasImage returns true when image MIME type present`() {
+        val description = mockk<ClipDescription> {
+            every { mimeTypeCount } returns 1
+            every { getMimeType(0) } returns "image/png"
+        }
+        val clip = mockk<ClipData> {
+            every { itemCount } returns 1
+            every { getDescription() } returns description
+        }
+        every { clipboardManager.primaryClip } returns clip
+
+        val result = service.hasImage()
+
+        assertTrue(result)
+    }
+
+    @Test
+    fun `hasImage returns true for jpeg MIME type`() {
+        val description = mockk<ClipDescription> {
+            every { mimeTypeCount } returns 2
+            every { getMimeType(0) } returns "text/plain"
+            every { getMimeType(1) } returns "image/jpeg"
+        }
+        val clip = mockk<ClipData> {
+            every { itemCount } returns 1
+            every { getDescription() } returns description
+        }
+        every { clipboardManager.primaryClip } returns clip
+
+        val result = service.hasImage()
+
+        assertTrue(result)
+    }
+
+    // =========================================================================
+    // readImageFromUri tests
+    // =========================================================================
+
+    @Test
+    fun `readImageFromUri returns null when contentResolver throws`() {
+        val uri = mockk<android.net.Uri>()
+        every { context.contentResolver } returns mockk {
+            every { openInputStream(uri) } throws SecurityException("Permission denied")
+        }
+
+        val result = service.readImageFromUri(uri)
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `readImageFromUri returns null when stream is null`() {
+        val uri = mockk<android.net.Uri>()
+        every { context.contentResolver } returns mockk {
+            every { openInputStream(uri) } returns null
+        }
+
+        val result = service.readImageFromUri(uri)
+
+        assertNull(result)
     }
 }

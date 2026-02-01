@@ -20,6 +20,7 @@
     <string name="terminal_send">Send</string>
     <string name="terminal_enter">Enter</string>
     <string name="terminal_paste">Paste</string>
+    <string name="terminal_pick_image">Pick image</string>
     <string name="terminal_add_button">Add button</string>
     <string name="terminal_raw_mode">Raw Mode</string>
     <string name="terminal_normal_mode">Normal Mode</string>

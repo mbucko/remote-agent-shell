@@ -148,24 +148,55 @@ class ManagerFactory:
             except Exception as e:
                 logger.warning(f"Failed to send clipboard message to {device_id}: {e}")
 
-        async def send_keys(device_id: str, keystroke: str) -> None:
-            """Send keystroke to the session the device is attached to."""
+        def _get_tmux_session_name(device_id: str) -> str:
+            """Get tmux session name for a device.
+
+            Args:
+                device_id: The device ID to look up.
+
+            Returns:
+                The tmux session name.
+
+            Raises:
+                RuntimeError: If device is not attached or session not found.
+            """
             session_id = terminal_manager.get_attached_session(device_id)
             if session_id is None:
                 raise RuntimeError(f"Device {device_id} is not attached to any session")
 
-            # Get tmux session name from session manager
             session_data = deps.session_manager.get_session(session_id)
             if session_data is None:
                 raise RuntimeError(f"Session {session_id} not found")
 
-            tmux_name = session_data.tmux_name
+            return session_data.tmux_name
+
+        async def send_keys(device_id: str, keystroke: str) -> None:
+            """Send keystroke to the session the device is attached to.
+
+            Uses tmux send-keys to send keystrokes to the session.
+            """
+            tmux_name = _get_tmux_session_name(device_id)
             await tmux_service.send_keys(tmux_name, keystroke, literal=False)
+
+        async def send_image_path(device_id: str, image_path: str) -> None:
+            """Type image file path into the terminal for Claude Code.
+
+            Claude Code accepts image file paths directly. We use tmux send-keys
+            to type the path into the terminal. This avoids the need for
+            Accessibility permissions on macOS.
+
+            The path is typed without @ prefix since Claude Code will prompt
+            the user to confirm the image attachment.
+            """
+            tmux_name = _get_tmux_session_name(device_id)
+            # Add a space after so user can continue typing
+            await tmux_service.send_keys(tmux_name, f"{image_path} ", literal=True)
 
         clipboard_manager = ClipboardManager(
             config=ClipboardConfig(),
             send_message=send_message,
             send_keys=send_keys,
+            send_image_path=send_image_path,
         )
 
         logger.info("ClipboardManager created with wired callbacks")

@@ -184,10 +184,19 @@ class MacOSClipboard(ClipboardBackend):
             temp_path = f.name
 
         try:
+            # Map format to AppleScript class
+            # PNG uses «class PNGf», JPEG uses «class JPEG»
+            format_class_map = {
+                ImageFormat.PNG: "«class PNGf»",
+                ImageFormat.JPEG: "«class JPEG»",
+                ImageFormat.GIF: "«class GIFf»",
+            }
+            format_class = format_class_map.get(format, "«class PNGf»")
+
             # Use osascript to set clipboard from file
             script = f'''
             set theFile to POSIX file "{temp_path}"
-            set theImage to read theFile as «class PNGf»
+            set theImage to read theFile as {format_class}
             set the clipboard to theImage
             '''
 

@@ -1109,3 +1109,269 @@ class TestTimeout:
 
         # Cleanup
         manager.cleanup()
+
+
+# ============================================================================
+# Image Path Callback Tests
+# ============================================================================
+
+
+class TestImagePathCallback:
+    """Test send_image_path callback for file-based image delivery."""
+
+    @pytest.fixture
+    def send_image_path(self):
+        """Mock send_image_path callback."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def manager_with_image_path(
+        self, config, send_message, send_keys, send_image_path, platform_info, mock_clipboard
+    ):
+        """Create ClipboardManager with send_image_path callback."""
+        from ras.clipboard_manager import ClipboardManager
+
+        return ClipboardManager(
+            config=config,
+            send_message=send_message,
+            send_keys=send_keys,
+            send_image_path=send_image_path,
+            platform_info=platform_info,
+            clipboard_backend=mock_clipboard,
+        )
+
+    @pytest.mark.asyncio
+    async def test_image_path_callback_called_instead_of_clipboard(
+        self, manager_with_image_path, send_message, send_keys, send_image_path, mock_clipboard, device_id
+    ):
+        """When send_image_path provided, uses file path instead of clipboard."""
+        import os
+        import betterproto
+
+        # Complete a small image transfer
+        start_msg = ClipboardMessage(
+            image_start=ImageStart(
+                transfer_id="test-123",
+                total_size=5,
+                format=ImageFormat.PNG,
+                total_chunks=1,
+            )
+        )
+        await manager_with_image_path.handle_message(device_id, start_msg)
+
+        chunk_msg = ClipboardMessage(
+            image_chunk=ImageChunk(
+                transfer_id="test-123",
+                index=0,
+                data=b"12345",
+            )
+        )
+        await manager_with_image_path.handle_message(device_id, chunk_msg)
+
+        # send_image_path should be called (not send_keys)
+        send_image_path.assert_called_once()
+        call_args = send_image_path.call_args[0]
+        assert call_args[0] == device_id
+
+        # Path should contain transfer_id prefix
+        image_path = call_args[1]
+        assert "ras-image-test-123" in image_path
+        assert image_path.endswith(".png")
+
+        # Clipboard should NOT be called (using file path instead)
+        assert mock_clipboard.set_image_call_count == 0
+
+        # send_keys should NOT be called
+        send_keys.assert_not_called()
+
+        # Complete message should be sent
+        complete_msgs = [
+            call[0][1] for call in send_message.call_args_list
+            if betterproto.which_one_of(call[0][1], "payload")[0] == "complete"
+        ]
+        assert len(complete_msgs) == 1
+        assert complete_msgs[0].complete.content_type == ContentType.IMAGE
+
+        # Cleanup temp file
+        if os.path.exists(image_path):
+            os.unlink(image_path)
+
+    @pytest.mark.asyncio
+    async def test_image_saved_with_correct_data(
+        self, manager_with_image_path, send_image_path, device_id
+    ):
+        """Image file contains correct reassembled data."""
+        import os
+
+        image_data = b"PNG_IMAGE_DATA_123"
+
+        start_msg = ClipboardMessage(
+            image_start=ImageStart(
+                transfer_id="abc12345",
+                total_size=len(image_data),
+                format=ImageFormat.PNG,
+                total_chunks=1,
+            )
+        )
+        await manager_with_image_path.handle_message(device_id, start_msg)
+
+        chunk_msg = ClipboardMessage(
+            image_chunk=ImageChunk(
+                transfer_id="abc12345",
+                index=0,
+                data=image_data,
+            )
+        )
+        await manager_with_image_path.handle_message(device_id, chunk_msg)
+
+        # Get the saved file path
+        image_path = send_image_path.call_args[0][1]
+
+        # Verify file contents
+        with open(image_path, "rb") as f:
+            saved_data = f.read()
+        assert saved_data == image_data
+
+        # Cleanup
+        os.unlink(image_path)
+
+    @pytest.mark.asyncio
+    async def test_image_path_callback_failure_reports_error(
+        self, manager_with_image_path, send_message, send_image_path, device_id
+    ):
+        """send_image_path failure is reported as paste failed."""
+        import os
+        import tempfile
+        import betterproto
+
+        send_image_path.side_effect = Exception("tmux send-keys failed")
+
+        start_msg = ClipboardMessage(
+            image_start=ImageStart(
+                transfer_id="test-err",
+                total_size=5,
+                format=ImageFormat.PNG,
+                total_chunks=1,
+            )
+        )
+        await manager_with_image_path.handle_message(device_id, start_msg)
+
+        chunk_msg = ClipboardMessage(
+            image_chunk=ImageChunk(
+                transfer_id="test-err",
+                index=0,
+                data=b"12345",
+            )
+        )
+        await manager_with_image_path.handle_message(device_id, chunk_msg)
+
+        # Should send PASTE_FAILED error
+        error_msgs = [
+            call[0][1] for call in send_message.call_args_list
+            if betterproto.which_one_of(call[0][1], "payload")[0] == "error"
+        ]
+        assert len(error_msgs) == 1
+        assert error_msgs[0].error.code == ErrorCode.PASTE_FAILED
+        assert "tmux send-keys failed" in error_msgs[0].error.message
+
+        # Cleanup temp file if it exists
+        temp_dir = tempfile.gettempdir()
+        image_path = os.path.join(temp_dir, "ras-image-test-err.png")
+        if os.path.exists(image_path):
+            os.unlink(image_path)
+
+    @pytest.mark.asyncio
+    async def test_jpeg_format_uses_jpg_extension(
+        self, manager_with_image_path, send_image_path, device_id
+    ):
+        """JPEG format images get .jpg extension."""
+        import os
+
+        start_msg = ClipboardMessage(
+            image_start=ImageStart(
+                transfer_id="jpeg-test",
+                total_size=5,
+                format=ImageFormat.JPEG,
+                total_chunks=1,
+            )
+        )
+        await manager_with_image_path.handle_message(device_id, start_msg)
+
+        chunk_msg = ClipboardMessage(
+            image_chunk=ImageChunk(
+                transfer_id="jpeg-test",
+                index=0,
+                data=b"JFIF!",
+            )
+        )
+        await manager_with_image_path.handle_message(device_id, chunk_msg)
+
+        image_path = send_image_path.call_args[0][1]
+        assert image_path.endswith(".jpg")
+
+        # Cleanup
+        if os.path.exists(image_path):
+            os.unlink(image_path)
+
+
+# ============================================================================
+# Cleanup Function Tests
+# ============================================================================
+
+
+class TestCleanupFunction:
+    """Test cleanup_old_image_files function."""
+
+    def test_cleanup_removes_old_files(self, tmp_path):
+        """Old ras-image files are removed."""
+        import os
+        import time
+        from ras.clipboard_manager import cleanup_old_image_files
+
+        # Create old file (modify time in the past)
+        old_file = tmp_path / "ras-image-old12345.png"
+        old_file.write_bytes(b"old image data")
+
+        # Mock tempfile.gettempdir to return our tmp_path
+        with patch("ras.clipboard_manager.tempfile.gettempdir", return_value=str(tmp_path)):
+            # Set file mtime to 2 hours ago
+            old_time = time.time() - 7200
+            os.utime(old_file, (old_time, old_time))
+
+            # Cleanup with 1 hour max age
+            cleaned = cleanup_old_image_files(max_age_seconds=3600)
+
+        assert cleaned == 1
+        assert not old_file.exists()
+
+    def test_cleanup_preserves_new_files(self, tmp_path):
+        """Recent ras-image files are preserved."""
+        from ras.clipboard_manager import cleanup_old_image_files
+
+        # Create new file
+        new_file = tmp_path / "ras-image-new12345.png"
+        new_file.write_bytes(b"new image data")
+
+        with patch("ras.clipboard_manager.tempfile.gettempdir", return_value=str(tmp_path)):
+            cleaned = cleanup_old_image_files(max_age_seconds=3600)
+
+        assert cleaned == 0
+        assert new_file.exists()
+
+    def test_cleanup_ignores_non_ras_files(self, tmp_path):
+        """Non-ras-image files are not touched."""
+        import os
+        import time
+        from ras.clipboard_manager import cleanup_old_image_files
+
+        # Create old file with different name
+        other_file = tmp_path / "some-other-image.png"
+        other_file.write_bytes(b"other data")
+
+        with patch("ras.clipboard_manager.tempfile.gettempdir", return_value=str(tmp_path)):
+            old_time = time.time() - 7200
+            os.utime(other_file, (old_time, old_time))
+            cleaned = cleanup_old_image_files(max_age_seconds=3600)
+
+        assert cleaned == 0
+        assert other_file.exists()

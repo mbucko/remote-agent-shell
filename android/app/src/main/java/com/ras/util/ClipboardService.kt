@@ -2,7 +2,11 @@ package com.ras.util
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -11,6 +15,24 @@ import javax.inject.Singleton
  *
  * Abstracts clipboard access for dependency injection and testability.
  */
+/**
+ * Result of extracting image from clipboard.
+ */
+data class ClipboardImage(
+    val data: ByteArray,
+    val format: ImageFormat
+) {
+    enum class ImageFormat { JPEG, PNG }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ClipboardImage) return false
+        return data.contentEquals(other.data) && format == other.format
+    }
+
+    override fun hashCode(): Int = data.contentHashCode() * 31 + format.hashCode()
+}
+
 interface ClipboardService {
     /**
      * Extract text from clipboard.
@@ -18,6 +40,18 @@ interface ClipboardService {
      * @return Text content or null if clipboard is empty or contains non-text
      */
     fun extractText(): String?
+
+    /**
+     * Extract image from clipboard.
+     *
+     * @return Image data and format, or null if clipboard doesn't contain an image
+     */
+    fun extractImage(): ClipboardImage?
+
+    /**
+     * Check if clipboard contains an image.
+     */
+    fun hasImage(): Boolean
 
     /**
      * Prepare clipboard text for sending to terminal.
@@ -37,9 +71,29 @@ interface ClipboardService {
      */
     fun wouldTruncate(text: String): Boolean
 
+    /**
+     * Read an image from a content URI and convert to PNG.
+     *
+     * @param uri Content URI from photo picker or file provider
+     * @return PNG image data, or null if read fails or image too large
+     */
+    fun readImageFromUri(uri: Uri): ClipboardImage?
+
     companion object {
         /** Maximum paste size in bytes (64KB). */
         const val MAX_PASTE_BYTES = 65536
+        /** Maximum image size in bytes (5MB). */
+        const val MAX_IMAGE_BYTES = 5 * 1024 * 1024
+        /**
+         * Chunk size for image transfer.
+         *
+         * RFC 8831 (WebRTC Data Channels) Section 6.6 recommends 16KB max message size
+         * to avoid SCTP MTU/congestion issues. This is also the safe limit for
+         * cross-implementation compatibility (libwebrtc ↔ aiortc).
+         *
+         * See: https://lgrahl.de/articles/demystifying-webrtc-dc-size-limit.html
+         */
+        const val IMAGE_CHUNK_SIZE = 16 * 1024
     }
 }
 
@@ -72,6 +126,85 @@ class AndroidClipboardService @Inject constructor(
         return if (text.isNullOrEmpty()) null else text
     }
 
+    override fun extractImage(): ClipboardImage? {
+        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            ?: return null
+
+        val clip = clipboardManager.primaryClip ?: return null
+        if (clip.itemCount == 0) return null
+
+        val description = clip.description
+        val item = clip.getItemAt(0)
+
+        // Check for image MIME types
+        val hasImageMime = (0 until description.mimeTypeCount).any { i ->
+            description.getMimeType(i).startsWith("image/")
+        }
+
+        if (!hasImageMime) {
+            // Try to get image from URI anyway (some apps use content:// URIs)
+            val uri = item.uri ?: return null
+            return tryExtractImageFromUri(uri)
+        }
+
+        // Try URI first (most common for images)
+        item.uri?.let { uri ->
+            tryExtractImageFromUri(uri)?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun tryExtractImageFromUri(uri: Uri): ClipboardImage? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                val bytes = inputStream.readBytes()
+                if (bytes.size > ClipboardService.MAX_IMAGE_BYTES) {
+                    return null // Image too large
+                }
+
+                // Determine format from bytes (magic numbers)
+                val format = when {
+                    bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() ->
+                        ClipboardImage.ImageFormat.JPEG
+                    bytes.size >= 8 && bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() ->
+                        ClipboardImage.ImageFormat.PNG
+                    else -> {
+                        // Try to decode and re-encode as PNG
+                        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            ?: return null
+                        val output = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                        bitmap.recycle()
+                        val pngBytes = output.toByteArray()
+                        if (pngBytes.size > ClipboardService.MAX_IMAGE_BYTES) {
+                            return null
+                        }
+                        return ClipboardImage(pngBytes, ClipboardImage.ImageFormat.PNG)
+                    }
+                }
+                ClipboardImage(bytes, format)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    override fun hasImage(): Boolean {
+        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            ?: return false
+
+        val clip = clipboardManager.primaryClip ?: return false
+        if (clip.itemCount == 0) return false
+
+        val description = clip.description
+
+        // Check for image MIME types
+        return (0 until description.mimeTypeCount).any { i ->
+            description.getMimeType(i).startsWith("image/")
+        }
+    }
+
     override fun prepareForTerminal(text: String): ByteArray? {
         if (text.isEmpty()) return null
 
@@ -86,6 +219,26 @@ class AndroidClipboardService @Inject constructor(
 
     override fun wouldTruncate(text: String): Boolean {
         return text.toByteArray(Charsets.UTF_8).size > ClipboardService.MAX_PASTE_BYTES
+    }
+
+    override fun readImageFromUri(uri: Uri): ClipboardImage? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                val bitmap = BitmapFactory.decodeStream(inputStream) ?: return null
+                val output = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                bitmap.recycle()
+                val pngBytes = output.toByteArray()
+
+                if (pngBytes.size > ClipboardService.MAX_IMAGE_BYTES) {
+                    return null // Image too large
+                }
+
+                ClipboardImage(pngBytes, ClipboardImage.ImageFormat.PNG)
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**

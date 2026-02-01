@@ -1,7 +1,11 @@
 """Clipboard manager for handling image and text transfers."""
 
 import asyncio
+import glob
 import logging
+import os
+import tempfile
+import time
 from typing import Awaitable, Callable, Optional
 
 from .clipboard_types import (
@@ -29,6 +33,41 @@ from .clipboard_platform import (
 
 logger = logging.getLogger(__name__)
 
+# Max age for temp image files (1 hour)
+_TEMP_IMAGE_MAX_AGE_SECONDS = 3600
+
+
+def cleanup_old_image_files(max_age_seconds: int = _TEMP_IMAGE_MAX_AGE_SECONDS) -> int:
+    """Clean up old ras-image temp files.
+
+    Removes ras-image-* files from temp directory that are older than max_age_seconds.
+
+    Args:
+        max_age_seconds: Maximum age in seconds before cleanup (default: 1 hour).
+
+    Returns:
+        Number of files cleaned up.
+    """
+    temp_dir = tempfile.gettempdir()
+    pattern = os.path.join(temp_dir, "ras-image-*")
+    now = time.time()
+    cleaned = 0
+
+    for filepath in glob.glob(pattern):
+        try:
+            file_age = now - os.path.getmtime(filepath)
+            if file_age > max_age_seconds:
+                os.unlink(filepath)
+                cleaned += 1
+                logger.debug("Cleaned up old image file: %s", filepath)
+        except OSError as e:
+            logger.debug("Failed to clean up %s: %s", filepath, e)
+
+    if cleaned > 0:
+        logger.info("Cleaned up %d old image file(s)", cleaned)
+
+    return cleaned
+
 
 class ClipboardError(Exception):
     """Clipboard operation error."""
@@ -55,6 +94,7 @@ class ClipboardManager:
         config: ClipboardConfig,
         send_message: Callable[[str, ClipboardMessage], Awaitable[None]],
         send_keys: Callable[[str, str], Awaitable[None]],
+        send_image_path: Optional[Callable[[str, str], Awaitable[None]]] = None,
         platform_info: Optional[PlatformInfo] = None,
         clipboard_backend: Optional[ClipboardBackend] = None,
     ):
@@ -64,12 +104,15 @@ class ClipboardManager:
             config: Clipboard configuration.
             send_message: Callback to send messages to phone (device_id, message).
             send_keys: Callback to send keystrokes to tmux session (device_id, keystroke).
+            send_image_path: Callback to type image path into terminal (device_id, path).
+                If provided, images are sent via file path instead of clipboard paste.
             platform_info: Platform info (auto-detected if None).
             clipboard_backend: Clipboard backend (auto-created if None).
         """
         self.config = config
         self._send_message = send_message
         self._send_keys = send_keys
+        self._send_image_path = send_image_path
 
         # Platform and clipboard (allow injection for testing)
         self._platform_info = platform_info or detect_platform()
@@ -80,6 +123,9 @@ class ClipboardManager:
         # Transfer state
         self._current_transfer: Optional[ImageTransfer] = None
         self._timeout_task: Optional[asyncio.Task] = None
+
+        # Clean up old temp image files on startup
+        cleanup_old_image_files()
 
         logger.info(
             "ClipboardManager initialized: platform=%s, clipboard_tool=%s",
@@ -363,7 +409,7 @@ class ClipboardManager:
         )
 
     async def _complete_image_transfer(self, device_id: str) -> None:
-        """Complete image transfer - reassemble, set clipboard, paste."""
+        """Complete image transfer - reassemble, save to file, type path."""
         transfer = self._current_transfer
         if not transfer:
             return
@@ -397,44 +443,86 @@ class ClipboardManager:
             )
             return
 
-        # Set clipboard
         transfer.state = TransferState.PASTING
-        try:
-            await asyncio.wait_for(
-                self._clipboard.set_image(image_data, transfer.format),
-                timeout=self.config.paste_timeout,
-            )
-            logger.debug("Image set to clipboard")
-        except asyncio.TimeoutError:
-            await self._send_error(
-                device_id,
-                transfer.transfer_id,
-                ErrorCode.CLIPBOARD_FAILED,
-                "Clipboard operation timed out",
-            )
-            return
-        except ClipboardUnavailableError as e:
-            await self._send_error(
-                device_id,
-                transfer.transfer_id,
-                ErrorCode.CLIPBOARD_FAILED,
-                str(e),
-            )
-            return
 
-        # Send paste keystroke
-        keystroke = self.config.paste_keystroke or self._platform_info.paste_keystroke
+        # Map format to file extension
+        ext_map = {
+            ImageFormat.JPEG: ".jpg",
+            ImageFormat.PNG: ".png",
+            ImageFormat.GIF: ".gif",
+            ImageFormat.WEBP: ".webp",
+        }
+        ext = ext_map.get(transfer.format, ".png")
+
+        # Save image to temp file (persistent - not deleted immediately)
+        # Use transfer_id prefix for uniqueness to avoid overwrites
+        temp_dir = tempfile.gettempdir()
+        image_path = os.path.join(temp_dir, f"ras-image-{transfer.transfer_id[:8]}{ext}")
+
         try:
-            await self._send_keys(device_id, keystroke)
-            logger.debug("Paste keystroke sent: %s", keystroke)
+            with open(image_path, "wb") as f:
+                f.write(image_data)
+            logger.info("Image saved to: %s (%d bytes)", image_path, len(image_data))
         except Exception as e:
             await self._send_error(
                 device_id,
                 transfer.transfer_id,
-                ErrorCode.PASTE_FAILED,
-                str(e),
+                ErrorCode.CLIPBOARD_FAILED,
+                f"Failed to save image: {e}",
             )
             return
+
+        # Send image path to terminal (using tmux send-keys to type it)
+        if self._send_image_path:
+            try:
+                await self._send_image_path(device_id, image_path)
+                logger.debug("Image path sent to terminal: %s", image_path)
+            except Exception as e:
+                await self._send_error(
+                    device_id,
+                    transfer.transfer_id,
+                    ErrorCode.PASTE_FAILED,
+                    str(e),
+                )
+                return
+        else:
+            # Fallback: set clipboard and try to paste (requires permissions)
+            try:
+                await asyncio.wait_for(
+                    self._clipboard.set_image(image_data, transfer.format),
+                    timeout=self.config.paste_timeout,
+                )
+                logger.debug("Image set to clipboard")
+            except asyncio.TimeoutError:
+                await self._send_error(
+                    device_id,
+                    transfer.transfer_id,
+                    ErrorCode.CLIPBOARD_FAILED,
+                    "Clipboard operation timed out",
+                )
+                return
+            except ClipboardUnavailableError as e:
+                await self._send_error(
+                    device_id,
+                    transfer.transfer_id,
+                    ErrorCode.CLIPBOARD_FAILED,
+                    str(e),
+                )
+                return
+
+            # Send paste keystroke
+            keystroke = self.config.paste_keystroke or self._platform_info.paste_keystroke
+            try:
+                await self._send_keys(device_id, keystroke)
+                logger.debug("Paste keystroke sent: %s", keystroke)
+            except Exception as e:
+                await self._send_error(
+                    device_id,
+                    transfer.transfer_id,
+                    ErrorCode.PASTE_FAILED,
+                    str(e),
+                )
+                return
 
         # Send complete
         transfer.state = TransferState.COMPLETE
