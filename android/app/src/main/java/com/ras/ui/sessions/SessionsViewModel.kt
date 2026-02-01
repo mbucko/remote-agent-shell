@@ -31,7 +31,7 @@ class SessionsViewModel @Inject constructor(
     private val connectionManager: ConnectionManager
 ) : ViewModel() {
 
-    private val _screenState = MutableStateFlow<SessionsScreenState>(SessionsScreenState.Loading)
+    private val _screenState = MutableStateFlow<SessionsScreenState>(SessionsScreenState.Loaded(emptyList()))
     val screenState: StateFlow<SessionsScreenState> = _screenState.asStateFlow()
 
     // Dialog states
@@ -108,20 +108,19 @@ class SessionsViewModel @Inject constructor(
 
     private fun loadSessions() {
         viewModelScope.launch {
-            // Atomic check-and-update: only set Loading if we don't already have sessions
-            var shouldLoad = false
+            // Set refreshing state while loading
             _screenState.update { currentState ->
-                if (currentState is SessionsScreenState.Loaded && currentState.sessions.isNotEmpty()) {
-                    Log.i(TAG, "loadSessions: already have ${currentState.sessions.size} sessions, skipping")
-                    currentState // Keep current state
-                } else {
-                    Log.i(TAG, "loadSessions: setting state to Loading")
-                    shouldLoad = true
-                    SessionsScreenState.Loading
+                when (currentState) {
+                    is SessionsScreenState.Loaded -> {
+                        Log.i(TAG, "loadSessions: setting isRefreshing=true")
+                        currentState.copy(isRefreshing = true)
+                    }
+                    else -> {
+                        Log.i(TAG, "loadSessions: state is $currentState, setting to Loaded(empty, refreshing)")
+                        SessionsScreenState.Loaded(emptyList(), isRefreshing = true)
+                    }
                 }
             }
-
-            if (!shouldLoad) return@launch
 
             try {
                 sessionRepository.listSessions()

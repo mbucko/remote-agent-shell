@@ -205,6 +205,37 @@ class TestTerminalManagerAttach:
         assert attached_events[0].attached.rows == 24
 
     @pytest.mark.asyncio
+    async def test_attach_sets_window_size_latest(self):
+        """Attaching should set window-size to latest for auto-resize on disconnect."""
+        session_provider = MockSessionProvider()
+        session_provider.add_session("abc123def456", "ras-test-session")
+        tmux_service = MockTmuxService()
+        events = []
+
+        manager = TerminalManager(
+            session_provider=session_provider,
+            tmux_executor=MockTmuxExecutor(),
+            send_event=lambda conn_id, event: events.append((conn_id, event)),
+            tmux_service=tmux_service,
+        )
+
+        command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        with patch(
+            "ras.terminal.manager.OutputCapture"
+        ) as mock_capture_class:
+            mock_capture = AsyncMock()
+            mock_capture.start = AsyncMock()
+            mock_capture_class.return_value = mock_capture
+
+            await manager.handle_command("conn1", command)
+
+        # Should have called set_window_size_latest for the session
+        tmux_service.set_window_size_latest.assert_called_once_with("ras-test-session")
+
+    @pytest.mark.asyncio
     async def test_attach_to_externally_killed_session_sends_session_gone(self, setup):
         """Attaching to session killed externally should send SESSION_GONE error."""
         manager, _, events = setup
@@ -479,7 +510,7 @@ class MockTmuxService:
     """Mock tmux service for testing."""
 
     def __init__(self):
-        self.resize_window_to_largest = AsyncMock()
+        self.set_window_size_latest = AsyncMock()
 
 
 class TestTerminalManagerConnectionClosed:
@@ -540,61 +571,15 @@ class TestTerminalManagerConnectionClosed:
         mock_capture.stop.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_connection_closed_resizes_attached_sessions(self, setup_with_tmux_service):
-        """Connection closed should resize windows for sessions the connection was attached to."""
+    async def test_connection_closed_does_not_resize(self, setup_with_tmux_service):
+        """Connection closed should not trigger resize (window-size=latest handles it)."""
         manager, tmux_service, _ = setup_with_tmux_service
         manager._attachments["session1"] = {"conn1", "conn2"}
 
         await manager.on_connection_closed("conn1")
 
-        tmux_service.resize_window_to_largest.assert_called_once_with("ras-test1")
-
-    @pytest.mark.asyncio
-    async def test_connection_closed_resizes_multiple_sessions(self, setup_with_tmux_service):
-        """Connection closed should resize all sessions the connection was attached to."""
-        manager, tmux_service, _ = setup_with_tmux_service
-        manager._attachments["session1"] = {"conn1"}
-        manager._attachments["session2"] = {"conn1"}
-
-        await manager.on_connection_closed("conn1")
-
-        assert tmux_service.resize_window_to_largest.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_connection_closed_does_not_resize_unattached_sessions(self, setup_with_tmux_service):
-        """Connection closed should not resize sessions the connection wasn't attached to."""
-        manager, tmux_service, _ = setup_with_tmux_service
-        manager._attachments["session1"] = {"conn2"}  # conn1 not attached
-
-        await manager.on_connection_closed("conn1")
-
-        tmux_service.resize_window_to_largest.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_connection_closed_handles_missing_session_info(self, setup_with_tmux_service):
-        """Connection closed should handle case where session info is not found."""
-        manager, tmux_service, session_provider = setup_with_tmux_service
-        # Create attachment for session that doesn't exist in provider
-        manager._attachments["nonexistent"] = {"conn1"}
-
-        # Should not raise
-        await manager.on_connection_closed("conn1")
-
-        tmux_service.resize_window_to_largest.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_connection_closed_calls_resize_for_all_sessions(self, setup_with_tmux_service):
-        """Connection closed should call resize for all attached sessions."""
-        manager, tmux_service, _ = setup_with_tmux_service
-        manager._attachments["session1"] = {"conn1"}
-        manager._attachments["session2"] = {"conn1"}
-
-        await manager.on_connection_closed("conn1")
-
-        # Should call resize for both sessions
-        assert tmux_service.resize_window_to_largest.call_count == 2
-        tmux_service.resize_window_to_largest.assert_any_call("ras-test1")
-        tmux_service.resize_window_to_largest.assert_any_call("ras-test2")
+        # With window-size=latest, tmux auto-resizes - no explicit resize call needed
+        tmux_service.set_window_size_latest.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_connection_closed_without_tmux_service(self, setup):

@@ -49,34 +49,34 @@ class TestGenerateSessionName:
     def test_basic_generation(self):
         """Basic name generation works."""
         name = generate_session_name("/home/user/my-project", "claude", [])
-        assert name == "ras-claude-my-project"
+        assert name == "claude-my-project"
 
     def test_uses_directory_basename(self):
         """Uses only the directory basename."""
         name = generate_session_name("/very/long/path/to/project", "aider", [])
-        assert name == "ras-aider-project"
+        assert name == "aider-project"
 
     def test_sanitizes_directory_name(self):
         """Directory name is sanitized."""
         name = generate_session_name("/home/user/My Project (Copy)", "claude", [])
-        assert name == "ras-claude-my-project-copy"
+        assert name == "claude-my-project-copy"
 
     def test_sanitizes_agent_name(self):
         """Agent name is sanitized."""
         name = generate_session_name("/home/user/project", "Claude Code", [])
-        assert name == "ras-claude-code-project"
+        assert name == "claude-code-project"
 
     def test_collision_appends_number(self):
         """Collision with existing name appends -2."""
-        existing = ["ras-claude-my-project"]
+        existing = ["claude-my-project"]
         name = generate_session_name("/home/user/my-project", "claude", existing)
-        assert name == "ras-claude-my-project-2"
+        assert name == "claude-my-project-2"
 
     def test_multiple_collisions(self):
         """Multiple collisions increment counter."""
-        existing = ["ras-claude-my-project", "ras-claude-my-project-2"]
+        existing = ["claude-my-project", "claude-my-project-2"]
         name = generate_session_name("/home/user/my-project", "claude", existing)
-        assert name == "ras-claude-my-project-3"
+        assert name == "claude-my-project-3"
 
     def test_truncation_respects_max_length(self):
         """Long names are truncated to max_length."""
@@ -92,12 +92,7 @@ class TestGenerateSessionName:
         assert len(name) <= 50
         assert name.endswith("-2")
 
-    def test_custom_prefix(self):
-        """Custom prefix is used."""
-        name = generate_session_name("/home/user/project", "claude", [], prefix="test")
-        assert name == "test-claude-project"
-
     def test_trailing_slash_handled(self):
         """Trailing slash on directory is handled."""
         name = generate_session_name("/home/user/project/", "claude", [])
-        assert name == "ras-claude-project"
+        assert name == "claude-project"

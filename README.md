@@ -51,7 +51,7 @@ The mobile app uses a **Connection Orchestrator** with parallel racing:
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (package manager)
-- tmux
+- tmux 2.9+
 
 ### Installation
 

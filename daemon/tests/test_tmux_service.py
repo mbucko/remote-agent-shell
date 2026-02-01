@@ -80,7 +80,7 @@ class TestTmuxVersionCheck:
 
     @pytest.mark.asyncio
     async def test_verify_passes_for_valid_version(self):
-        """verify() passes for tmux >= 2.1."""
+        """verify() passes for tmux >= 2.9."""
         executor = MockCommandExecutor()
         executor.add_response("-V", "tmux 3.4")
         service = TmuxService(executor=executor)
@@ -91,7 +91,7 @@ class TestTmuxVersionCheck:
     async def test_verify_fails_for_old_version(self):
         """verify() raises TmuxVersionError for old tmux."""
         executor = MockCommandExecutor()
-        executor.add_response("-V", "tmux 1.9")
+        executor.add_response("-V", "tmux 2.8")
         service = TmuxService(executor=executor)
 
         with pytest.raises(TmuxVersionError, match="too old"):
@@ -101,8 +101,8 @@ class TestTmuxVersionCheck:
     async def test_verify_parses_version_correctly(self):
         """verify() correctly parses various version formats."""
         test_cases = [
-            ("tmux 2.1", True),
-            ("tmux 2.0", False),
+            ("tmux 2.9", True),
+            ("tmux 2.8", False),
             ("tmux 3.0", True),
             ("tmux 3.4", True),
             ("tmux next-3.5", True),  # Development version
@@ -372,6 +372,43 @@ class TestSwitchWindow:
         assert "$0:@1" in select_call
 
 
+class TestCreateSession:
+    """Test session creation."""
+
+    @pytest.mark.asyncio
+    async def test_create_session_sets_window_size_latest(self):
+        """create_session() should set window-size to latest."""
+        executor = MockCommandExecutor()
+        executor.add_response("-V", "tmux 3.4")
+        executor.add_response("new-session", "$0")
+        executor.add_response("set-option", "")
+        service = TmuxService(executor=executor)
+
+        await service.create_session("test-session")
+
+        # Should have called set-option with window-size latest
+        set_calls = [c for c in executor.calls if "set-option" in c]
+        assert len(set_calls) == 1
+        set_call = set_calls[0]
+        assert "-t" in set_call
+        assert "test-session" in set_call
+        assert "window-size" in set_call
+        assert "latest" in set_call
+
+    @pytest.mark.asyncio
+    async def test_create_session_returns_session_id(self):
+        """create_session() should return the session ID."""
+        executor = MockCommandExecutor()
+        executor.add_response("-V", "tmux 3.4")
+        executor.add_response("new-session", "$0")
+        executor.add_response("set-option", "")
+        service = TmuxService(executor=executor)
+
+        session_id = await service.create_session("test-session")
+
+        assert session_id == "$0"
+
+
 class TestCapturePane:
     """Test capturing pane content."""
 
@@ -410,28 +447,29 @@ class TestCapturePane:
         assert "-100" in capture_call
 
 
-class TestResizeWindowToLargest:
-    """Test resize_window_to_largest functionality."""
+class TestSetWindowSizeLatest:
+    """Test set_window_size_latest functionality."""
 
     @pytest.mark.asyncio
-    async def test_resize_window_to_largest_calls_correct_command(self):
-        """resize_window_to_largest should call tmux resize-window -A."""
+    async def test_set_window_size_latest_calls_correct_command(self):
+        """set_window_size_latest should call tmux set-option window-size latest."""
         executor = MockCommandExecutor()
         executor.add_response("-V", "tmux 3.4")
-        executor.add_response("resize-window", "")
+        executor.add_response("set-option", "")
         service = TmuxService(executor=executor)
 
-        await service.resize_window_to_largest("ras-test-session")
+        await service.set_window_size_latest("ras-test-session")
 
-        resize_call = [c for c in executor.calls if "resize-window" in c][0]
-        assert "resize-window" in resize_call
-        assert "-A" in resize_call
-        assert "-t" in resize_call
-        assert "ras-test-session" in resize_call
+        set_call = [c for c in executor.calls if "set-option" in c][0]
+        assert "set-option" in set_call
+        assert "-t" in set_call
+        assert "ras-test-session" in set_call
+        assert "window-size" in set_call
+        assert "latest" in set_call
 
     @pytest.mark.asyncio
-    async def test_resize_window_to_largest_handles_error(self):
-        """resize_window_to_largest should not raise on error."""
+    async def test_set_window_size_latest_handles_error(self):
+        """set_window_size_latest should not raise on error."""
         executor = MockCommandExecutor()
         executor.add_response("-V", "tmux 3.4")
         service = TmuxService(executor=executor)
@@ -441,15 +479,15 @@ class TestResizeWindowToLargest:
         executor.raise_exception = TmuxError("tmux error")
 
         # Should not raise
-        await service.resize_window_to_largest("nonexistent-session")
+        await service.set_window_size_latest("nonexistent-session")
 
     @pytest.mark.asyncio
-    async def test_resize_window_to_largest_handles_nonexistent_session(self):
-        """resize_window_to_largest should handle nonexistent session gracefully."""
+    async def test_set_window_size_latest_handles_nonexistent_session(self):
+        """set_window_size_latest should handle nonexistent session gracefully."""
         executor = MockCommandExecutor()
         executor.add_response("-V", "tmux 3.4")
         executor.add_response(
-            "resize-window",
+            "set-option",
             stdout="",
             stderr="can't find session: nonexistent",
             returncode=1,
@@ -457,7 +495,7 @@ class TestResizeWindowToLargest:
         service = TmuxService(executor=executor)
 
         # Should not raise
-        await service.resize_window_to_largest("nonexistent")
+        await service.set_window_size_latest("nonexistent")
 
 
 class TestAsyncCommandExecutor:

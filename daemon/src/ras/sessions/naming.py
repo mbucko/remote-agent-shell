@@ -40,11 +40,10 @@ def generate_session_name(
     agent: str,
     existing: list[str],
     max_length: int = 50,
-    prefix: str = "ras",
 ) -> str:
     """Generate a unique session name.
 
-    Format: ras-<agent>-<directory>
+    Format: <agent>-<directory>
     Appends -2, -3, etc. for duplicates.
 
     Args:
@@ -52,7 +51,6 @@ def generate_session_name(
         agent: Agent identifier.
         existing: List of existing session names.
         max_length: Maximum name length.
-        prefix: Session name prefix.
 
     Returns:
         Unique session name.
@@ -61,7 +59,7 @@ def generate_session_name(
     sanitized_dir = sanitize_name(dir_name)
     sanitized_agent = sanitize_name(agent)
 
-    base_name = f"{prefix}-{sanitized_agent}-{sanitized_dir}"
+    base_name = f"{sanitized_agent}-{sanitized_dir}"
 
     # Truncate if needed (leave room for suffix like "-99")
     suffix_reserve = 4

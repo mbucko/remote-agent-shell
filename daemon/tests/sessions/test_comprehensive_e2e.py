@@ -1174,19 +1174,19 @@ class TestDaemonStartup:
         assert len(result.list.sessions) == 2
 
     @pytest.mark.asyncio
-    async def test_ds08_non_ras_tmux_sessions(
+    async def test_ds08_all_tmux_sessions_adopted(
         self,
         temp_dir_tree: Path,
         mock_agents: AsyncMock,
         mock_directories: AsyncMock,
         tmp_path: Path,
     ):
-        """DS-08: Non-ras tmux sessions - ignored (not adopted)."""
+        """DS-08: All tmux sessions are adopted."""
         persistence_path = tmp_path / "sessions.json"
 
         tmux = MockTmuxService()
-        # Mix of ras and non-ras sessions
-        tmux.sessions["ras-claude-myproject"] = {"directory": "/", "command": "claude"}
+        # Multiple tmux sessions
+        tmux.sessions["claude-myproject"] = {"directory": "/", "command": "claude"}
         tmux.sessions["user-session"] = {"directory": "/", "command": "bash"}
         tmux.sessions["dev"] = {"directory": "/", "command": "vim"}
 
@@ -1212,10 +1212,11 @@ class TestDaemonStartup:
         )
         await manager.initialize()
 
-        # Should only have adopted the ras- session
+        # Should have adopted all tmux sessions
         result = await manager.list_sessions()
-        assert len(result.list.sessions) == 1
-        assert result.list.sessions[0].tmux_name == "ras-claude-myproject"
+        assert len(result.list.sessions) == 3
+        tmux_names = {s.tmux_name for s in result.list.sessions}
+        assert tmux_names == {"claude-myproject", "user-session", "dev"}
 
 
 # ============================================================================

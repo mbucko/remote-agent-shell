@@ -54,8 +54,8 @@ class TmuxService:
     Use dependency injection for the command executor to enable testing.
     """
 
-    # Minimum supported tmux version
-    MIN_VERSION = (2, 1)
+    # Minimum supported tmux version (2.9 required for window-size option)
+    MIN_VERSION = (2, 9)
 
     def __init__(
         self,
@@ -326,7 +326,37 @@ class TmuxService:
             args.append(command)
 
         stdout, _, _ = await self._run(*args)
-        return stdout.decode().strip()
+        session_id = stdout.decode().strip()
+
+        # Set window-size to follow the most recently active client
+        # This ensures the window auto-resizes when clients connect/disconnect
+        await self.set_window_size_latest(name)
+
+        return session_id
+
+    async def set_window_size_latest(self, session_name: str) -> None:
+        """Set session window-size option to 'latest'.
+
+        With window-size=latest, the window automatically follows the most
+        recently active client. When a remote client disconnects, the window
+        automatically resizes to the local terminal dimensions.
+
+        Args:
+            session_name: The tmux session name.
+        """
+        await self.verify()
+
+        try:
+            await self._run(
+                "set-option",
+                "-t",
+                session_name,
+                "window-size",
+                "latest",
+            )
+        except Exception as e:
+            # Non-fatal - older sessions may not exist
+            logger.debug(f"Failed to set window-size for {session_name}: {e}")
 
     async def kill_session(self, session_id: str) -> None:
         """Kill a tmux session.
@@ -360,25 +390,3 @@ class TmuxService:
 
         stdout, _, _ = await self._run(*args)
         return stdout.decode().strip()
-
-    async def resize_window_to_largest(self, session_name: str) -> None:
-        """Resize session window to fit the largest attached client.
-
-        This is useful when a remote client disconnects and we want the
-        window to expand back to the local terminal size.
-
-        Args:
-            session_name: The tmux session name (e.g., "ras-claude-myproject").
-        """
-        await self.verify()
-
-        try:
-            await self._run(
-                "resize-window",
-                "-A",  # Resize to largest client
-                "-t",
-                session_name,
-            )
-        except Exception as e:
-            # Non-fatal - window may not exist or have no clients
-            logger.debug(f"Failed to resize window {session_name}: {e}")
