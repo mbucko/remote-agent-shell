@@ -583,17 +583,18 @@ class TestTerminalManagerConnectionClosed:
         tmux_service.resize_window_to_largest.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_connection_closed_handles_resize_error_gracefully(self, setup_with_tmux_service):
-        """Connection closed should continue if resize fails for one session."""
+    async def test_connection_closed_calls_resize_for_all_sessions(self, setup_with_tmux_service):
+        """Connection closed should call resize for all attached sessions."""
         manager, tmux_service, _ = setup_with_tmux_service
         manager._attachments["session1"] = {"conn1"}
         manager._attachments["session2"] = {"conn1"}
-        tmux_service.resize_window_to_largest.side_effect = [Exception("fail"), None]
 
-        # Should not raise, should try both sessions
         await manager.on_connection_closed("conn1")
 
+        # Should call resize for both sessions
         assert tmux_service.resize_window_to_largest.call_count == 2
+        tmux_service.resize_window_to_largest.assert_any_call("ras-test1")
+        tmux_service.resize_window_to_largest.assert_any_call("ras-test2")
 
     @pytest.mark.asyncio
     async def test_connection_closed_without_tmux_service(self, setup):

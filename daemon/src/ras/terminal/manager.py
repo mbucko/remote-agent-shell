@@ -524,11 +524,8 @@ class TerminalManager:
             session_info = self._sessions.get_session(session_id)
             if session_info and session_info.get("tmux_name"):
                 tmux_name = session_info["tmux_name"]
-                try:
-                    await self._tmux_service.resize_window_to_largest(tmux_name)
-                except Exception as e:
-                    # Non-fatal - continue with other sessions
-                    logger.debug(f"Failed to resize window {tmux_name}: {e}")
+                # TmuxService handles errors internally (non-fatal)
+                await self._tmux_service.resize_window_to_largest(tmux_name)
 
     async def shutdown(self) -> None:
         """Shutdown all captures."""
