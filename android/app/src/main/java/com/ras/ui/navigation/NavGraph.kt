@@ -7,41 +7,59 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import com.ras.ui.disconnected.DisconnectedScreen
+import com.ras.ui.connecting.ConnectingScreen
+import com.ras.ui.home.HomeScreen
 import com.ras.ui.pairing.PairingScreen
 import com.ras.ui.sessions.CreateSessionScreen
 import com.ras.ui.sessions.SessionsScreen
 import com.ras.ui.settings.SettingsScreen
-import com.ras.ui.startup.StartupScreen
 import com.ras.ui.terminal.TerminalScreen
 
 @Composable
 fun NavGraph(
     navController: NavHostController,
     modifier: Modifier = Modifier,
-    startDestination: String = Routes.Startup.route
+    startDestination: String = Routes.Home.route
 ) {
     NavHost(
         navController = navController,
         startDestination = startDestination,
         modifier = modifier
     ) {
-        composable(Routes.Startup.route) {
-            StartupScreen(
+        composable(Routes.Home.route) {
+            // Check for showDisconnectedMessage flag from previous navigation
+            val showDisconnectedMessage = it.savedStateHandle.get<Boolean>("showDisconnectedMessage") ?: false
+            // Clear the flag after reading
+            it.savedStateHandle.remove<Boolean>("showDisconnectedMessage")
+
+            HomeScreen(
+                onNavigateToConnecting = {
+                    navController.navigate(Routes.Connecting.route)
+                },
                 onNavigateToPairing = {
-                    navController.navigate(Routes.Pairing.route) {
-                        popUpTo(Routes.Startup.route) { inclusive = true }
-                    }
+                    navController.navigate(Routes.Pairing.route)
+                },
+                onNavigateToSettings = {
+                    navController.navigate(Routes.Settings.route)
                 },
                 onNavigateToSessions = {
                     navController.navigate(Routes.Sessions.route) {
-                        popUpTo(Routes.Startup.route) { inclusive = true }
+                        popUpTo(Routes.Home.route) { inclusive = false }
                     }
                 },
-                onNavigateToDisconnected = {
-                    navController.navigate(Routes.Disconnected.route) {
-                        popUpTo(Routes.Startup.route) { inclusive = true }
+                showDisconnectedMessage = showDisconnectedMessage
+            )
+        }
+
+        composable(Routes.Connecting.route) {
+            ConnectingScreen(
+                onNavigateToSessions = {
+                    navController.navigate(Routes.Sessions.route) {
+                        popUpTo(Routes.Home.route) { inclusive = false }
                     }
+                },
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }
@@ -49,7 +67,7 @@ fun NavGraph(
         composable(Routes.Pairing.route) {
             PairingScreen(
                 onPaired = {
-                    navController.navigate(Routes.Sessions.route) {
+                    navController.navigate(Routes.Home.route) {
                         popUpTo(Routes.Pairing.route) { inclusive = true }
                     }
                 },
@@ -72,13 +90,15 @@ fun NavGraph(
                 },
                 onNavigateToPairing = {
                     navController.navigate(Routes.Pairing.route) {
-                        popUpTo(0) { inclusive = true }
+                        popUpTo(Routes.Home.route) { inclusive = false }
                     }
                 },
                 onDisconnect = {
-                    navController.navigate(Routes.Disconnected.route) {
+                    // Navigate to Home with snackbar message
+                    navController.navigate(Routes.Home.route) {
                         popUpTo(0) { inclusive = true }
                     }
+                    navController.currentBackStackEntry?.savedStateHandle?.set("showDisconnectedMessage", true)
                 }
             )
         }
@@ -111,24 +131,11 @@ fun NavGraph(
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onDisconnect = {
-                    navController.navigate(Routes.Disconnected.route) {
+                    // Navigate to Home with snackbar message
+                    navController.navigate(Routes.Home.route) {
                         popUpTo(0) { inclusive = true }
                     }
-                }
-            )
-        }
-
-        composable(Routes.Disconnected.route) {
-            DisconnectedScreen(
-                onNavigateToStartup = {
-                    navController.navigate(Routes.Startup.route) {
-                        popUpTo(Routes.Disconnected.route) { inclusive = true }
-                    }
-                },
-                onNavigateToPairing = {
-                    navController.navigate(Routes.Pairing.route) {
-                        popUpTo(Routes.Disconnected.route) { inclusive = true }
-                    }
+                    navController.currentBackStackEntry?.savedStateHandle?.set("showDisconnectedMessage", true)
                 }
             )
         }

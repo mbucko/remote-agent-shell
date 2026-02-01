@@ -4,8 +4,11 @@ package com.ras.ui.navigation
  * Navigation routes for the app.
  */
 sealed class Routes(val route: String) {
-    /** Startup screen - checks credentials and auto-reconnects */
-    data object Startup : Routes("startup")
+    /** Home screen - app entry point showing device info */
+    data object Home : Routes("home")
+
+    /** Connecting screen - shows connection progress */
+    data object Connecting : Routes("connecting")
 
     /** QR scanning and pairing screen */
     data object Pairing : Routes("pairing")
@@ -20,9 +23,6 @@ sealed class Routes(val route: String) {
 
     /** App settings */
     data object Settings : Routes("settings")
-
-    /** Disconnected home screen - shown when user manually disconnects */
-    data object Disconnected : Routes("disconnected")
 
     /** Create new session wizard */
     data object CreateSession : Routes("create_session")

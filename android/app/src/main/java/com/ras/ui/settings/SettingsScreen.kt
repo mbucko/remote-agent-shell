@@ -87,6 +87,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
+    val autoConnectEnabled by viewModel.autoConnectEnabled.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Handle one-time UI events
@@ -171,8 +172,10 @@ fun SettingsScreen(
             SectionHeader(text = stringResource(R.string.settings_connection))
             ConnectionCard(
                 isConnected = isConnected,
+                autoConnectEnabled = autoConnectEnabled,
                 daemonVersion = uiState.daemonInfo.version,
                 ipAddress = uiState.daemonInfo.ipAddress,
+                onAutoConnectChanged = { viewModel.setAutoConnect(it) },
                 onDisconnect = {
                     viewModel.disconnect()
                     onDisconnect()
@@ -564,8 +567,10 @@ private fun NotificationRow(
 @Composable
 private fun ConnectionCard(
     isConnected: Boolean,
+    autoConnectEnabled: Boolean,
     daemonVersion: String?,
     ipAddress: String?,
+    onAutoConnectChanged: (Boolean) -> Unit,
     onDisconnect: () -> Unit
 ) {
     var showDisconnectDialog by remember { mutableStateOf(false) }
@@ -606,6 +611,31 @@ private fun ConnectionCard(
                 InfoRow(
                     label = stringResource(R.string.settings_ip_address),
                     value = ipAddress
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Auto-connect toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Auto-connect on launch",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Automatically connect when the app starts",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = autoConnectEnabled,
+                    onCheckedChange = onAutoConnectChanged
                 )
             }
 

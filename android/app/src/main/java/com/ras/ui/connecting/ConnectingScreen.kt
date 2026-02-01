@@ -1,5 +1,6 @@
-package com.ras.ui.startup
+package com.ras.ui.connecting
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,29 +16,31 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.foundation.Canvas
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlin.math.PI
-import kotlin.math.sin
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,77 +52,69 @@ import com.ras.data.connection.LocalCapabilitiesInfo
 import com.ras.data.connection.StrategyInfo
 import com.ras.data.connection.StrategyStatus
 import com.ras.domain.startup.ReconnectionResult
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
+import kotlin.math.PI
+import kotlin.math.sin
 
 /**
- * Startup screen that handles automatic reconnection flow.
- * Shows loading/connecting state and handles navigation.
+ * Screen that shows connection progress and handles connection flow.
+ *
+ * Extracted from StartupScreen to be navigated to from HomeScreen.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StartupScreen(
-    onNavigateToPairing: () -> Unit,
+fun ConnectingScreen(
     onNavigateToSessions: () -> Unit,
-    onNavigateToDisconnected: () -> Unit,
-    viewModel: StartupViewModel = hiltViewModel()
+    onNavigateBack: () -> Unit,
+    viewModel: ConnectingViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    // Handle navigation
-    LaunchedEffect(state) {
-        when (state) {
-            is StartupState.NavigateToPairing -> onNavigateToPairing()
-            is StartupState.NavigateToSessions -> onNavigateToSessions()
-            is StartupState.NavigateToDisconnected -> onNavigateToDisconnected()
-            else -> { /* Stay on this screen */ }
-        }
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        when (val currentState = state) {
-            is StartupState.Loading -> {
-                LoadingContent(message = "Checking credentials...")
-            }
-            is StartupState.Connecting -> {
-                ConnectingContent(log = currentState.log)
-            }
-            is StartupState.ConnectionFailed -> {
-                ConnectionFailedContent(
-                    reason = currentState.reason,
-                    log = currentState.log,
-                    onRetry = { viewModel.retry() },
-                    onRePair = { viewModel.rePair() }
-                )
-            }
-            is StartupState.NavigateToPairing,
-            is StartupState.NavigateToSessions,
-            is StartupState.NavigateToDisconnected -> {
-                // Will navigate away, show loading in the meantime
-                LoadingContent(message = "")
+    // Handle navigation events
+    LaunchedEffect(Unit) {
+        viewModel.events.collectLatest { event ->
+            when (event) {
+                is ConnectingUiEvent.NavigateToSessions -> onNavigateToSessions()
+                is ConnectingUiEvent.NavigateBack -> onNavigateBack()
             }
         }
     }
-}
 
-@Composable
-private fun LoadingContent(
-    message: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        CircularProgressIndicator()
-        if (message.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Connecting") },
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.navigateBack() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                }
             )
+        }
+    ) { padding ->
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            when (val currentState = state) {
+                is ConnectingState.Connecting -> {
+                    ConnectingContent(log = currentState.log)
+                }
+                is ConnectingState.Failed -> {
+                    ConnectionFailedContent(
+                        reason = currentState.reason,
+                        log = currentState.log,
+                        onRetry = { viewModel.retry() }
+                    )
+                }
+            }
         }
     }
 }
@@ -132,11 +127,11 @@ private fun ConnectingContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(start = 16.dp, end = 16.dp, top = 72.dp, bottom = 16.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.Start
     ) {
-        // Header with spinner (standard indeterminate)
+        // Header with spinner
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -184,19 +179,14 @@ private fun ConnectingContent(
 
 /**
  * Simple indeterminate spinner that ignores system animation scale.
- *
- * Two animations combined:
- * 1. ROTATION: Continuous spin (one full rotation every 1.5 seconds)
- * 2. SWEEP: Arc length oscillates smoothly (min 30°, max 300°, period 2 seconds)
  */
 @Composable
 private fun IndeterminateSpinner(
     modifier: Modifier = Modifier,
-    color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
-    strokeWidth: androidx.compose.ui.unit.Dp = 3.dp,
-    trackColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.surfaceVariant
+    color: Color = MaterialTheme.colorScheme.primary,
+    strokeWidth: Dp = 3.dp,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant
 ) {
-    // Time in milliseconds, continuously increasing
     val timeMs = remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
@@ -206,22 +196,17 @@ private fun IndeterminateSpinner(
         }
     }
 
-    // Animation parameters
-    val rotationPeriodMs = 1500f  // Time for one full rotation
-    val sweepPeriodMs = 2000f     // Time for sweep to go min → max → min
-    val minSweep = 30f            // Minimum arc length in degrees
-    val maxSweep = 300f           // Maximum arc length in degrees
+    val rotationPeriodMs = 1500f
+    val sweepPeriodMs = 2000f
+    val minSweep = 30f
+    val maxSweep = 300f
 
-    // Calculate rotation angle (0° to 360°, repeating)
     val rotationDegrees = (timeMs.floatValue % rotationPeriodMs) / rotationPeriodMs * 360f
-
-    // Calculate sweep angle using sine wave for smooth oscillation
     val sweepProgress = (timeMs.floatValue % sweepPeriodMs) / sweepPeriodMs
-    val sweepWave = sin(sweepProgress * 2 * PI).toFloat()  // -1 to 1
-    val sweepNormalized = (sweepWave + 1f) / 2f             // 0 to 1
+    val sweepWave = sin(sweepProgress * 2 * PI).toFloat()
+    val sweepNormalized = (sweepWave + 1f) / 2f
     val sweepDegrees = minSweep + (maxSweep - minSweep) * sweepNormalized
 
-    // Draw
     Canvas(modifier = modifier) {
         val strokeWidthPx = strokeWidth.toPx()
         val diameter = size.minDimension - strokeWidthPx
@@ -229,8 +214,7 @@ private fun IndeterminateSpinner(
         val arcSize = androidx.compose.ui.geometry.Size(diameter, diameter)
         val stroke = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
 
-        // Track (background circle)
-        if (trackColor != androidx.compose.ui.graphics.Color.Transparent) {
+        if (trackColor != Color.Transparent) {
             drawArc(
                 color = trackColor,
                 startAngle = 0f,
@@ -242,8 +226,6 @@ private fun IndeterminateSpinner(
             )
         }
 
-        // Spinning arc
-        // Center of arc rotates smoothly; arc expands/contracts symmetrically around center
         val centerAngle = rotationDegrees - 90f
         val startAngle = centerAngle - sweepDegrees / 2f
         drawArc(
@@ -258,9 +240,6 @@ private fun IndeterminateSpinner(
     }
 }
 
-/**
- * Small in-progress spinner for attempt cards.
- */
 @Composable
 private fun InProgressIndicator(modifier: Modifier = Modifier) {
     Row(
@@ -277,37 +256,7 @@ private fun InProgressIndicator(modifier: Modifier = Modifier) {
             modifier = Modifier.size(10.dp),
             color = MaterialTheme.colorScheme.tertiary,
             strokeWidth = 1.dp,
-            trackColor = androidx.compose.ui.graphics.Color.Transparent
-        )
-    }
-}
-
-/**
- * Header with spinner and phase title.
- * Uses lambda-based state reading to scope recomposition - the spinner
- * never recomposes, only the Text updates when phase changes.
- */
-@Composable
-private fun ConnectionHeader(
-    phaseProvider: () -> ConnectionPhase,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Spinner has no dependencies on changing state - stays stable
-        CircularProgressIndicator(
-            modifier = Modifier.size(20.dp),
-            color = MaterialTheme.colorScheme.primary,
-            strokeWidth = 3.dp
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        // Only this Text recomposes when phase changes
-        Text(
-            text = getPhaseTitle(phaseProvider()),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            trackColor = Color.Transparent
         )
     }
 }
@@ -333,11 +282,8 @@ private fun CapabilitySection(
     isExchanging: Boolean,
     isFinalFailure: Boolean = false
 ) {
-    // Parse exchange steps to determine Direct and ntfy status
     val directStep = exchangeSteps.find { it.startsWith("CAPABILITIES →") && !it.contains("ntfy") }
     val ntfyStep = exchangeSteps.find { it.contains("ntfy") }
-
-    // Determine Tailscale status from steps
     val tailscaleStep = exchangeSteps.find { it.startsWith("TAILSCALE") }
 
     Box(
@@ -348,7 +294,6 @@ private fun CapabilitySection(
             .padding(12.dp)
     ) {
         Column {
-            // Local Tailscale detection
             CapabilityRow(
                 label = "Tailscale",
                 value = when {
@@ -363,12 +308,10 @@ private fun CapabilitySection(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Direct HTTP probe status
             CapabilityRow(
                 label = "Direct",
                 value = when {
                     directStep?.contains("✓") == true -> {
-                        // Extract daemon info if we have it
                         if (daemonCapabilities?.tailscaleIp != null) {
                             "Tailscale ${daemonCapabilities.tailscaleIp}:${daemonCapabilities.tailscalePort}"
                         } else if (daemonCapabilities != null) {
@@ -388,12 +331,10 @@ private fun CapabilitySection(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // ntfy status
             CapabilityRow(
                 label = "ntfy",
                 value = when {
                     ntfyStep?.contains("✓") == true -> {
-                        // Extract daemon info if we have it via ntfy
                         if (daemonCapabilities?.tailscaleIp != null && directStep?.contains("✓") != true) {
                             "Tailscale ${daemonCapabilities.tailscaleIp}:${daemonCapabilities.tailscalePort}"
                         } else if (daemonCapabilities != null && directStep?.contains("✓") != true) {
@@ -542,13 +483,11 @@ private fun AttemptsSection(
     currentAttempt: AttemptInfo?
 ) {
     Column {
-        // Show completed attempts
         completedAttempts.forEach { attempt ->
             AttemptCard(attempt = attempt, isCurrent = false)
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // Show current attempt
         currentAttempt?.let { attempt ->
             AttemptCard(attempt = attempt, isCurrent = true)
         }
@@ -568,7 +507,6 @@ private fun AttemptCard(
             .padding(12.dp)
     ) {
         Column {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -593,7 +531,6 @@ private fun AttemptCard(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Steps
             attempt.steps.forEach { step ->
                 Text(
                     text = "  ${step.step}" + (step.detail?.let { ": $it" } ?: ""),
@@ -601,7 +538,6 @@ private fun AttemptCard(
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                // Render sub-details as nested bullets
                 step.subDetails?.forEach { subDetail ->
                     Text(
                         text = "      · $subDetail",
@@ -612,7 +548,6 @@ private fun AttemptCard(
                 }
             }
 
-            // Result
             when {
                 attempt.success -> {
                     Text(
@@ -659,7 +594,6 @@ private fun ConnectionFailedContent(
     reason: ReconnectionResult.Failure,
     log: ConnectionLog,
     onRetry: () -> Unit,
-    onRePair: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -692,7 +626,6 @@ private fun ConnectionFailedContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.Start
         ) {
-            // Capability Discovery Section
             if (log.localCapabilities != null || log.daemonCapabilities != null) {
                 SectionHeader(title = "CAPABILITY DISCOVERY")
                 CapabilitySection(
@@ -706,14 +639,12 @@ private fun ConnectionFailedContent(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Strategies Section
             if (log.strategies.isNotEmpty()) {
                 SectionHeader(title = "STRATEGIES TRIED")
                 StrategiesSection(strategies = log.strategies)
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // Connection Attempts Section
             if (log.completedAttempts.isNotEmpty()) {
                 SectionHeader(title = "FAILED ATTEMPTS")
                 AttemptsSection(
@@ -731,16 +662,6 @@ private fun ConnectionFailedContent(
             shape = RoundedCornerShape(4.dp)
         ) {
             Text("Retry")
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = onRePair,
-            modifier = Modifier.width(200.dp),
-            shape = RoundedCornerShape(4.dp)
-        ) {
-            Text("Re-pair Device")
         }
 
         Spacer(modifier = Modifier.height(16.dp))

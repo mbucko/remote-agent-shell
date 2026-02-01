@@ -57,6 +57,9 @@ class SettingsViewModel @Inject constructor(
     // Connection state passthrough
     val isConnected: StateFlow<Boolean> = connectionManager.isConnected
 
+    // Auto-connect state
+    val autoConnectEnabled: StateFlow<Boolean> = settingsRepository.autoConnectEnabled
+
     // One-time UI events
     private val _uiEvents = MutableSharedFlow<SettingsUiEvent>(extraBufferCapacity = 16)
     val uiEvents: SharedFlow<SettingsUiEvent> = _uiEvents.asSharedFlow()
@@ -234,6 +237,13 @@ class SettingsViewModel @Inject constructor(
     // ==========================================================================
     // Connection
     // ==========================================================================
+
+    /**
+     * Set auto-connect on launch preference.
+     */
+    fun setAutoConnect(enabled: Boolean) {
+        settingsRepository.setAutoConnectEnabled(enabled)
+    }
 
     /**
      * Disconnect from the daemon and set disconnected flag.
