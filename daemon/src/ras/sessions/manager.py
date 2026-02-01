@@ -176,17 +176,12 @@ class SessionManager:
 
     def _adopt_orphan(self, tmux_name: str) -> SessionData:
         """Create SessionData for an orphaned tmux session."""
-        # Parse name: ras-<agent>-<project>
-        parts = tmux_name.split("-", 2)
-        agent = parts[1] if len(parts) > 1 else "unknown"
-        display = "-".join(parts[1:]) if len(parts) > 1 else tmux_name
-
         return SessionData(
             id=generate_session_id(),
             tmux_name=tmux_name,
-            display_name=display,
+            display_name=tmux_name,
             directory="",  # Unknown for orphans
-            agent=agent,
+            agent="unknown",
             created_at=int(time.time()),
             last_activity_at=int(time.time()),
         )
@@ -231,13 +226,12 @@ class SessionManager:
     async def list_sessions(self) -> SessionEvent:
         """List all sessions sorted by last activity.
 
-        Validates sessions against tmux before returning, removing any
-        that no longer exist (e.g., killed externally).
+        Validates sessions against tmux, removing dead ones and adopting
+        any new tmux sessions that aren't tracked yet.
 
         Returns:
             SessionEvent with SessionListEvent.
         """
-        # Validate sessions still exist in tmux
         tmux_sessions = await self._tmux.list_sessions()
         tmux_names = {s.name for s in tmux_sessions}
 
@@ -251,8 +245,16 @@ class SessionManager:
             logger.info(f"Session {sid} no longer in tmux, removing")
             del self._sessions[sid]
 
-        # Persist if any removed
-        if dead_sessions:
+        # Adopt new tmux sessions not yet tracked
+        known_tmux_names = {s.tmux_name for s in self._sessions.values()}
+        for tmux_session in tmux_sessions:
+            if tmux_session.name not in known_tmux_names:
+                session = self._adopt_orphan(tmux_session.name)
+                self._sessions[session.id] = session
+                logger.info(f"Adopted new tmux session: {tmux_session.name}")
+
+        # Persist if any changes
+        if dead_sessions or len(self._sessions) != len(known_tmux_names):
             await self._save()
 
         # Return updated list
