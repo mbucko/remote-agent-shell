@@ -287,13 +287,19 @@ class ConnectionManager @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Transport connection error", e)
+                // ClosedReceiveChannelException is expected when connection closes gracefully
+                val isExpectedClose = e is kotlinx.coroutines.channels.ClosedReceiveChannelException
+                if (isExpectedClose) {
+                    Log.i(TAG, "Transport connection closed")
+                } else {
+                    Log.e(TAG, "Transport connection error", e)
+                }
                 synchronized(connectionLock) {
                     if (_isConnected.value) {
                         _isConnected.value = false
                         _isHealthy.value = false
                         _connectionErrors.tryEmit(
-                            ConnectionError.Disconnected(e.message ?: "Unknown error")
+                            ConnectionError.Disconnected(e.message ?: "Connection closed")
                         )
                     }
                 }
