@@ -105,6 +105,7 @@ class ManagerFactory:
             session_provider=session_provider,
             tmux_executor=deps.tmux_service,
             send_event=send_event,
+            tmux_service=deps.tmux_service,  # For resize on disconnect
         )
 
         logger.info("TerminalManager created with wired adapters")

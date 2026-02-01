@@ -410,6 +410,56 @@ class TestCapturePane:
         assert "-100" in capture_call
 
 
+class TestResizeWindowToLargest:
+    """Test resize_window_to_largest functionality."""
+
+    @pytest.mark.asyncio
+    async def test_resize_window_to_largest_calls_correct_command(self):
+        """resize_window_to_largest should call tmux resize-window -A."""
+        executor = MockCommandExecutor()
+        executor.add_response("-V", "tmux 3.4")
+        executor.add_response("resize-window", "")
+        service = TmuxService(executor=executor)
+
+        await service.resize_window_to_largest("ras-test-session")
+
+        resize_call = [c for c in executor.calls if "resize-window" in c][0]
+        assert "resize-window" in resize_call
+        assert "-A" in resize_call
+        assert "-t" in resize_call
+        assert "ras-test-session" in resize_call
+
+    @pytest.mark.asyncio
+    async def test_resize_window_to_largest_handles_error(self):
+        """resize_window_to_largest should not raise on error."""
+        executor = MockCommandExecutor()
+        executor.add_response("-V", "tmux 3.4")
+        service = TmuxService(executor=executor)
+
+        # Verify first, then set exception for subsequent calls
+        await service.verify()
+        executor.raise_exception = TmuxError("tmux error")
+
+        # Should not raise
+        await service.resize_window_to_largest("nonexistent-session")
+
+    @pytest.mark.asyncio
+    async def test_resize_window_to_largest_handles_nonexistent_session(self):
+        """resize_window_to_largest should handle nonexistent session gracefully."""
+        executor = MockCommandExecutor()
+        executor.add_response("-V", "tmux 3.4")
+        executor.add_response(
+            "resize-window",
+            stdout="",
+            stderr="can't find session: nonexistent",
+            returncode=1,
+        )
+        service = TmuxService(executor=executor)
+
+        # Should not raise
+        await service.resize_window_to_largest("nonexistent")
+
+
 class TestAsyncCommandExecutor:
     """Test the real AsyncCommandExecutor."""
 

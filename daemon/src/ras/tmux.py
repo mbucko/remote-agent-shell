@@ -1,8 +1,11 @@
 """tmux service for executing tmux commands."""
 
 import asyncio
+import logging
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from .errors import TmuxError, TmuxVersionError
 from .protocols import (
@@ -357,3 +360,25 @@ class TmuxService:
 
         stdout, _, _ = await self._run(*args)
         return stdout.decode().strip()
+
+    async def resize_window_to_largest(self, session_name: str) -> None:
+        """Resize session window to fit the largest attached client.
+
+        This is useful when a remote client disconnects and we want the
+        window to expand back to the local terminal size.
+
+        Args:
+            session_name: The tmux session name (e.g., "ras-claude-myproject").
+        """
+        await self.verify()
+
+        try:
+            await self._run(
+                "resize-window",
+                "-A",  # Resize to largest client
+                "-t",
+                session_name,
+            )
+        except Exception as e:
+            # Non-fatal - window may not exist or have no clients
+            logger.debug(f"Failed to resize window {session_name}: {e}")

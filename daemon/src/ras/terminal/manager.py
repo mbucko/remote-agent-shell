@@ -51,6 +51,14 @@ class SessionProvider(Protocol):
         ...
 
 
+class TmuxServiceProtocol(Protocol):
+    """Protocol for tmux service operations."""
+
+    async def resize_window_to_largest(self, session_name: str) -> None:
+        """Resize session window to fit the largest attached client."""
+        ...
+
+
 class TerminalManager:
     """Manages terminal I/O for all sessions.
 
@@ -69,6 +77,7 @@ class TerminalManager:
         socket_path: Optional[str] = None,
         broadcast_notification: Optional[Callable[[bytes], Awaitable[None]]] = None,
         notification_config: Optional["NotificationConfig"] = None,
+        tmux_service: Optional[TmuxServiceProtocol] = None,
     ):
         """Initialize the terminal manager.
 
@@ -82,6 +91,7 @@ class TerminalManager:
             socket_path: Optional tmux socket path for isolated server.
             broadcast_notification: Optional async function to broadcast notifications.
             notification_config: Optional notification configuration.
+            tmux_service: Optional tmux service for window operations (resize on disconnect).
         """
         self._sessions = session_provider
         self._send_event = send_event
@@ -89,6 +99,7 @@ class TerminalManager:
         self._chunk_interval = chunk_interval_ms
         self._tmux_path = tmux_path
         self._socket_path = socket_path
+        self._tmux_service = tmux_service
 
         self._input_handler = InputHandler(tmux_executor)
 
@@ -482,12 +493,42 @@ class TerminalManager:
         Args:
             connection_id: The connection ID.
         """
+        sessions_to_resize: list[str] = []
+
         # Remove from all attachments
         for session_id, connections in list(self._attachments.items()):
             if connection_id in connections:
                 connections.discard(connection_id)
+                # Track sessions this connection was attached to
+                sessions_to_resize.append(session_id)
                 if not connections:
                     await self._stop_capture(session_id)
+
+        # Resize windows back to local terminal size
+        await self._resize_windows_to_local(sessions_to_resize)
+
+    async def _resize_windows_to_local(self, session_ids: list[str]) -> None:
+        """Resize terminal windows back to local client size.
+
+        Called when a remote client disconnects to restore windows to
+        the local terminal dimensions.
+
+        Args:
+            session_ids: List of session IDs to resize.
+        """
+        if not session_ids or not self._tmux_service:
+            return
+
+        for session_id in session_ids:
+            # Get tmux session name from session registry
+            session_info = self._sessions.get_session(session_id)
+            if session_info and session_info.get("tmux_name"):
+                tmux_name = session_info["tmux_name"]
+                try:
+                    await self._tmux_service.resize_window_to_largest(tmux_name)
+                except Exception as e:
+                    # Non-fatal - continue with other sessions
+                    logger.debug(f"Failed to resize window {tmux_name}: {e}")
 
     async def shutdown(self) -> None:
         """Shutdown all captures."""
