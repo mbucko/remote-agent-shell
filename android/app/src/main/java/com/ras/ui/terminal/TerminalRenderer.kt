@@ -153,7 +153,7 @@ fun TerminalRenderer(
         LazyColumn(
             state = listState,
             modifier = Modifier
-                .alpha(if (hasInitiallyScrolled) 1f else 0f)
+                .alpha(if (hasInitiallyScrolled || totalRows == 0) 1f else 0f)
                 .clipToBounds()
                 .padding(4.dp)
         ) {
@@ -202,23 +202,34 @@ fun TerminalRenderer(
         }
     }
 
-    // Auto-scroll to bottom:
-    // - Always on initial load
-    // - After that, only if user is already at bottom (don't interrupt reading scrollback)
-    LaunchedEffect(screenVersion, totalRows) {
-        if (totalRows > 0) {
-            val shouldScroll = !hasInitiallyScrolled || !listState.canScrollForward
-            if (shouldScroll) {
-                listState.scrollToItem(totalRows - 1)
-                // Wait for next frame to let scroll position settle before showing
-                if (!hasInitiallyScrolled) {
-                    awaitFrame()
-                    hasInitiallyScrolled = true
-                }
+    // Scroll to bottom when screen opens
+    LaunchedEffect(Unit) {
+        // Wait for layout to stabilize (item count stays constant for 3 frames)
+        var lastCount = 0
+        var stableFrames = 0
+        while (stableFrames < 3) {
+            awaitFrame()
+            val currentCount = listState.layoutInfo.totalItemsCount
+            if (currentCount == lastCount && currentCount > 0) {
+                stableFrames++
+            } else {
+                stableFrames = 0
+                lastCount = currentCount
             }
-        } else if (!hasInitiallyScrolled) {
-            // No content yet, but mark as scrolled so we show the empty terminal
-            hasInitiallyScrolled = true
+        }
+
+        // scrollToItem places the target at the TOP of the viewport.
+        // We want it at the BOTTOM, so scroll down by a large amount.
+        // The scroll will stop at the end, putting the last item at bottom.
+        listState.scrollToItem(lastCount - 1)
+        listState.scroll { scrollBy(100_000f) }
+        hasInitiallyScrolled = true
+    }
+
+    // Auto-scroll when new content arrives (only if user is at bottom)
+    LaunchedEffect(screenVersion, totalRows) {
+        if (hasInitiallyScrolled && totalRows > 0 && !listState.canScrollForward) {
+            listState.scrollToItem(totalRows - 1)
         }
     }
 }
