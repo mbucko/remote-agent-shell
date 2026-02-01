@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.android.awaitFrame
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
@@ -190,7 +191,11 @@ fun TerminalRenderer(
             val shouldScroll = !hasInitiallyScrolled || !listState.canScrollForward
             if (shouldScroll) {
                 listState.scrollToItem(totalRows - 1)
-                hasInitiallyScrolled = true
+                // Wait for next frame to let scroll position settle before showing
+                if (!hasInitiallyScrolled) {
+                    awaitFrame()  // Actually waits for next frame render
+                    hasInitiallyScrolled = true
+                }
             }
         } else if (!hasInitiallyScrolled) {
             // No content yet, but mark as scrolled so we show the empty terminal
