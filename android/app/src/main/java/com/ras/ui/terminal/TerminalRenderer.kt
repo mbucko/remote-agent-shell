@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +61,9 @@ fun TerminalRenderer(
     val firstRow = -screen.activeTranscriptRows
     val totalRows = terminalRows - firstRow
 
-    val listState = rememberLazyListState()
+    // Use remember instead of rememberLazyListState to prevent scroll position
+    // restoration via SaveableStateRegistry - we always want to start at bottom
+    val listState = remember { LazyListState() }
 
     // Track if we've done the initial scroll to bottom
     var hasInitiallyScrolled by remember { mutableStateOf(false) }
@@ -210,7 +212,7 @@ fun TerminalRenderer(
                 listState.scrollToItem(totalRows - 1)
                 // Wait for next frame to let scroll position settle before showing
                 if (!hasInitiallyScrolled) {
-                    awaitFrame()  // Actually waits for next frame render
+                    awaitFrame()
                     hasInitiallyScrolled = true
                 }
             }
