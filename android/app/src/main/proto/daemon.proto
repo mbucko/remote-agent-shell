@@ -47,6 +47,24 @@ message Disconnect {
     string reason = 1;      // Optional reason for disconnect (e.g., "user_request", "app_closing")
 }
 
+// ============ Device Management ============
+
+// Phone -> Daemon: Request to unpair this device
+message UnpairRequest {
+    string device_id = 1;  // Must match the authenticated device_id
+}
+
+// Daemon -> Phone: Acknowledge unpair completed
+message UnpairAck {
+    string device_id = 1;
+}
+
+// Daemon -> Phone: Notify that daemon has unpaired this device
+message UnpairNotification {
+    string device_id = 1;
+    string reason = 2;  // e.g., "Removed via CLI"
+}
+
 // ============ Initial State ============
 
 // Sent to phone immediately after connection established
@@ -74,6 +92,7 @@ message RasCommand {
         ConnectionReady connection_ready = 5;
         Heartbeat heartbeat = 6;
         Disconnect disconnect = 7;
+        UnpairRequest unpair_request = 8;
     }
 }
 
@@ -87,5 +106,7 @@ message RasEvent {
         InitialState initial_state = 5;
         ErrorResponse error = 6;
         Heartbeat heartbeat = 7;
+        UnpairAck unpair_ack = 8;
+        UnpairNotification unpair_notification = 9;
     }
 }

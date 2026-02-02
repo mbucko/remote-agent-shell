@@ -18,6 +18,8 @@ import com.ras.proto.SessionEvent as ProtoSessionEvent
 import com.ras.proto.SessionListEvent
 import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
+import com.ras.proto.UnpairNotification
+import com.ras.proto.UnpairRequest
 import com.ras.proto.clipboard.ClipboardMessage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -126,6 +128,13 @@ class ConnectionManager @Inject constructor(
         extraBufferCapacity = 1
     )
     val initialState: SharedFlow<InitialState> = _initialState.asSharedFlow()
+
+    // Unpair notifications (daemon-initiated unpair)
+    private val _unpairedByDaemon = MutableSharedFlow<UnpairNotification>(
+        replay = 0,
+        extraBufferCapacity = 1
+    )
+    val unpairedByDaemon: SharedFlow<UnpairNotification> = _unpairedByDaemon.asSharedFlow()
 
     // Last ping time for calculating latency
     @Volatile
@@ -511,6 +520,31 @@ class ConnectionManager @Inject constructor(
     }
 
     /**
+     * Send an unpair request to the daemon.
+     *
+     * This notifies the daemon that the phone is unpairing, allowing it to clean up
+     * the device from its paired devices list.
+     *
+     * @param deviceId The device ID to unpair
+     */
+    suspend fun sendUnpairRequest(deviceId: String) {
+        try {
+            val unpairRequest = UnpairRequest.newBuilder()
+                .setDeviceId(deviceId)
+                .build()
+            val command = RasCommand.newBuilder()
+                .setUnpairRequest(unpairRequest)
+                .build()
+            val plaintext = command.toByteArray()
+            sendEncrypted(plaintext)
+            Log.i(TAG, "Sent unpair request for device: $deviceId")
+        } catch (e: Exception) {
+            // Best effort - don't fail the unpair if we can't send the message
+            Log.w(TAG, "Failed to send unpair request", e)
+        }
+    }
+
+    /**
      * Send raw bytes to the daemon (encrypted).
      *
      * @throws IllegalStateException if not connected
@@ -708,6 +742,16 @@ class ConnectionManager @Inject constructor(
                 // The fact that we received it already updates lastMessageTime in WebRTCClient
                 val seq = event.heartbeat.sequence
                 Log.d(TAG, "Heartbeat received from daemon: seq=$seq")
+            }
+            RasEvent.EventCase.UNPAIR_NOTIFICATION -> {
+                val notification = event.unpairNotification
+                Log.i(TAG, "Received unpair notification: deviceId=${notification.deviceId}, reason=${notification.reason}")
+                _unpairedByDaemon.emit(notification)
+            }
+            RasEvent.EventCase.UNPAIR_ACK -> {
+                val ack = event.unpairAck
+                Log.d(TAG, "Received unpair acknowledgment: deviceId=${ack.deviceId}")
+                // UnpairAck is handled implicitly - phone already cleared credentials
             }
             RasEvent.EventCase.EVENT_NOT_SET, null -> {
                 Log.w(TAG, "Received RasEvent with no event set")

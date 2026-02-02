@@ -43,6 +43,7 @@ class HomeViewModel @Inject constructor(
         loadDeviceInfo()
         observeConnectionState()
         observeSessionCount()
+        observeUnpairNotifications()
     }
 
     private fun loadDeviceInfo() {
@@ -107,6 +108,25 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Observe unpair notifications from daemon.
+     * When daemon unpairs this device, clear credentials and update UI.
+     */
+    private fun observeUnpairNotifications() {
+        viewModelScope.launch {
+            connectionManager.unpairedByDaemon.collect { notification ->
+                // Clear credentials immediately
+                credentialRepository.clearCredentials()
+
+                // Show notification to user
+                _events.emit(HomeUiEvent.ShowSnackbar("Unpaired by host: ${notification.reason}"))
+
+                // Update state to show no paired device
+                _state.value = HomeState.NoPairedDevice
+            }
+        }
+    }
+
+    /**
      * Called when user taps Connect button.
      */
     fun connect() {
@@ -126,17 +146,35 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Called when user taps Unpair button.
+     * Sends unpair request to daemon if connected, then clears local credentials.
      */
     fun unpair() {
         viewModelScope.launch {
-            // Disconnect if connected
-            connectionManager.disconnectGracefully("unpair")
+            try {
+                // If connected, send unpair request to daemon
+                if (connectionManager.isConnected.value) {
+                    val credentials = credentialRepository.getCredentials()
+                    if (credentials != null) {
+                        connectionManager.sendUnpairRequest(credentials.deviceId)
+                    }
+                }
 
-            // Clear credentials
-            credentialRepository.clearCredentials()
+                // Clear credentials locally (regardless of daemon response)
+                credentialRepository.clearCredentials()
 
-            // Update state
-            _state.value = HomeState.NoPairedDevice
+                // Disconnect if still connected
+                connectionManager.disconnectGracefully("unpair")
+
+                // Update state
+                _state.value = HomeState.NoPairedDevice
+
+                // Show success message
+                _events.emit(HomeUiEvent.ShowSnackbar("Device unpaired"))
+            } catch (e: Exception) {
+                // Log error but continue with unpair (best effort to notify daemon)
+                android.util.Log.e("HomeViewModel", "Unpair failed", e)
+                _events.emit(HomeUiEvent.ShowSnackbar("Unpair completed (daemon notification failed)"))
+            }
         }
     }
 

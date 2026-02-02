@@ -48,6 +48,7 @@ class HomeViewModelTest {
     private lateinit var sessionRepository: SessionRepository
     private lateinit var sessionsFlow: MutableStateFlow<List<SessionInfo>>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
+    private lateinit var unpairedByDaemonFlow: MutableSharedFlow<com.ras.proto.UnpairNotification>
 
     @BeforeEach
     fun setup() {
@@ -55,12 +56,13 @@ class HomeViewModelTest {
 
         sessionsFlow = MutableStateFlow(emptyList())
         isConnectedFlow = MutableStateFlow(false)
+        unpairedByDaemonFlow = MutableSharedFlow()
 
         // Create mocks with explicit type
         credentialRepository = mockk<CredentialRepository>(relaxed = true)
         connectionManager = mockk<ConnectionManager>(relaxed = true)
         sessionRepository = mockk<SessionRepository>(relaxed = true)
-        
+
         // Use manual mock for SettingsRepository to avoid MockK interface issues
         settingsRepository = TestSettingsRepository()
 
@@ -71,6 +73,7 @@ class HomeViewModelTest {
 
         // Setup property stubs with every
         every { connectionManager.isConnected } returns isConnectedFlow
+        every { connectionManager.unpairedByDaemon } returns unpairedByDaemonFlow
         every { sessionRepository.sessions } returns sessionsFlow
     }
 
@@ -212,6 +215,83 @@ class HomeViewModelTest {
             createdAt = Instant.now(),
             lastActivityAt = Instant.now()
         )
+    }
+
+    // ============================================================================
+    // Unpair Tests
+    // ============================================================================
+
+    @Tag("unit")
+    @Test
+    fun `unpair sends UnpairRequest when connected`() = runTest {
+        // Setup: connected state with credentials
+        isConnectedFlow.value = true
+        val mockCredentials = mockk<com.ras.data.credentials.StoredCredentials>()
+        every { mockCredentials.deviceId } returns "test-device-123"
+        coEvery { credentialRepository.getCredentials() } returns mockCredentials
+        coEvery { connectionManager.sendUnpairRequest(any()) } returns Unit
+        coEvery { connectionManager.disconnectGracefully(any()) } returns Unit
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: user initiates unpair
+        viewModel.unpair()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: should send unpair request to daemon
+        io.mockk.coVerify { connectionManager.sendUnpairRequest("test-device-123") }
+        io.mockk.coVerify { credentialRepository.clearCredentials() }
+        io.mockk.coVerify { connectionManager.disconnectGracefully("unpair") }
+
+        // State should be NoPairedDevice
+        assertTrue(viewModel.state.value is HomeState.NoPairedDevice)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `unpair clears credentials even when offline`() = runTest {
+        // Setup: disconnected state
+        isConnectedFlow.value = false
+        coEvery { credentialRepository.getCredentials() } returns null
+        coEvery { connectionManager.disconnectGracefully(any()) } returns Unit
+
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: user initiates unpair while offline
+        viewModel.unpair()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: should still clear credentials locally
+        io.mockk.coVerify { credentialRepository.clearCredentials() }
+
+        // Should NOT send unpair request (not connected)
+        io.mockk.coVerify(exactly = 0) { connectionManager.sendUnpairRequest(any()) }
+
+        // State should be NoPairedDevice
+        assertTrue(viewModel.state.value is HomeState.NoPairedDevice)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `observeUnpairNotifications clears credentials when daemon unpairs`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // When: daemon sends unpair notification
+        val notification = com.ras.proto.UnpairNotification.newBuilder()
+            .setDeviceId("test-device")
+            .setReason("Removed via CLI")
+            .build()
+        unpairedByDaemonFlow.emit(notification)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Then: should clear credentials
+        io.mockk.coVerify { credentialRepository.clearCredentials() }
+
+        // State should be NoPairedDevice
+        assertTrue(viewModel.state.value is HomeState.NoPairedDevice)
     }
 
     /**

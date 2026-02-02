@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -24,12 +25,15 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -199,6 +203,8 @@ private fun HasDeviceContent(
     onUnpair: () -> Unit,
     onAutoConnectChanged: (Boolean) -> Unit
 ) {
+    var showUnpairDialog by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -222,7 +228,7 @@ private fun HasDeviceContent(
             sessionCount = sessionCount,
             onConnect = onConnect,
             onOpenSessions = onOpenSessions,
-            onUnpair = onUnpair
+            onUnpair = { showUnpairDialog = true }
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -242,5 +248,29 @@ private fun HasDeviceContent(
                 onCheckedChange = onAutoConnectChanged
             )
         }
+    }
+
+    // Unpair confirmation dialog
+    if (showUnpairDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnpairDialog = false },
+            title = { Text("Unpair Device") },
+            text = { Text("Are you sure you want to unpair? You'll need to scan the QR code again to reconnect.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showUnpairDialog = false
+                        onUnpair()
+                    }
+                ) {
+                    Text("Unpair")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnpairDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

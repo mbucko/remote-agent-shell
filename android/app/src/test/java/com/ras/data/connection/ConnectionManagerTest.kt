@@ -270,4 +270,32 @@ class ConnectionManagerTest {
 
         noPingManager.disconnect()
     }
+
+    // ============================================================================
+    // Unpair Tests
+    // ============================================================================
+
+    @Tag("unit")
+    @Test
+    fun `sendUnpairRequest wraps message in RasCommand`() = runTest {
+        connectionManager.connect(webRTCClient, authKey)
+        sentMessages.clear()
+
+        // Send unpair request
+        val deviceId = "test-device-123"
+        connectionManager.sendUnpairRequest(deviceId)
+
+        // Verify message was sent
+        assertTrue(sentMessages.isNotEmpty(), "Should have sent unpair request")
+
+        // Decrypt and parse
+        val codec = BytesCodec(authKey.copyOf())
+        val decrypted = codec.decode(sentMessages.last())
+        val rasCommand = RasCommand.parseFrom(decrypted)
+
+        // Verify it's wrapped in RasCommand
+        assertTrue(rasCommand.hasUnpairRequest(), "Should be wrapped in RasCommand")
+        assertEquals(deviceId, rasCommand.unpairRequest.deviceId, "Device ID should match")
+    }
+
 }
