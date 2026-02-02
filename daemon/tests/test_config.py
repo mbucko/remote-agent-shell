@@ -27,7 +27,7 @@ class TestConfigDefaults:
         assert config.default_directory is None
         assert config.default_agent is None
         assert config.log_level == "INFO"
-        assert config.log_file is None
+        assert config.log_file == "~/.config/ras/daemon.log"
 
 
 class TestGetConfigPath:
