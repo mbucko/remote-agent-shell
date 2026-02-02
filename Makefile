@@ -67,7 +67,7 @@ test:
 	cd daemon && uv run pytest tests/ -q
 
 test-quick:
-	cd daemon && uv run pytest tests/ -q -m "not integration" --ignore=tests/performance
+	cd daemon && uv run pytest tests/ -q -m "not integration and not performance"
 
 test-performance:
 	cd daemon && uv run pytest tests/performance/ -v

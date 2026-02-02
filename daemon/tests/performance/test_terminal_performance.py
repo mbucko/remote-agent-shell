@@ -83,6 +83,7 @@ async def process_pending_tasks():
 class TestTerminalPerformance:
     """Performance tests for TerminalManager."""
 
+    @pytest.mark.performance
     @pytest.mark.asyncio
     async def test_output_flood_performance(self, terminal_manager, broadcast_mock):
         """Output flood - patterns detected without excessive lag.

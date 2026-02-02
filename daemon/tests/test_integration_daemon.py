@@ -30,6 +30,7 @@ def config(tmp_path: Path) -> Config:
 class TestDaemonStartup:
     """Integration tests that verify daemon starts properly."""
 
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_daemon_starts_http_server(self, config):
         """INT-01: Daemon should actually listen on the configured port.
@@ -61,6 +62,7 @@ class TestDaemonStartup:
             await daemon.stop()
             await daemon._shutdown()
 
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_daemon_reconnect_endpoint_exists(self, config):
         """INT-02: Daemon should have /reconnect endpoint for paired devices."""
@@ -87,6 +89,7 @@ class TestDaemonStartup:
             await daemon.stop()
             await daemon._shutdown()
 
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_daemon_loads_paired_devices(self, config, tmp_path):
         """INT-03: Daemon loads previously paired devices on startup."""
@@ -128,6 +131,7 @@ class TestDaemonStartup:
 class TestReconnectionFlow:
     """Integration tests for the reconnection flow."""
 
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_unknown_device_rejected(self, config):
         """INT-04: Unknown device cannot reconnect."""
@@ -156,6 +160,7 @@ class TestReconnectionFlow:
             await daemon.stop()
             await daemon._shutdown()
 
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_invalid_hmac_rejected(self, config, tmp_path):
         """INT-05: Valid device with invalid HMAC is rejected."""

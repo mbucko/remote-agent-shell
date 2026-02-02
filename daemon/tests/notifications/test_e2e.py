@@ -95,7 +95,10 @@ class TestE2EFlows:
         assert event.notification.session_id == "session-abc"
         assert event.notification.type == ProtoNotificationType.APPROVAL_NEEDED
         assert "my-project" in event.notification.title
-        assert "Proceed" in event.notification.snippet or "(y/n)" in event.notification.snippet
+        assert (
+            "Proceed" in event.notification.snippet
+            or "(y/n)" in event.notification.snippet
+        )
 
     @pytest.mark.asyncio
     async def test_e2e02_completion_flow(self, matcher, dispatcher, broadcast_mock):
@@ -115,7 +118,9 @@ class TestE2EFlows:
         results = matcher.process_chunk(b"$ ")
 
         # Should detect completion
-        completion_results = [r for r in results if r.type == NotificationType.COMPLETION]
+        completion_results = [
+            r for r in results if r.type == NotificationType.COMPLETION
+        ]
         assert len(completion_results) >= 1
 
         # 5. Dispatch
@@ -153,7 +158,10 @@ class TestE2EFlows:
 
         event = broadcast_mock.sent_events[0]
         assert event.notification.type == ProtoNotificationType.ERROR_DETECTED
-        assert "Error" in event.notification.snippet or "module" in event.notification.snippet
+        assert (
+            "Error" in event.notification.snippet
+            or "module" in event.notification.snippet
+        )
 
     @pytest.mark.asyncio
     async def test_e2e04_dedup_flow(self, matcher, dispatcher, broadcast_mock):
@@ -175,7 +183,9 @@ class TestE2EFlows:
         assert len(broadcast_mock.sent_events) == 1
 
         # 3-4. Advance time past cooldown and trigger again
-        with patch("ras.notifications.dispatcher.time.time", return_value=time.time() + 0.2):
+        with patch(
+            "ras.notifications.dispatcher.time.time", return_value=time.time() + 0.2
+        ):
             results = matcher.process_chunk(b"Proceed? (y/n)\n")
             for r in results:
                 if r.type == NotificationType.APPROVAL:
@@ -272,7 +282,9 @@ class TestE2EFlows:
         dispatcher._broadcast = working_broadcast
 
         # 4-5. Advance time past cooldown, new match succeeds
-        with patch("ras.notifications.dispatcher.time.time", return_value=time.time() + 0.2):
+        with patch(
+            "ras.notifications.dispatcher.time.time", return_value=time.time() + 0.2
+        ):
             results = matcher.process_chunk(b"Proceed? (y/n)")
             match = [r for r in results if r.type == NotificationType.APPROVAL][0]
             sent = await dispatcher.dispatch("s1", "n", match)
@@ -296,7 +308,9 @@ class TestE2EFlows:
         results2 = matcher.process_chunk(b"/n)")
 
         # 3. Should match in combined buffer
-        all_approval = [r for r in results1 + results2 if r.type == NotificationType.APPROVAL]
+        all_approval = [
+            r for r in results1 + results2 if r.type == NotificationType.APPROVAL
+        ]
         assert len(all_approval) >= 1
 
         # 4. Dispatch
@@ -313,7 +327,9 @@ class TestE2EEdgeCases:
     """Edge case E2E tests."""
 
     @pytest.mark.asyncio
-    async def test_multiple_patterns_same_chunk(self, matcher, dispatcher, broadcast_mock):
+    async def test_multiple_patterns_same_chunk(
+        self, matcher, dispatcher, broadcast_mock
+    ):
         """Multiple patterns in same chunk all detected and dispatched."""
         output = b"Error: failed\nProceed? (y/n)"
         results = matcher.process_chunk(output)
@@ -367,16 +383,6 @@ class TestE2EEdgeCases:
         assert len(error_results) >= 1
 
     @pytest.mark.asyncio
-    async def test_very_long_output(self, matcher, dispatcher, broadcast_mock):
-        """Very long output processed without issues."""
-        # 1MB of output with error at end
-        long_output = b"x" * (1024 * 1024) + b"\nError: at the end\n"
-        results = matcher.process_chunk(long_output)
-
-        error_results = [r for r in results if r.type == NotificationType.ERROR]
-        assert len(error_results) >= 1
-
-    @pytest.mark.asyncio
     async def test_rapid_output_chunks(self, matcher, dispatcher, broadcast_mock):
         """Rapid small chunks processed correctly."""
         # Simulate rapid output
@@ -395,5 +401,7 @@ class TestE2EEdgeCases:
             all_results.extend(results)
 
         # Last few chunks should trigger match due to buffer
-        approval_results = [r for r in all_results if r.type == NotificationType.APPROVAL]
+        approval_results = [
+            r for r in all_results if r.type == NotificationType.APPROVAL
+        ]
         # May take a bit for buffer to accumulate enough

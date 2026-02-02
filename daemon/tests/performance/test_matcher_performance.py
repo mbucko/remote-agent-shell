@@ -27,6 +27,7 @@ def matcher():
 class TestMatcherPerformance:
     """Performance tests for PatternMatcher."""
 
+    @pytest.mark.performance
     def test_large_chunk_performance(self, matcher):
         """100KB chunk processed efficiently."""
         # 100KB of data with pattern at end
@@ -42,6 +43,7 @@ class TestMatcherPerformance:
         error_results = [r for r in results if r.type == NotificationType.ERROR]
         assert len(error_results) >= 1
 
+    @pytest.mark.performance
     def test_rapid_small_chunks_performance(self, matcher):
         """Many small chunks processed efficiently."""
         # 1000 small chunks

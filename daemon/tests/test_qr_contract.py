@@ -153,6 +153,7 @@ class TestQrCodeNotJson:
 class TestApiToQrIntegration:
     """Integration tests verifying API response → QR generation → Phone parsing."""
 
+    @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_api_response_produces_valid_qr(self):
         """QR-INT-01: API response data produces valid QR for mobile apps."""
@@ -199,7 +200,9 @@ class TestApiToQrIntegration:
                     payload = QrPayload().parse(decoded)
 
                     assert payload.version == 1
-                    assert payload.master_secret == bytes.fromhex(qr_data["master_secret"])
+                    assert payload.master_secret == bytes.fromhex(
+                        qr_data["master_secret"]
+                    )
                     assert payload.session_id == ""
                     assert payload.ntfy_topic == ""
 

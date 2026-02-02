@@ -43,7 +43,8 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
 markers = [
-    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "integration: marks tests as integration tests (slow, deselect with '-m \"not integration\"')",
+    "performance: marks tests as performance tests (slow, deselect with '-m \"not performance\"')",
 ]
 
 [dependency-groups]
