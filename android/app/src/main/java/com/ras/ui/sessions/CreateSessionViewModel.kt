@@ -74,7 +74,7 @@ class CreateSessionViewModel @Inject constructor(
                 when (event) {
                     is SessionEvent.SessionCreated -> {
                         _createState.update { CreateSessionState.Created(event.session) }
-                        _uiEvents.send(CreateSessionUiEvent.SessionCreated(event.session.displayText))
+                        _uiEvents.send(CreateSessionUiEvent.SessionCreated(event.session.id))
                     }
                     is SessionEvent.SessionError -> {
                         // Only update state if we were in Creating state (error relevant to us)
@@ -351,6 +351,6 @@ class CreateSessionViewModel @Inject constructor(
  * One-time UI events emitted by CreateSessionViewModel.
  */
 sealed class CreateSessionUiEvent {
-    data class SessionCreated(val name: String) : CreateSessionUiEvent()
+    data class SessionCreated(val sessionId: String) : CreateSessionUiEvent()
     data class Error(val message: String) : CreateSessionUiEvent()
 }

@@ -107,9 +107,10 @@ fun NavGraph(
             CreateSessionScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onSessionCreated = { sessionId ->
-                    navController.popBackStack()
-                    // Optionally navigate to the new session
-                    // navController.navigate(Routes.Terminal.createRoute(sessionId))
+                    // Navigate to terminal, removing CreateSession from back stack
+                    navController.navigate(Routes.Terminal.createRoute(sessionId)) {
+                        popUpTo(Routes.Sessions.route) { inclusive = false }
+                    }
                 }
             )
         }

@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -92,7 +91,7 @@ fun CreateSessionScreen(
         viewModel.uiEvents.collect { event ->
             when (event) {
                 is CreateSessionUiEvent.SessionCreated -> {
-                    onSessionCreated(event.name)
+                    onSessionCreated(event.sessionId)
                 }
                 is CreateSessionUiEvent.Error -> {
                     snackbarHostState.showSnackbar(event.message)
@@ -264,7 +263,11 @@ private fun DirectorySelectionStep(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    Text(
+                        text = "Loading directories...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
@@ -487,7 +490,11 @@ private fun AgentSelectionStep(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator()
+                    Text(
+                        text = "Loading agents...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
@@ -662,13 +669,10 @@ private fun CreatingSessionStep(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(32.dp)
         ) {
-            CircularProgressIndicator()
-
-            Spacer(modifier = Modifier.height(24.dp))
-
             Text(
                 text = "Creating session...",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(8.dp))
