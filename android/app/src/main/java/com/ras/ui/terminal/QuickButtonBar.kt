@@ -60,7 +60,7 @@ fun QuickButtonBar(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Modifier buttons
+            // Modifier buttons (universal symbols that work on Mac/Win/Linux)
             if (showCtrl) {
                 ModifierButton(
                     label = "Ctrl",
@@ -79,7 +79,7 @@ fun QuickButtonBar(
             }
             if (showAlt) {
                 ModifierButton(
-                    label = "Alt",
+                    label = "⌥",  // Option symbol (Alt on Windows/Linux)
                     mode = modifierState.alt,
                     onTap = { onModifierTap(ModifierKey.ALT) },
                     onLongPress = { onModifierLongPress(ModifierKey.ALT) }
@@ -87,7 +87,7 @@ fun QuickButtonBar(
             }
             if (showMeta) {
                 ModifierButton(
-                    label = "Meta",
+                    label = "⌘",  // Command symbol (Super/Win on Windows/Linux)
                     mode = modifierState.meta,
                     onTap = { onModifierTap(ModifierKey.META) },
                     onLongPress = { onModifierLongPress(ModifierKey.META) }
@@ -109,7 +109,7 @@ fun QuickButtonBar(
  * Modifier button with tap (sticky) and long-press (lock) support.
  *
  * Visual states:
- * - OFF: Secondary container color
+ * - OFF: Tertiary container color (distinct from action buttons)
  * - STICKY: Primary container color (active for next key only)
  * - LOCKED: Primary color (stays active until toggled off)
  */
@@ -121,14 +121,15 @@ fun ModifierButton(
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Use tertiary color when OFF to distinguish from action buttons
     val backgroundColor = when (mode) {
-        ModifierMode.OFF -> MaterialTheme.colorScheme.secondaryContainer
+        ModifierMode.OFF -> MaterialTheme.colorScheme.tertiaryContainer
         ModifierMode.STICKY -> MaterialTheme.colorScheme.primaryContainer
         ModifierMode.LOCKED -> MaterialTheme.colorScheme.primary
     }
 
     val contentColor = when (mode) {
-        ModifierMode.OFF -> MaterialTheme.colorScheme.onSecondaryContainer
+        ModifierMode.OFF -> MaterialTheme.colorScheme.onTertiaryContainer
         ModifierMode.STICKY -> MaterialTheme.colorScheme.onPrimaryContainer
         ModifierMode.LOCKED -> MaterialTheme.colorScheme.onPrimary
     }
