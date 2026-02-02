@@ -86,3 +86,8 @@ venv/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Generated protobuf files (standard protoc output - project uses betterproto instead)
+*_pb2.py
+*_pb2.pyi
+*_pb2_grpc.py
