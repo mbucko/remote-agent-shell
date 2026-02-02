@@ -59,11 +59,10 @@ class SessionsViewModelE2ETest {
         eventsFlow = MutableSharedFlow()
         isConnectedFlow = MutableStateFlow(true)
 
-        mockRepository = mockk(relaxed = true) {
-            every { sessions } returns sessionsFlow
-            every { events } returns eventsFlow
-            every { isConnected } returns isConnectedFlow
-        }
+        mockRepository = mockk(relaxed = true)
+        every { mockRepository.sessions } returns sessionsFlow
+        every { mockRepository.events } returns eventsFlow
+        every { mockRepository.isConnected } returns isConnectedFlow
         mockKeyManager = mockk(relaxed = true)
         mockConnectionManager = mockk(relaxed = true)
 
@@ -80,7 +79,7 @@ class SessionsViewModelE2ETest {
     // ==========================================================================
 
     @Test
-    fun `initial state is loaded with empty list`() = runTest {
+    fun `[E2E] initial state is loaded with empty list`() = runTest {
         viewModel.screenState.test {
             val state = awaitItem()
             assertTrue(state is SessionsScreenState.Loaded)

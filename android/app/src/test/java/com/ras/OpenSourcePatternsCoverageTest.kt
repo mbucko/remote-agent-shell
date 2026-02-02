@@ -270,9 +270,8 @@ class OpenSourcePatternsCoverageTest {
          * (mosh pattern: state preservation)
          */
         val sessionsFlow = MutableStateFlow<List<SessionInfo>>(emptyList())
-        val mockRepository = mockk<SessionRepository>(relaxed = true) {
-            every { sessions } returns sessionsFlow
-        }
+        val mockRepository = mockk<SessionRepository>(relaxed = true)
+        every { mockRepository.sessions } returns sessionsFlow
 
         // Add session
         val session = createSession("session1abc", "Test Session")
@@ -498,9 +497,8 @@ class OpenSourcePatternsCoverageTest {
          * (simple-peer pattern: multiple connections)
          */
         val sessionsFlow = MutableStateFlow<List<SessionInfo>>(emptyList())
-        val mockRepository = mockk<SessionRepository>(relaxed = true) {
-            every { sessions } returns sessionsFlow
-        }
+        val mockRepository = mockk<SessionRepository>(relaxed = true)
+        every { mockRepository.sessions } returns sessionsFlow
 
         // Add multiple sessions
         val sessions = (1..5).map { i ->
@@ -544,9 +542,8 @@ class OpenSourcePatternsCoverageTest {
          * (DoS protection pattern)
          */
         val sessionsFlow = MutableStateFlow<List<SessionInfo>>(emptyList())
-        val mockRepository = mockk<SessionRepository>(relaxed = true) {
-            every { sessions } returns sessionsFlow
-        }
+        val mockRepository = mockk<SessionRepository>(relaxed = true)
+        every { mockRepository.sessions } returns sessionsFlow
 
         // Rapid state changes
         repeat(100) { i ->
@@ -648,9 +645,8 @@ class OpenSourcePatternsCoverageTest {
          * Session status changes should be reflected in state.
          */
         val sessionsFlow = MutableStateFlow<List<SessionInfo>>(emptyList())
-        val mockRepository = mockk<SessionRepository>(relaxed = true) {
-            every { sessions } returns sessionsFlow
-        }
+        val mockRepository = mockk<SessionRepository>(relaxed = true)
+        every { mockRepository.sessions } returns sessionsFlow
 
         // Create active session
         sessionsFlow.value = listOf(createSession("session1abc", "Test", SessionStatus.ACTIVE))
