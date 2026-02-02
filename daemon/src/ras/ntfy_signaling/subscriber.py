@@ -37,6 +37,7 @@ Usage:
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Callable, Coroutine, Optional
 
 import aiohttp
@@ -73,6 +74,11 @@ class NtfySignalingSubscriber:
 
     # SSE reconnection delay
     SSE_RECONNECT_DELAY = 5.0  # seconds
+
+    # Health check thresholds
+    # ntfy sends keepalives every 45 seconds, so we should see events regularly
+    SSE_HEALTH_TIMEOUT = 120.0  # seconds - consider unhealthy if no events for 2+ minutes
+    SSE_RECONNECT_TIMEOUT = 180.0  # seconds - force reconnect if no events for 3+ minutes
 
     def __init__(
         self,
@@ -117,12 +123,19 @@ class NtfySignalingSubscriber:
         self._owns_session = http_session is None
         self._subscribed = False
         self._subscription_task: Optional[asyncio.Task] = None
+        self._health_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
         self._reconnection_mode = session_id == ""
 
         # Callback for successful offer processing
         # Signature: (device_id, device_name, peer, is_reconnection) -> None
         self.on_offer_received: Optional[OfferReceivedCallback] = None
+
+        # Health tracking
+        self._last_event_time: float = 0.0  # Last time any SSE event was received
+        self._last_message_time: float = 0.0  # Last time an actual message was received
+        self._sse_connected: bool = False
+        self._reconnect_count: int = 0
 
         mode = "reconnection" if self._reconnection_mode else "pairing"
         logger.info(f"NtfySignalingSubscriber initialized in {mode} mode")
@@ -134,6 +147,42 @@ class NtfySignalingSubscriber:
     def is_reconnection_mode(self) -> bool:
         """Check if subscriber is in reconnection mode."""
         return self._reconnection_mode
+
+    def is_healthy(self) -> bool:
+        """Check if SSE connection is healthy.
+
+        Returns False if:
+        - Not connected
+        - No events received for SSE_HEALTH_TIMEOUT seconds
+
+        Returns:
+            True if connection appears healthy.
+        """
+        if not self._subscribed or not self._sse_connected:
+            return False
+
+        if self._last_event_time == 0:
+            # Just connected, give it time
+            return True
+
+        time_since_event = time.time() - self._last_event_time
+        return time_since_event < self.SSE_HEALTH_TIMEOUT
+
+    def get_health_stats(self) -> dict:
+        """Get health statistics for debugging.
+
+        Returns:
+            Dict with health metrics.
+        """
+        now = time.time()
+        return {
+            "subscribed": self._subscribed,
+            "sse_connected": self._sse_connected,
+            "last_event_age_s": now - self._last_event_time if self._last_event_time > 0 else None,
+            "last_message_age_s": now - self._last_message_time if self._last_message_time > 0 else None,
+            "reconnect_count": self._reconnect_count,
+            "is_healthy": self.is_healthy(),
+        }
 
     async def start(self) -> None:
         """Start subscription to ntfy topic.
@@ -152,6 +201,8 @@ class NtfySignalingSubscriber:
 
         # Start subscription in background
         self._subscription_task = asyncio.create_task(self._run_subscription())
+        # Start health monitoring
+        self._health_task = asyncio.create_task(self._run_health_monitor())
         mode = "reconnection" if self._reconnection_mode else "pairing"
         logger.info(f"Started ntfy signaling subscription ({mode}) to topic {self._topic[:8]}...")
 
@@ -163,6 +214,15 @@ class NtfySignalingSubscriber:
         self._subscribed = False
         self._stop_event.set()
 
+        # Cancel health task
+        if self._health_task:
+            self._health_task.cancel()
+            try:
+                await self._health_task
+            except asyncio.CancelledError:
+                pass
+            self._health_task = None
+
         # Cancel subscription task
         if self._subscription_task:
             self._subscription_task.cancel()
@@ -173,6 +233,38 @@ class NtfySignalingSubscriber:
             self._subscription_task = None
 
         logger.info(f"Stopped ntfy signaling subscription to topic {self._topic[:8]}...")
+
+    async def _run_health_monitor(self) -> None:
+        """Monitor SSE connection health and log warnings.
+
+        Runs in background, logging warnings when health degrades.
+        """
+        # Check health every 30 seconds
+        CHECK_INTERVAL = 30.0
+
+        while self._subscribed and not self._stop_event.is_set():
+            try:
+                await asyncio.sleep(CHECK_INTERVAL)
+
+                if not self._subscribed:
+                    break
+
+                stats = self.get_health_stats()
+                if not stats["is_healthy"] and self._sse_connected:
+                    logger.warning(
+                        f"SSE health degraded: no events for {stats['last_event_age_s']:.0f}s "
+                        f"(reconnects: {stats['reconnect_count']})"
+                    )
+                elif stats["is_healthy"] and self._reconnect_count > 0:
+                    # Log recovery
+                    logger.info(
+                        f"SSE health recovered after {self._reconnect_count} reconnects"
+                    )
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"Health monitor error: {e}")
 
     async def close(self) -> None:
         """Close subscriber and clean up resources.
@@ -210,7 +302,7 @@ class NtfySignalingSubscriber:
     async def _run_subscription(self) -> None:
         """Run SSE subscription loop.
 
-        Reconnects automatically on connection errors.
+        Reconnects automatically on connection errors or health timeout.
         """
         url = f"{self._server}/{self._topic}/sse"
 
@@ -221,8 +313,10 @@ class NtfySignalingSubscriber:
                 break
             except Exception as e:
                 logger.warning(f"SSE subscription error: {e}")
+                self._sse_connected = False
+                self._reconnect_count += 1
                 if self._subscribed:
-                    logger.info(f"Reconnecting in {self.SSE_RECONNECT_DELAY}s...")
+                    logger.info(f"Reconnecting in {self.SSE_RECONNECT_DELAY}s... (reconnect #{self._reconnect_count})")
                     await asyncio.sleep(self.SSE_RECONNECT_DELAY)
 
     async def _subscribe_sse(self, url: str) -> None:
@@ -230,6 +324,9 @@ class NtfySignalingSubscriber:
 
         Args:
             url: Full SSE URL.
+
+        Raises:
+            Exception: On connection error or health timeout.
         """
         if not self._session:
             return
@@ -244,21 +341,40 @@ class NtfySignalingSubscriber:
                 return
 
             logger.info(f"SSE connected, listening for messages...")
+            self._sse_connected = True
+            self._last_event_time = time.time()
+
             async for line in response.content:
                 if self._stop_event.is_set():
                     break
 
+                # Check for health timeout - force reconnect if no events for too long
+                time_since_event = time.time() - self._last_event_time
+                if time_since_event > self.SSE_RECONNECT_TIMEOUT:
+                    logger.warning(
+                        f"SSE health timeout: no events for {time_since_event:.0f}s, forcing reconnect"
+                    )
+                    self._sse_connected = False
+                    raise Exception("SSE health timeout")
+
                 line_str = line.decode("utf-8").strip()
                 if line_str.startswith("data:"):
+                    # Track that we received an event
+                    self._last_event_time = time.time()
+
                     # Extract JSON data from SSE
                     json_data = line_str[5:].strip()
                     if json_data:
                         # Parse ntfy JSON envelope to extract message
                         encrypted = self._parse_ntfy_message(json_data)
                         if encrypted:
+                            self._last_message_time = time.time()
                             logger.info(f"Received ntfy message ({len(encrypted)} bytes)")
                             # Process message in background
                             asyncio.create_task(self._process_message(encrypted))
+
+            # If we exit the loop normally, mark as disconnected
+            self._sse_connected = False
 
     def _parse_ntfy_message(self, json_data: str) -> Optional[str]:
         """Parse ntfy JSON envelope and extract message.

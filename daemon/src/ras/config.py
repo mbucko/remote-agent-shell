@@ -80,7 +80,8 @@ class Config:
     default_directory: str | None = None
     default_agent: str | None = None
     log_level: str = "INFO"
-    log_file: str | None = None
+    # Log to file by default for debugging connection issues
+    log_file: str | None = "~/.config/ras/daemon.log"
     stun_servers: list[str] = field(default_factory=lambda: DEFAULT_STUN_SERVERS.copy())
     ntfy: NtfyConfig = field(default_factory=NtfyConfig)
     ip_monitor: IpMonitorConfig = field(default_factory=IpMonitorConfig)

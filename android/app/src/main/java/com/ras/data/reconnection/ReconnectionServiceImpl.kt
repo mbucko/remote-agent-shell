@@ -64,6 +64,12 @@ class ReconnectionServiceImpl @Inject constructor(
     }
 
     override suspend fun reconnect(onProgress: (ConnectionProgress) -> Unit): ReconnectionResult {
+        // Guard: Don't reconnect if already connected
+        if (connectionManager.isConnected.value) {
+            Log.w(TAG, "reconnect() called but already connected - skipping")
+            return ReconnectionResult.Success
+        }
+
         // 1. Get stored credentials
         val credentials = try {
             credentialRepository.getCredentials()

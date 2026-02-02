@@ -60,6 +60,19 @@ class ConnectionOrchestrator @Inject constructor(
         context: ConnectionContext,
         onProgress: (ConnectionProgress) -> Unit
     ): Transport? = coroutineScope {
+        // Guard: Don't start a new connection if we already have one
+        val existingTransport = _currentTransport.value
+        if (existingTransport != null && existingTransport.isConnected) {
+            Log.w(TAG, "connect() called but already have a connected transport - skipping")
+            return@coroutineScope existingTransport
+        }
+
+        // Guard: Don't start if already in CONNECTING state
+        if (_state.value == ConnectionState.CONNECTING) {
+            Log.w(TAG, "connect() called but already connecting - skipping")
+            return@coroutineScope null
+        }
+
         // Cancel any existing connection attempt
         connectionJob?.cancel()
 

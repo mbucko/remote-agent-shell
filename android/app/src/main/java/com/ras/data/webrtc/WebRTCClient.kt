@@ -112,8 +112,9 @@ class WebRTCClient(
             iceTransportsType = PeerConnection.IceTransportsType.ALL
             // Pre-gather ICE candidates to speed up subsequent connections
             iceCandidatePoolSize = 2
-            // Use aggressive nomination for faster ICE selection on reconnects
-            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            // Use GATHER_ONCE to avoid continuous candidate generation after connection
+            // GATHER_CONTINUALLY was causing excessive ICE candidate logs
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
         }
 
         synchronized(lock) {

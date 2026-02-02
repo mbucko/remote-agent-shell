@@ -39,12 +39,14 @@ def setup_logging(config: Config) -> logging.Logger:
 
     # File handler if log_file is configured
     if config.log_file:
-        log_path = Path(config.log_file)
+        log_path = Path(config.log_file).expanduser()
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         file_handler = logging.FileHandler(log_path)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
+        # Log where we're logging to (helps debugging)
+        logger.info(f"Logging to file: {log_path}")
 
     # Console handler
     console_handler = logging.StreamHandler()
