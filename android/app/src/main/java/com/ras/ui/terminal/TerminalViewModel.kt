@@ -346,32 +346,38 @@ class TerminalViewModel @Inject constructor(
      * Intercepts app shortcuts (like ⌘+V for paste) before sending to terminal.
      */
     fun onQuickButtonClicked(button: QuickButton) {
+        // Capture state and clear modifiers synchronously before any async work
+        // This prevents race conditions when rapidly pressing modifier + key combos
+        val state = _modifierState.value
+        val modifiers = state.bitmask
+
+        // Check for app shortcuts before async work (e.g., ⌘+V for paste)
+        if (button.character != null && button.character.length == 1) {
+            val appAction = state.getAppShortcut(button.character[0])
+            if (appAction != null) {
+                handleAppAction(appAction)
+                clearStickyModifiers()
+                return
+            }
+        }
+
+        // Prepare character input synchronously if needed
+        val modifiedChar = if (button.character != null) {
+            applyModifiersToCharacter(button.character, state)
+        } else {
+            null
+        }
+
+        // Clear sticky modifiers immediately (before async send)
+        clearStickyModifiers()
+
+        // Only the network send is async
         viewModelScope.launch {
             try {
-                val state = _modifierState.value
-                val modifiers = state.bitmask
-
                 when {
                     button.keyType != null -> repository.sendSpecialKey(button.keyType, modifiers)
-                    button.character != null -> {
-                        // Check for app shortcuts first (e.g., ⌘+V for paste)
-                        if (button.character.length == 1) {
-                            val appAction = state.getAppShortcut(button.character[0])
-                            if (appAction != null) {
-                                handleAppAction(appAction)
-                                clearStickyModifiers()
-                                return@launch
-                            }
-                        }
-
-                        // Apply modifiers to character buttons
-                        val modifiedChar = applyModifiersToCharacter(button.character, state)
-                        repository.sendInput(modifiedChar)
-                    }
+                    modifiedChar != null -> repository.sendInput(modifiedChar)
                 }
-
-                // Clear sticky (non-locked) modifiers after key press
-                clearStickyModifiers()
             } catch (e: Exception) {
                 _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
             }
