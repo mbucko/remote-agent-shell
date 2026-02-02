@@ -141,6 +141,7 @@ val AVAILABLE_QUICK_BUTTONS = listOf(
     QuickButton(id = "backspace", label = "⌫", keyType = KeyType.KEY_BACKSPACE),
     // Navigation
     QuickButton(id = "tab", label = "Tab", keyType = KeyType.KEY_TAB),
+    QuickButton(id = "shift_tab", label = "⇧Tab", character = "\u001b[Z"),  // Backtab escape sequence
     QuickButton(id = "esc", label = "Esc", keyType = KeyType.KEY_ESCAPE),
     // Arrow keys
     QuickButton(id = "up", label = "↑", keyType = KeyType.KEY_UP),

@@ -137,6 +137,63 @@ class SettingsRepository @Inject constructor(
     }
 
     // ==========================================================================
+    // Modifier Key Visibility
+    // ==========================================================================
+
+    private val _showCtrlKey = MutableStateFlow(loadShowCtrlKey())
+    val showCtrlKey: StateFlow<Boolean> = _showCtrlKey.asStateFlow()
+
+    private val _showShiftKey = MutableStateFlow(loadShowShiftKey())
+    val showShiftKey: StateFlow<Boolean> = _showShiftKey.asStateFlow()
+
+    private val _showAltKey = MutableStateFlow(loadShowAltKey())
+    val showAltKey: StateFlow<Boolean> = _showAltKey.asStateFlow()
+
+    private val _showMetaKey = MutableStateFlow(loadShowMetaKey())
+    val showMetaKey: StateFlow<Boolean> = _showMetaKey.asStateFlow()
+
+    fun getShowCtrlKey(): Boolean = _showCtrlKey.value
+    fun getShowShiftKey(): Boolean = _showShiftKey.value
+    fun getShowAltKey(): Boolean = _showAltKey.value
+    fun getShowMetaKey(): Boolean = _showMetaKey.value
+
+    fun setShowCtrlKey(show: Boolean) {
+        prefs.edit().putBoolean(SettingsKeys.SHOW_CTRL_KEY, show).apply()
+        _showCtrlKey.value = show
+        Log.d(TAG, "Show Ctrl key set to: $show")
+    }
+
+    fun setShowShiftKey(show: Boolean) {
+        prefs.edit().putBoolean(SettingsKeys.SHOW_SHIFT_KEY, show).apply()
+        _showShiftKey.value = show
+        Log.d(TAG, "Show Shift key set to: $show")
+    }
+
+    fun setShowAltKey(show: Boolean) {
+        prefs.edit().putBoolean(SettingsKeys.SHOW_ALT_KEY, show).apply()
+        _showAltKey.value = show
+        Log.d(TAG, "Show Alt key set to: $show")
+    }
+
+    fun setShowMetaKey(show: Boolean) {
+        prefs.edit().putBoolean(SettingsKeys.SHOW_META_KEY, show).apply()
+        _showMetaKey.value = show
+        Log.d(TAG, "Show Meta key set to: $show")
+    }
+
+    private fun loadShowCtrlKey(): Boolean =
+        prefs.getBoolean(SettingsKeys.SHOW_CTRL_KEY, SettingsDefaults.SHOW_CTRL_KEY)
+
+    private fun loadShowShiftKey(): Boolean =
+        prefs.getBoolean(SettingsKeys.SHOW_SHIFT_KEY, SettingsDefaults.SHOW_SHIFT_KEY)
+
+    private fun loadShowAltKey(): Boolean =
+        prefs.getBoolean(SettingsKeys.SHOW_ALT_KEY, SettingsDefaults.SHOW_ALT_KEY)
+
+    private fun loadShowMetaKey(): Boolean =
+        prefs.getBoolean(SettingsKeys.SHOW_META_KEY, SettingsDefaults.SHOW_META_KEY)
+
+    // ==========================================================================
     // Quick Buttons
     // ==========================================================================
 
@@ -315,8 +372,16 @@ class SettingsRepository @Inject constructor(
                 prefs.edit()
                     .remove(SettingsKeys.QUICK_BUTTONS)
                     .remove(SettingsKeys.TERMINAL_FONT_SIZE)
+                    .remove(SettingsKeys.SHOW_CTRL_KEY)
+                    .remove(SettingsKeys.SHOW_SHIFT_KEY)
+                    .remove(SettingsKeys.SHOW_ALT_KEY)
+                    .remove(SettingsKeys.SHOW_META_KEY)
                     .apply()
                 _quickButtons.value = SettingsDefaults.QUICK_BUTTONS
+                _showCtrlKey.value = SettingsDefaults.SHOW_CTRL_KEY
+                _showShiftKey.value = SettingsDefaults.SHOW_SHIFT_KEY
+                _showAltKey.value = SettingsDefaults.SHOW_ALT_KEY
+                _showMetaKey.value = SettingsDefaults.SHOW_META_KEY
                 Log.d(TAG, "Reset terminal section")
             }
             SettingsSection.NOTIFICATIONS -> {
@@ -339,6 +404,11 @@ class SettingsRepository @Inject constructor(
         _defaultAgent.value = SettingsDefaults.DEFAULT_AGENT
         _quickButtons.value = SettingsDefaults.QUICK_BUTTONS
         _notificationSettings.value = SettingsDefaults.NOTIFICATIONS
+        _autoConnectEnabled.value = SettingsDefaults.AUTO_CONNECT
+        _showCtrlKey.value = SettingsDefaults.SHOW_CTRL_KEY
+        _showShiftKey.value = SettingsDefaults.SHOW_SHIFT_KEY
+        _showAltKey.value = SettingsDefaults.SHOW_ALT_KEY
+        _showMetaKey.value = SettingsDefaults.SHOW_META_KEY
         migrateIfNeeded() // Re-apply version
         Log.d(TAG, "Reset all settings")
     }

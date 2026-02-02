@@ -60,6 +60,12 @@ class SettingsViewModel @Inject constructor(
     // Auto-connect state
     val autoConnectEnabled: StateFlow<Boolean> = settingsRepository.autoConnectEnabled
 
+    // Modifier key visibility
+    val showCtrlKey: StateFlow<Boolean> = settingsRepository.showCtrlKey
+    val showShiftKey: StateFlow<Boolean> = settingsRepository.showShiftKey
+    val showAltKey: StateFlow<Boolean> = settingsRepository.showAltKey
+    val showMetaKey: StateFlow<Boolean> = settingsRepository.showMetaKey
+
     // One-time UI events
     private val _uiEvents = MutableSharedFlow<SettingsUiEvent>(extraBufferCapacity = 16)
     val uiEvents: SharedFlow<SettingsUiEvent> = _uiEvents.asSharedFlow()
@@ -200,6 +206,26 @@ class SettingsViewModel @Inject constructor(
      */
     fun reorderQuickButtons(from: Int, to: Int) {
         settingsRepository.reorderQuickButtons(from, to)
+    }
+
+    // ==========================================================================
+    // Modifier Keys
+    // ==========================================================================
+
+    fun setShowCtrlKey(show: Boolean) {
+        settingsRepository.setShowCtrlKey(show)
+    }
+
+    fun setShowShiftKey(show: Boolean) {
+        settingsRepository.setShowShiftKey(show)
+    }
+
+    fun setShowAltKey(show: Boolean) {
+        settingsRepository.setShowAltKey(show)
+    }
+
+    fun setShowMetaKey(show: Boolean) {
+        settingsRepository.setShowMetaKey(show)
     }
 
     // ==========================================================================

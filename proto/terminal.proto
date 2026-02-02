@@ -25,7 +25,7 @@ message TerminalInput {
 
 message SpecialKey {
     KeyType key = 1;
-    uint32 modifiers = 2;         // Bitmask: 1=Ctrl, 2=Alt, 4=Shift
+    uint32 modifiers = 2;         // XTerm modifier bitmask: 1=Shift, 2=Alt, 4=Ctrl, 8=Meta
 }
 
 enum KeyType {

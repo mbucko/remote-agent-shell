@@ -7,24 +7,17 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.ras.R
 import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
 import com.ras.data.terminal.ModifierKey
 import com.ras.data.terminal.ModifierMode
@@ -36,11 +29,11 @@ import com.ras.proto.KeyType
  * Bar of quick action buttons with optional modifier keys.
  *
  * Displays:
- * - Modifier buttons (Ctrl, Shift, Alt) with tap/long-press for sticky/locked state
+ * - Modifier buttons (Ctrl, Shift, Alt, Meta) with tap/long-press for sticky/locked state
  * - Configurable buttons like Y, N, Ctrl+C for quick terminal input
- * - "Add" button to open the button editor
  *
  * Uses FlowRow to wrap buttons to multiple rows when needed.
+ * Button configuration is done through Settings.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -50,11 +43,11 @@ fun QuickButtonBar(
     onButtonClick: (QuickButton) -> Unit,
     onModifierTap: (ModifierKey) -> Unit,
     onModifierLongPress: (ModifierKey) -> Unit,
-    onAddClick: () -> Unit,
     modifier: Modifier = Modifier,
     showCtrl: Boolean = true,
     showShift: Boolean = true,
-    showAlt: Boolean = false
+    showAlt: Boolean = false,
+    showMeta: Boolean = false
 ) {
     Surface(
         modifier = modifier,
@@ -92,23 +85,20 @@ fun QuickButtonBar(
                     onLongPress = { onModifierLongPress(ModifierKey.ALT) }
                 )
             }
+            if (showMeta) {
+                ModifierButton(
+                    label = "Meta",
+                    mode = modifierState.meta,
+                    onTap = { onModifierTap(ModifierKey.META) },
+                    onLongPress = { onModifierLongPress(ModifierKey.META) }
+                )
+            }
 
             // Regular quick buttons
             buttons.forEach { button ->
                 QuickActionButton(
                     button = button,
                     onClick = { onButtonClick(button) }
-                )
-            }
-
-            // Add button (compact)
-            IconButton(
-                onClick = onAddClick,
-                modifier = Modifier.size(28.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = stringResource(R.string.terminal_add_button)
                 )
             }
         }
@@ -197,8 +187,7 @@ private fun QuickButtonBarPreview() {
             modifierState = ModifierState(),
             onButtonClick = {},
             onModifierTap = {},
-            onModifierLongPress = {},
-            onAddClick = {}
+            onModifierLongPress = {}
         )
     }
 }
@@ -212,8 +201,7 @@ private fun QuickButtonBarWithStickyModifierPreview() {
             modifierState = ModifierState(shift = ModifierMode.STICKY),
             onButtonClick = {},
             onModifierTap = {},
-            onModifierLongPress = {},
-            onAddClick = {}
+            onModifierLongPress = {}
         )
     }
 }
@@ -227,8 +215,7 @@ private fun QuickButtonBarWithLockedModifierPreview() {
             modifierState = ModifierState(ctrl = ModifierMode.LOCKED),
             onButtonClick = {},
             onModifierTap = {},
-            onModifierLongPress = {},
-            onAddClick = {}
+            onModifierLongPress = {}
         )
     }
 }
@@ -251,8 +238,8 @@ private fun QuickButtonBarManyButtonsPreview() {
             onButtonClick = {},
             onModifierTap = {},
             onModifierLongPress = {},
-            onAddClick = {},
-            showAlt = true
+            showAlt = true,
+            showMeta = true
         )
     }
 }

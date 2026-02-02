@@ -104,6 +104,12 @@ class TerminalViewModel @Inject constructor(
     private val _modifierState = MutableStateFlow(ModifierState())
     val modifierState: StateFlow<ModifierState> = _modifierState.asStateFlow()
 
+    // Modifier key visibility settings
+    val showCtrlKey: StateFlow<Boolean> = settingsRepository.showCtrlKey
+    val showShiftKey: StateFlow<Boolean> = settingsRepository.showShiftKey
+    val showAltKey: StateFlow<Boolean> = settingsRepository.showAltKey
+    val showMetaKey: StateFlow<Boolean> = settingsRepository.showMetaKey
+
     // Input text (for line-buffered mode)
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -337,11 +343,16 @@ class TerminalViewModel @Inject constructor(
     fun onQuickButtonClicked(button: QuickButton) {
         viewModelScope.launch {
             try {
-                val modifiers = _modifierState.value.bitmask
+                val state = _modifierState.value
+                val modifiers = state.bitmask
 
                 when {
                     button.keyType != null -> repository.sendSpecialKey(button.keyType, modifiers)
-                    button.character != null -> repository.sendInput(button.character)
+                    button.character != null -> {
+                        // Apply modifiers to character buttons
+                        val modifiedChar = applyModifiersToCharacter(button.character, state)
+                        repository.sendInput(modifiedChar)
+                    }
                 }
 
                 // Clear sticky (non-locked) modifiers after key press
@@ -350,6 +361,42 @@ class TerminalViewModel @Inject constructor(
                 _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
             }
         }
+    }
+
+    /**
+     * Apply modifier keys to a character string.
+     *
+     * - Shift: uppercase the character
+     * - Ctrl: convert to control character (e.g., Ctrl+y = 0x19)
+     * - Alt: prefix with ESC
+     * - Meta: prefix with ESC (same as Alt on most terminals)
+     */
+    private fun applyModifiersToCharacter(char: String, state: ModifierState): String {
+        if (!state.hasActiveModifiers || char.isEmpty()) return char
+
+        var result = char
+
+        // Shift: uppercase single letters
+        if (state.shift != ModifierMode.OFF && char.length == 1) {
+            result = result.uppercase()
+        }
+
+        // Ctrl: convert single letter to control character
+        if (state.ctrl != ModifierMode.OFF && char.length == 1) {
+            val c = result[0]
+            if (c in 'A'..'Z' || c in 'a'..'z') {
+                // Control character = letter & 0x1F
+                val controlChar = (c.uppercaseChar().code and 0x1F).toChar()
+                result = controlChar.toString()
+            }
+        }
+
+        // Alt/Meta: prefix with ESC
+        if (state.alt != ModifierMode.OFF || state.meta != ModifierMode.OFF) {
+            result = "\u001b$result"
+        }
+
+        return result
     }
 
     /**
@@ -362,6 +409,7 @@ class TerminalViewModel @Inject constructor(
                 ModifierKey.CTRL -> state.copy(ctrl = state.ctrl.toggle())
                 ModifierKey.ALT -> state.copy(alt = state.alt.toggle())
                 ModifierKey.SHIFT -> state.copy(shift = state.shift.toggle())
+                ModifierKey.META -> state.copy(meta = state.meta.toggle())
             }
         }
     }
@@ -376,6 +424,7 @@ class TerminalViewModel @Inject constructor(
                 ModifierKey.CTRL -> state.copy(ctrl = ModifierMode.LOCKED)
                 ModifierKey.ALT -> state.copy(alt = ModifierMode.LOCKED)
                 ModifierKey.SHIFT -> state.copy(shift = ModifierMode.LOCKED)
+                ModifierKey.META -> state.copy(meta = ModifierMode.LOCKED)
             }
         }
     }
@@ -388,7 +437,8 @@ class TerminalViewModel @Inject constructor(
             state.copy(
                 ctrl = if (state.ctrl == ModifierMode.STICKY) ModifierMode.OFF else state.ctrl,
                 alt = if (state.alt == ModifierMode.STICKY) ModifierMode.OFF else state.alt,
-                shift = if (state.shift == ModifierMode.STICKY) ModifierMode.OFF else state.shift
+                shift = if (state.shift == ModifierMode.STICKY) ModifierMode.OFF else state.shift,
+                meta = if (state.meta == ModifierMode.STICKY) ModifierMode.OFF else state.meta
             )
         }
     }

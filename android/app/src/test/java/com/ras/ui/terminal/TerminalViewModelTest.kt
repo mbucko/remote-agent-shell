@@ -9,6 +9,7 @@ import com.ras.data.terminal.TerminalState
 import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
 import com.ras.util.ClipboardService
+import io.mockk.clearAllMocks
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -53,8 +54,15 @@ class TerminalViewModelTest {
     private val isConnectedFlow = MutableStateFlow(true)
     private val sessionsFlow = MutableStateFlow(emptyList<com.ras.data.sessions.SessionInfo>())
 
+    // Flows for settings repository (modifier visibility)
+    private val showCtrlKeyFlow = MutableStateFlow(true)
+    private val showShiftKeyFlow = MutableStateFlow(true)
+    private val showAltKeyFlow = MutableStateFlow(false)
+    private val showMetaKeyFlow = MutableStateFlow(false)
+
     @Before
     fun setup() {
+        clearAllMocks()
         Dispatchers.setMain(testDispatcher)
 
         savedStateHandle = SavedStateHandle(mapOf(NavArgs.SESSION_ID to "test-session-123"))
@@ -76,6 +84,12 @@ class TerminalViewModelTest {
 
         // Setup settings repository with default font size
         every { settingsRepository.getTerminalFontSize() } returns SettingsDefaults.TERMINAL_FONT_SIZE
+
+        // Setup modifier key visibility settings
+        every { settingsRepository.showCtrlKey } returns showCtrlKeyFlow
+        every { settingsRepository.showShiftKey } returns showShiftKeyFlow
+        every { settingsRepository.showAltKey } returns showAltKeyFlow
+        every { settingsRepository.showMetaKey } returns showMetaKeyFlow
 
         // Setup button settings
         every { buttonSettings.getButtons() } returns emptyList()

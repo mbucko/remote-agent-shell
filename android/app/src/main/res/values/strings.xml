@@ -54,6 +54,8 @@
     <string name="settings_quick_buttons_hint">Tap to toggle, drag to reorder</string>
     <string name="settings_enabled">Enabled</string>
     <string name="settings_disabled">Disabled</string>
+    <string name="settings_modifier_keys">Modifier keys</string>
+    <string name="settings_modifier_keys_hint">Show modifier buttons above quick buttons</string>
 
     <!-- Settings - Notifications -->
     <string name="settings_notifications">Notifications</string>

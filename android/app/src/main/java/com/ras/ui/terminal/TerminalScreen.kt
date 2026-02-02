@@ -117,6 +117,12 @@ fun TerminalScreen(
     val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
     val fontSize by viewModel.fontSize.collectAsStateWithLifecycle()
 
+    // Modifier key visibility settings
+    val showCtrlKey by viewModel.showCtrlKey.collectAsStateWithLifecycle()
+    val showShiftKey by viewModel.showShiftKey.collectAsStateWithLifecycle()
+    val showAltKey by viewModel.showAltKey.collectAsStateWithLifecycle()
+    val showMetaKey by viewModel.showMetaKey.collectAsStateWithLifecycle()
+
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -298,12 +304,11 @@ fun TerminalScreen(
                 onButtonClick = { viewModel.onQuickButtonClicked(it) },
                 onModifierTap = { viewModel.onModifierTap(it) },
                 onModifierLongPress = { viewModel.onModifierLongPress(it) },
-                onAddClick = {
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Button editor coming soon. Configure in Settings.")
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                showCtrl = showCtrlKey,
+                showShift = showShiftKey,
+                showAlt = showAltKey,
+                showMeta = showMetaKey
             )
 
             // Input area (depends on mode)

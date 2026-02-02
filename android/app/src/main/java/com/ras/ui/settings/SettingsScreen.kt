@@ -88,6 +88,10 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
     val autoConnectEnabled by viewModel.autoConnectEnabled.collectAsStateWithLifecycle()
+    val showCtrlKey by viewModel.showCtrlKey.collectAsStateWithLifecycle()
+    val showShiftKey by viewModel.showShiftKey.collectAsStateWithLifecycle()
+    val showAltKey by viewModel.showAltKey.collectAsStateWithLifecycle()
+    val showMetaKey by viewModel.showMetaKey.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Handle one-time UI events
@@ -148,6 +152,19 @@ fun SettingsScreen(
             QuickButtonsCard(
                 enabledButtons = uiState.quickButtons,
                 onToggle = { button, enabled -> viewModel.toggleQuickButton(button, enabled) }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            ModifierKeysCard(
+                showCtrl = showCtrlKey,
+                showShift = showShiftKey,
+                showAlt = showAltKey,
+                showMeta = showMetaKey,
+                onCtrlChanged = { viewModel.setShowCtrlKey(it) },
+                onShiftChanged = { viewModel.setShowShiftKey(it) },
+                onAltChanged = { viewModel.setShowAltKey(it) },
+                onMetaChanged = { viewModel.setShowMetaKey(it) }
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -478,6 +495,108 @@ private fun QuickButtonChip(
             text = button.label,
             style = MaterialTheme.typography.labelLarge,
             color = contentColor
+        )
+    }
+}
+
+// ==========================================================================
+// Modifier Keys Section
+// ==========================================================================
+
+@Composable
+private fun ModifierKeysCard(
+    showCtrl: Boolean,
+    showShift: Boolean,
+    showAlt: Boolean,
+    showMeta: Boolean,
+    onCtrlChanged: (Boolean) -> Unit,
+    onShiftChanged: (Boolean) -> Unit,
+    onAltChanged: (Boolean) -> Unit,
+    onMetaChanged: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.settings_modifier_keys),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(R.string.settings_modifier_keys_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            ModifierKeyRow(
+                title = "Ctrl",
+                subtitle = "Control key for shortcuts like Ctrl+C",
+                checked = showCtrl,
+                onCheckedChange = onCtrlChanged
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            ModifierKeyRow(
+                title = "Shift",
+                subtitle = "Shift key for uppercase and Shift+Tab",
+                checked = showShift,
+                onCheckedChange = onShiftChanged
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            ModifierKeyRow(
+                title = "Alt",
+                subtitle = "Alt/Option key for terminal shortcuts",
+                checked = showAlt,
+                onCheckedChange = onAltChanged
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            ModifierKeyRow(
+                title = "Meta",
+                subtitle = "Meta/Command key (rarely used)",
+                checked = showMeta,
+                onCheckedChange = onMetaChanged
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModifierKeyRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange
         )
     }
 }

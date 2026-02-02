@@ -19,6 +19,12 @@ object SettingsKeys {
     const val QUICK_BUTTONS = "quick_buttons"
     const val TERMINAL_FONT_SIZE = "terminal_font_size"
 
+    // Modifier keys visibility
+    const val SHOW_CTRL_KEY = "show_ctrl_key"
+    const val SHOW_SHIFT_KEY = "show_shift_key"
+    const val SHOW_ALT_KEY = "show_alt_key"
+    const val SHOW_META_KEY = "show_meta_key"
+
     // Notifications
     const val NOTIFY_APPROVAL = "notify_approval"
     const val NOTIFY_COMPLETION = "notify_completion"
@@ -105,6 +111,12 @@ object SettingsDefaults {
     val DEFAULT_AGENT: String? = null  // "Always ask"
     const val TERMINAL_FONT_SIZE = 12f
     const val AUTO_CONNECT = false  // Default: auto-connect disabled (user must enable)
+
+    // Modifier keys - Ctrl and Shift shown by default, Alt and Meta hidden
+    const val SHOW_CTRL_KEY = true
+    const val SHOW_SHIFT_KEY = true
+    const val SHOW_ALT_KEY = false
+    const val SHOW_META_KEY = false
     val QUICK_BUTTONS = listOf(
         SettingsQuickButton.YES,
         SettingsQuickButton.NO,

@@ -43,7 +43,7 @@ class ModifierStateTest {
     }
 
     @Test
-    fun `bitmask with all modifiers is 7`() {
+    fun `bitmask with ctrl, alt, shift is 7`() {
         // XTerm standard: Shift=1, Alt=2, Ctrl=4 → 7
         val state = ModifierState(
             ctrl = ModifierMode.STICKY,
@@ -51,6 +51,25 @@ class ModifierStateTest {
             shift = ModifierMode.STICKY
         )
         assertEquals(7, state.bitmask)
+    }
+
+    @Test
+    fun `bitmask with meta is 8`() {
+        // XTerm standard: Meta=8
+        val state = ModifierState(meta = ModifierMode.STICKY)
+        assertEquals(8, state.bitmask)
+    }
+
+    @Test
+    fun `bitmask with all modifiers is 15`() {
+        // XTerm standard: Shift=1, Alt=2, Ctrl=4, Meta=8 → 15
+        val state = ModifierState(
+            ctrl = ModifierMode.STICKY,
+            alt = ModifierMode.STICKY,
+            shift = ModifierMode.STICKY,
+            meta = ModifierMode.STICKY
+        )
+        assertEquals(15, state.bitmask)
     }
 
     @Test
@@ -89,6 +108,12 @@ class ModifierStateTest {
     @Test
     fun `hasActiveModifiers true when shift active`() {
         val state = ModifierState(shift = ModifierMode.STICKY)
+        assertEquals(true, state.hasActiveModifiers)
+    }
+
+    @Test
+    fun `hasActiveModifiers true when meta active`() {
+        val state = ModifierState(meta = ModifierMode.LOCKED)
         assertEquals(true, state.hasActiveModifiers)
     }
 
