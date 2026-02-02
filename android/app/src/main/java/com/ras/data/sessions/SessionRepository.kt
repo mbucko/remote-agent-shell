@@ -154,7 +154,11 @@ class SessionRepository @Inject constructor(
 
     private fun handleSessionCreated(event: com.ras.proto.SessionCreatedEvent) {
         val session = event.session.toDomain()
-        _sessions.value = _sessions.value + session
+        // Check if session already exists to prevent duplicates
+        // This can happen if SessionListEvent arrives before SessionCreatedEvent
+        if (_sessions.value.none { it.id == session.id }) {
+            _sessions.value = _sessions.value + session
+        }
         _events.tryEmit(SessionEvent.SessionCreated(session))
     }
 
