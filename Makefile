@@ -3,7 +3,8 @@
 
 .PHONY: help install install-dev test test-daemon test-pairing test-crypto \
         test-cov lint format proto clean build \
-        android-build android-install android-test android-clean
+        android-build android-install android-deploy android-test android-clean \
+        daemon-restart
 
 # Default target
 help:
@@ -37,8 +38,12 @@ help:
 	@echo "Android:"
 	@echo "  make android-build    Build Android debug APK"
 	@echo "  make android-install  Install debug APK on connected device"
+	@echo "  make android-deploy   Build, install Android, and restart daemon"
 	@echo "  make android-test     Run Android unit tests"
 	@echo "  make android-clean    Clean Android build artifacts"
+	@echo ""
+	@echo "Daemon:"
+	@echo "  make daemon-restart   Restart daemon with logs at /tmp/ras-logs/daemon.log"
 	@echo ""
 	@echo "Development:"
 	@echo "  make run-pair       Run pairing command (for testing)"
@@ -170,6 +175,25 @@ android-build:
 
 android-install:
 	cd android && ./gradlew installDebug
+
+android-deploy: android-build android-install daemon-restart
+	@echo "Android deployed and daemon restarted"
+
+# =============================================================================
+# Daemon
+# =============================================================================
+
+LOG_DIR := /tmp/ras-logs
+LOG_FILE := $(LOG_DIR)/daemon.log
+
+daemon-restart:
+	@echo "Stopping daemon..."
+	-cd daemon && uv run ras daemon stop 2>/dev/null || true
+	@mkdir -p $(LOG_DIR)
+	@echo "Starting daemon with logs at $(LOG_FILE)..."
+	cd daemon && nohup uv run ras daemon start > $(LOG_FILE) 2>&1 &
+	@sleep 1
+	@echo "Daemon started. Logs: tail -f $(LOG_FILE)"
 
 android-test:
 	cd android && ./gradlew testDebugUnitTest
