@@ -26,24 +26,21 @@ from ras.device_store import PairedDevice
 # Test Helpers
 # =============================================================================
 
+
 def create_test_device(device_id: str = "test-device-123") -> PairedDevice:
     """Create a test paired device."""
     return PairedDevice(
         device_id=device_id,
         name="Test Phone",
         master_secret=os.urandom(32),
-        paired_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        paired_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     )
 
 
 def create_auth_message(device_id: str, auth_key: bytes) -> bytes:
     """Create an auth message in the expected format."""
-    device_id_bytes = device_id.encode('utf-8')
-    return (
-        struct.pack(">I", len(device_id_bytes)) +
-        device_id_bytes +
-        auth_key
-    )
+    device_id_bytes = device_id.encode("utf-8")
+    return struct.pack(">I", len(device_id_bytes)) + device_id_bytes + auth_key
 
 
 class MockTailscaleTransport:
@@ -88,6 +85,7 @@ class MockDeviceStore:
 # SECTION 1: Capability Exchange Edge Cases
 # =============================================================================
 
+
 class TestCapabilityExchangeEdgeCases:
     """Tests for capability exchange edge cases."""
 
@@ -104,7 +102,7 @@ class TestCapabilityExchangeEdgeCases:
         mock_listener.is_available = True
         mock_listener.get_capabilities.return_value = {
             "tailscale_ip": "100.64.0.1",
-            "tailscale_port": 0  # Port 0 is invalid
+            "tailscale_port": 0,  # Port 0 is invalid
         }
         daemon._tailscale_listener = mock_listener
 
@@ -126,7 +124,7 @@ class TestCapabilityExchangeEdgeCases:
         mock_listener.is_available = True
         mock_listener.get_capabilities.return_value = {
             "tailscale_ip": "",  # Empty IP
-            "tailscale_port": 9876
+            "tailscale_port": 9876,
         }
         daemon._tailscale_listener = mock_listener
 
@@ -148,7 +146,7 @@ class TestCapabilityExchangeEdgeCases:
         mock_listener.is_available = True
         mock_listener.get_capabilities.return_value = {
             "tailscale_ip": "100.64.0.1",
-            "tailscale_port": 65535
+            "tailscale_port": 65535,
         }
         daemon._tailscale_listener = mock_listener
 
@@ -169,7 +167,7 @@ class TestCapabilityExchangeEdgeCases:
         mock_listener.is_available = True
         mock_listener.get_capabilities.return_value = {
             "tailscale_ip": "fd7a:115c:a1e0::1",
-            "tailscale_port": 9876
+            "tailscale_port": 9876,
         }
         daemon._tailscale_listener = mock_listener
 
@@ -181,6 +179,7 @@ class TestCapabilityExchangeEdgeCases:
 # =============================================================================
 # SECTION 2: Cancellation Propagation Edge Cases
 # =============================================================================
+
 
 class TestCancellationPropagation:
     """Tests for proper cancellation handling."""
@@ -266,6 +265,7 @@ class TestCancellationPropagation:
 # SECTION 3: Concurrent Connection Edge Cases
 # =============================================================================
 
+
 class TestConcurrentConnectionEdgeCases:
     """Tests for concurrent connection handling."""
 
@@ -295,13 +295,13 @@ class TestConcurrentConnectionEdgeCases:
             transports.append(transport)
 
         # Connect all devices concurrently
-        await asyncio.gather(
-            *[daemon._on_tailscale_connection(t) for t in transports]
-        )
+        await asyncio.gather(*[daemon._on_tailscale_connection(t) for t in transports])
 
         # All should succeed
         for transport in transports:
-            assert transport.sent_data == b'\x01', "All devices should authenticate successfully"
+            assert transport.sent_data == b"\x01", (
+                "All devices should authenticate successfully"
+            )
 
     @pytest.mark.asyncio
     async def test_same_device_connecting_twice_quickly(self):
@@ -329,17 +329,18 @@ class TestConcurrentConnectionEdgeCases:
         # Both connections at once
         await asyncio.gather(
             daemon._on_tailscale_connection(transport1),
-            daemon._on_tailscale_connection(transport2)
+            daemon._on_tailscale_connection(transport2),
         )
 
         # Both should succeed (connection manager handles replacement)
-        assert transport1.sent_data == b'\x01'
-        assert transport2.sent_data == b'\x01'
+        assert transport1.sent_data == b"\x01"
+        assert transport2.sent_data == b"\x01"
 
 
 # =============================================================================
 # SECTION 4: Resource Cleanup Edge Cases
 # =============================================================================
+
 
 class TestResourceCleanupEdgeCases:
     """Tests for proper resource cleanup on failures."""
@@ -365,7 +366,7 @@ class TestResourceCleanupEdgeCases:
         await daemon._on_tailscale_connection(transport)
 
         # Should have sent failure response
-        assert transport.sent_data == b'\x00'
+        assert transport.sent_data == b"\x00"
 
     @pytest.mark.asyncio
     async def test_peer_closed_on_handshake_failure(self):
@@ -382,10 +383,7 @@ class TestResourceCleanupEdgeCases:
         mock_codec.decode = Mock(side_effect=Exception("Decode failed"))
 
         await manager.add_connection(
-            device_id="test",
-            peer=mock_peer,
-            codec=mock_codec,
-            on_message=Mock()
+            device_id="test", peer=mock_peer, codec=mock_codec, on_message=Mock()
         )
 
         # Simulate receiving invalid message
@@ -405,6 +403,7 @@ class TestResourceCleanupEdgeCases:
 # SECTION 5: Authentication Protocol Edge Cases
 # =============================================================================
 
+
 class TestAuthenticationProtocolEdgeCases:
     """Tests for authentication protocol edge cases."""
 
@@ -413,7 +412,7 @@ class TestAuthenticationProtocolEdgeCases:
         from ras.daemon import Daemon
 
         # Unicode device ID with emoji
-        device = create_test_device("device-\U0001F4F1-test")
+        device = create_test_device("device-\U0001f4f1-test")
         auth_key = derive_key(device.master_secret, "auth")
 
         mock_store = MockDeviceStore()
@@ -423,7 +422,7 @@ class TestAuthenticationProtocolEdgeCases:
 
         # Verify message format
         device_id_len = struct.unpack(">I", message[:4])[0]
-        parsed_id = message[4:4 + device_id_len].decode('utf-8')
+        parsed_id = message[4 : 4 + device_id_len].decode("utf-8")
         assert parsed_id == device.device_id
 
     def test_auth_with_max_length_device_id(self):
@@ -463,7 +462,7 @@ class TestAuthenticationProtocolEdgeCases:
 
         await daemon._on_tailscale_connection(transport)
 
-        assert transport.sent_data == b'\x01'  # Success
+        assert transport.sent_data == b"\x01"  # Success
 
     @pytest.mark.asyncio
     async def test_auth_rejects_36_byte_message(self):
@@ -479,12 +478,13 @@ class TestAuthenticationProtocolEdgeCases:
 
         await daemon._on_tailscale_connection(transport)
 
-        assert transport.sent_data == b'\x00'  # Failure
+        assert transport.sent_data == b"\x00"  # Failure
 
 
 # =============================================================================
 # SECTION 6: State Machine Edge Cases
 # =============================================================================
+
 
 class TestStateMachineEdgeCases:
     """Tests for auth state machine edge cases."""
@@ -508,11 +508,7 @@ class TestStateMachineEdgeCases:
         """verify_response without prior challenge should fail."""
         auth = Authenticator(auth_key=b"x" * 32)
 
-        response = {
-            "type": "auth_response",
-            "hmac": "aa" * 32,
-            "nonce": "bb" * 32
-        }
+        response = {"type": "auth_response", "hmac": "aa" * 32, "nonce": "bb" * 32}
 
         result = auth.verify_response(response)
         assert result is False
@@ -541,6 +537,7 @@ class TestStateMachineEdgeCases:
 # SECTION 7: Message Length Edge Cases
 # =============================================================================
 
+
 class TestMessageLengthEdgeCases:
     """Tests for message length boundary conditions."""
 
@@ -566,7 +563,7 @@ class TestMessageLengthEdgeCases:
 
         await daemon._on_tailscale_connection(transport)
 
-        assert transport.sent_data == b'\x01'
+        assert transport.sent_data == b"\x01"
 
     @pytest.mark.asyncio
     async def test_device_id_length_exactly_101_rejected(self):
@@ -585,7 +582,7 @@ class TestMessageLengthEdgeCases:
 
         await daemon._on_tailscale_connection(transport)
 
-        assert transport.sent_data == b'\x00'
+        assert transport.sent_data == b"\x00"
 
     @pytest.mark.asyncio
     async def test_length_prefix_claims_more_bytes_than_available(self):
@@ -604,12 +601,13 @@ class TestMessageLengthEdgeCases:
 
         await daemon._on_tailscale_connection(transport)
 
-        assert transport.sent_data == b'\x00'
+        assert transport.sent_data == b"\x00"
 
 
 # =============================================================================
 # SECTION 8: Connection Manager Edge Cases
 # =============================================================================
+
 
 class TestConnectionManagerEdgeCases:
     """Tests for ConnectionManager edge cases."""
@@ -648,10 +646,7 @@ class TestConnectionManagerEdgeCases:
         mock_codec = Mock()
 
         await manager.add_connection(
-            device_id="test",
-            peer=mock_peer,
-            codec=mock_codec,
-            on_message=Mock()
+            device_id="test", peer=mock_peer, codec=mock_codec, on_message=Mock()
         )
 
         # Should not raise despite peer.close failing
@@ -661,6 +656,7 @@ class TestConnectionManagerEdgeCases:
 # =============================================================================
 # SECTION 9: Timing Edge Cases
 # =============================================================================
+
 
 class TestTimingEdgeCases:
     """Tests for timing-related edge cases."""
@@ -699,7 +695,7 @@ class TestTimingEdgeCases:
                 device_id=f"device-{i}",
                 peer=mock_peer,
                 codec=mock_codec,
-                on_message=Mock()
+                on_message=Mock(),
             )
 
             # Immediately close
@@ -712,6 +708,7 @@ class TestTimingEdgeCases:
 # =============================================================================
 # SECTION 10: Connection Replacement Edge Cases
 # =============================================================================
+
 
 class TestConnectionReplacementEdgeCases:
     """Tests for proper connection replacement behavior.
@@ -734,17 +731,17 @@ class TestConnectionReplacementEdgeCases:
 
         # Track close order
         close_order = []
-        add_connection_returned = asyncio.Event()
+        close_complete_event = asyncio.Event()
 
-        async def slow_close():
-            """Simulate a slow close that would cause issues if not awaited."""
+        async def controllable_close():
+            """Close that waits for test signal to complete, proving await behavior."""
             close_order.append("close_started")
-            await asyncio.sleep(0.1)  # Simulate ICE teardown time
+            await close_complete_event.wait()  # Wait for test to allow completion
             close_order.append("close_completed")
 
         # Add first connection
         mock_peer1 = AsyncMock()
-        mock_peer1.close = slow_close
+        mock_peer1.close = controllable_close
         mock_peer1.on_message = Mock()
         mock_peer1.on_close = Mock()
         mock_codec1 = Mock()
@@ -753,27 +750,46 @@ class TestConnectionReplacementEdgeCases:
             device_id="test-device",
             peer=mock_peer1,
             codec=mock_codec1,
-            on_message=Mock()
+            on_message=Mock(),
         )
 
         # Add second connection for same device (triggers replacement)
+        # Run in background task so we can verify it's blocked
         mock_peer2 = AsyncMock()
         mock_peer2.close = AsyncMock()
         mock_peer2.on_message = Mock()
         mock_peer2.on_close = Mock()
         mock_codec2 = Mock()
 
-        await manager.add_connection(
-            device_id="test-device",
-            peer=mock_peer2,
-            codec=mock_codec2,
-            on_message=Mock()
+        add_task = asyncio.create_task(
+            manager.add_connection(
+                device_id="test-device",
+                peer=mock_peer2,
+                codec=mock_codec2,
+                on_message=Mock(),
+            )
         )
 
+        # Give task time to start close but not complete
+        await asyncio.sleep(0)
+
+        # At this point, close should have started but NOT completed
+        # This proves add_connection is BLOCKED waiting for close
+        assert "close_started" in close_order, "close() should have been called"
+        assert "close_completed" not in close_order, (
+            "add_connection should be awaiting close()"
+        )
+
+        # Now allow close to complete
+        close_complete_event.set()
+
+        # Wait for add_connection to return
+        await add_task
+
         # After add_connection returns, old connection must be fully closed
-        # (not just "close_started" but also "close_completed")
-        assert "close_started" in close_order
-        assert "close_completed" in close_order
+        assert "close_completed" in close_order, (
+            "close() should complete before add_connection returns"
+        )
         assert close_order.index("close_started") < close_order.index("close_completed")
 
     @pytest.mark.asyncio
@@ -794,7 +810,7 @@ class TestConnectionReplacementEdgeCases:
             device_id="test-device",
             peer=mock_peer1,
             codec=mock_codec1,
-            on_message=Mock()
+            on_message=Mock(),
         )
 
         # Add second connection - should succeed despite close error
@@ -808,7 +824,7 @@ class TestConnectionReplacementEdgeCases:
             device_id="test-device",
             peer=mock_peer2,
             codec=mock_codec2,
-            on_message=Mock()
+            on_message=Mock(),
         )
 
         # New connection should be active
@@ -846,7 +862,7 @@ class TestConnectionReplacementEdgeCases:
             device_id="test-device",
             peer=mock_peer1,
             codec=mock_codec1,
-            on_message=Mock()
+            on_message=Mock(),
         )
 
         # Capture the original handler
@@ -863,14 +879,14 @@ class TestConnectionReplacementEdgeCases:
             device_id="test-device",
             peer=mock_peer2,
             codec=mock_codec2,
-            on_message=Mock()
+            on_message=Mock(),
         )
 
         # on_close should have been called with a new (no-op) handler before close
         assert mock_peer1.on_close.call_count >= 2
 
         # on_connection_lost should NOT have been called (old handler was replaced)
-        await asyncio.sleep(0.01)  # Give any async tasks a chance to run
+        await asyncio.sleep(0)  # Yield to event loop to let any scheduled tasks run
         assert "test-device" not in disconnect_callback_calls
 
     @pytest.mark.asyncio
@@ -884,6 +900,7 @@ class TestConnectionReplacementEdgeCases:
         async def make_close(name: str):
             async def close():
                 close_counts[name] += 1
+
             return close
 
         # Add connection 1
@@ -894,10 +911,7 @@ class TestConnectionReplacementEdgeCases:
         mock_codec1 = Mock()
 
         await manager.add_connection(
-            device_id="device",
-            peer=mock_peer1,
-            codec=mock_codec1,
-            on_message=Mock()
+            device_id="device", peer=mock_peer1, codec=mock_codec1, on_message=Mock()
         )
 
         # Immediately replace with connection 2
@@ -908,10 +922,7 @@ class TestConnectionReplacementEdgeCases:
         mock_codec2 = Mock()
 
         await manager.add_connection(
-            device_id="device",
-            peer=mock_peer2,
-            codec=mock_codec2,
-            on_message=Mock()
+            device_id="device", peer=mock_peer2, codec=mock_codec2, on_message=Mock()
         )
 
         # Immediately replace with connection 3
@@ -922,10 +933,7 @@ class TestConnectionReplacementEdgeCases:
         mock_codec3 = Mock()
 
         conn = await manager.add_connection(
-            device_id="device",
-            peer=mock_peer3,
-            codec=mock_codec3,
-            on_message=Mock()
+            device_id="device", peer=mock_peer3, codec=mock_codec3, on_message=Mock()
         )
 
         # peer1 and peer2 should each be closed exactly once

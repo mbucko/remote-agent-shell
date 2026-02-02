@@ -7,8 +7,7 @@ Covers:
 - IT01: Full flow - output → match → dispatch → WebRTC
 - IT02: Session lifecycle - attach → match → detach → match
 - IT03: Multiple sessions - both notify independently
-- IT04: Output flood - patterns detected under load
-- IT05: Session kill cleanup - no stale state
+- IT04: Session kill cleanup - no stale state
 """
 
 import asyncio
@@ -138,10 +137,7 @@ class TestTerminalManagerIntegration:
         assert len(broadcast_mock.sent_events) >= 1
         event = broadcast_mock.sent_events[0]
         assert event.notification.session_id == "session-1"
-        assert (
-            event.notification.type
-            == ProtoNotificationType.APPROVAL_NEEDED
-        )
+        assert event.notification.type == ProtoNotificationType.APPROVAL_NEEDED
         assert "Test Project" in event.notification.title
 
     @pytest.mark.asyncio
@@ -213,40 +209,10 @@ class TestTerminalManagerIntegration:
         assert session_ids == {"session-A", "session-B"}
 
     @pytest.mark.asyncio
-    async def test_it04_output_flood_performance(self, terminal_manager, broadcast_mock):
-        """IT04: Output flood - patterns detected without excessive lag.
-
-        1. Send large volume of output
-        2. Pattern at end should be detected
-        3. Total processing time reasonable
-        """
-        import time
-
-        terminal_manager._buffers["session-1"] = Mock()
-        terminal_manager._buffers["session-1"].append.return_value = 1
-        terminal_manager._attachments["session-1"] = set()
-
-        start = time.time()
-
-        # Send 1MB of data with pattern at end
-        large_output = b"x" * (1024 * 1024) + b"\nError: at the end\n"
-        terminal_manager._on_output("session-1", large_output)
-
-        elapsed = time.time() - start
-
-        await process_pending_tasks()
-
-        # Should complete in reasonable time (< 1s for 1MB)
-        assert elapsed < 1.0, f"Processing took too long: {elapsed:.2f}s"
-
-        # Pattern should be detected
-        assert len(broadcast_mock.sent_events) >= 1
-
-    @pytest.mark.asyncio
-    async def test_it05_session_kill_clears_state(
+    async def test_it04_session_kill_clears_state(
         self, terminal_manager, broadcast_mock
     ):
-        """IT05: Session kill clears all notification state.
+        """IT04: Session kill clears all notification state.
 
         1. Session matches pattern
         2. Cooldown active
@@ -371,6 +337,7 @@ class TestPerSessionMatcher:
         2. Session B gets second part
         3. No match (buffers are separate)
         """
+
         def get_session(sid):
             return {
                 "tmux_name": f"tmux-{sid}",
@@ -397,8 +364,7 @@ class TestPerSessionMatcher:
         error_events = [
             e
             for e in broadcast_mock.sent_events
-            if e.notification.type
-            == ProtoNotificationType.ERROR_DETECTED
+            if e.notification.type == ProtoNotificationType.ERROR_DETECTED
         ]
         assert len(error_events) == 0
 

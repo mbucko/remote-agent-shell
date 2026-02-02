@@ -201,21 +201,27 @@ class TestCompletionPatterns:
         # First send some content so prompt isn't first thing
         matcher.process_chunk(b"Building project...\nDone!\n")
         results = matcher.process_chunk(b"$ ")
-        completion_results = [r for r in results if r.type == NotificationType.COMPLETION]
+        completion_results = [
+            r for r in results if r.type == NotificationType.COMPLETION
+        ]
         assert len(completion_results) >= 1
 
     def test_pc02_zsh_prompt(self, matcher):
         """PC02: Zsh prompt detected."""
         matcher.process_chunk(b"Running tests...\nAll passed!\n")
         results = matcher.process_chunk(b"% ")
-        completion_results = [r for r in results if r.type == NotificationType.COMPLETION]
+        completion_results = [
+            r for r in results if r.type == NotificationType.COMPLETION
+        ]
         assert len(completion_results) >= 1
 
     def test_pc03_generic_prompt(self, matcher):
         """PC03: Generic '> ' prompt detected."""
         matcher.process_chunk(b"Task finished\n")
         results = matcher.process_chunk(b"> ")
-        completion_results = [r for r in results if r.type == NotificationType.COMPLETION]
+        completion_results = [
+            r for r in results if r.type == NotificationType.COMPLETION
+        ]
         assert len(completion_results) >= 1
 
     def test_pc04_no_double_prompt_notification(self, matcher):
@@ -224,8 +230,12 @@ class TestCompletionPatterns:
         results1 = matcher.process_chunk(b"$ ")
         results2 = matcher.process_chunk(b"$ ")
 
-        completion_results1 = [r for r in results1 if r.type == NotificationType.COMPLETION]
-        completion_results2 = [r for r in results2 if r.type == NotificationType.COMPLETION]
+        completion_results1 = [
+            r for r in results1 if r.type == NotificationType.COMPLETION
+        ]
+        completion_results2 = [
+            r for r in results2 if r.type == NotificationType.COMPLETION
+        ]
 
         # First should trigger, second should not (consecutive prompts)
         assert len(completion_results1) >= 1
@@ -236,7 +246,9 @@ class TestCompletionPatterns:
         matcher.process_chunk(b"Agent is processing...\n")
         matcher.process_chunk(b"Agent finished task!\n")
         results = matcher.process_chunk(b"$ ")
-        completion_results = [r for r in results if r.type == NotificationType.COMPLETION]
+        completion_results = [
+            r for r in results if r.type == NotificationType.COMPLETION
+        ]
         assert len(completion_results) >= 1
 
 
@@ -300,7 +312,9 @@ class TestChunkBoundaries:
         results = matcher.process_chunk(b"/n)")
         # Combined should match
         all_results = results
-        approval_results = [r for r in all_results if r.type == NotificationType.APPROVAL]
+        approval_results = [
+            r for r in all_results if r.type == NotificationType.APPROVAL
+        ]
         assert len(approval_results) >= 1
 
     def test_cb03_pattern_split_error(self, matcher):
@@ -438,6 +452,7 @@ class TestReDoSProtection:
         pathological_input = b"a" * 10000 + b"!"
 
         import time
+
         start = time.time()
         results = matcher.process_chunk(pathological_input)
         elapsed = time.time() - start
@@ -684,22 +699,6 @@ class TestPerformance:
         error_results = [r for r in results if r.type == NotificationType.ERROR]
         assert len(error_results) >= 1
 
-    def test_rapid_small_chunks_performance(self, matcher):
-        """Many small chunks processed efficiently."""
-        import time
-
-        # 1000 small chunks
-        chunks = [b"line of output\n" for _ in range(1000)]
-        chunks.append(b"Proceed? (y/n)")
-
-        start = time.time()
-        for chunk in chunks:
-            matcher.process_chunk(chunk)
-        elapsed = time.time() - start
-
-        # 1000 chunks should complete in < 1s
-        assert elapsed < 1.0, f"1000 chunks took {elapsed:.3f}s"
-
 
 # ============================================================================
 # Config File Integration Tests
@@ -811,9 +810,7 @@ class TestConfigFileIntegration:
         """Custom pattern from config file actually works in matcher."""
         from ras.config import NotificationsConfig, NotificationPatternsConfig
 
-        patterns = NotificationPatternsConfig(
-            custom_approval=["MY_APP_ASKS_YOU"]
-        )
+        patterns = NotificationPatternsConfig(custom_approval=["MY_APP_ASKS_YOU"])
         file_config = NotificationsConfig(patterns=patterns)
         config = NotificationConfig.from_config(file_config)
 
