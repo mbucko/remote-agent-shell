@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -147,9 +146,7 @@ fun SessionsScreen(
         ) {
             when (val state = screenState) {
                 is SessionsScreenState.Loading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    // No spinner - content area provides visual feedback
                 }
 
                 is SessionsScreenState.Loaded -> {
@@ -166,14 +163,7 @@ fun SessionsScreen(
                                 onRenameClick = { viewModel.showRenameDialog(it) }
                             )
                         }
-                        // Show loading indicator when refreshing
-                        if (state.isRefreshing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .padding(16.dp)
-                            )
-                        }
+                        // No refresh spinner - list content provides visual feedback
                     }
                 }
 
