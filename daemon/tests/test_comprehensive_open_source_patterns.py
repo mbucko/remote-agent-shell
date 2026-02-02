@@ -28,6 +28,7 @@ from ras.protocols import PeerState
 # SECTION 1: ICE Gathering and Connectivity (aiortc patterns)
 # =============================================================================
 
+
 class TestICEGathering:
     """Tests for ICE gathering process (aiortc patterns).
 
@@ -45,8 +46,8 @@ class TestICEGathering:
         assert peer.state == PeerState.NEW
 
         # Should have ICE gathering state tracking
-        if hasattr(peer, 'ice_gathering_state'):
-            assert peer.ice_gathering_state in ['new', 'gathering', 'complete', None]
+        if hasattr(peer, "ice_gathering_state"):
+            assert peer.ice_gathering_state in ["new", "gathering", "complete", None]
 
     @pytest.mark.asyncio
     async def test_ice_candidate_has_required_fields(self):
@@ -75,20 +76,44 @@ class TestICEGathering:
     @pytest.mark.asyncio
     async def test_ice_gathering_completes(self):
         """ICE gathering should complete with candidates."""
+        from unittest.mock import AsyncMock, Mock
         from ras.peer import PeerConnection
+        from ras.protocols import PeerState
 
-        peer = PeerConnection()
+        # Mock the RTCPeerConnection to avoid real network operations
+        mock_pc = AsyncMock()
+        mock_pc.connectionState = "new"
+        mock_pc.iceGatheringState = "complete"  # Skip gathering wait
 
-        # Create offer to trigger gathering
-        try:
-            offer = await peer.create_offer()
-            assert offer is not None
-            # Offer should contain ice-ufrag
-            if hasattr(offer, 'sdp'):
-                assert 'ice-ufrag' in offer.sdp or True  # May be handled internally
-        except Exception:
-            # If not implemented, skip
-            pytest.skip("create_offer not fully implemented")
+        mock_offer = Mock()
+        mock_offer.sdp = "v=0\r\no=- 12345 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
+        mock_offer.type = "offer"
+
+        mock_pc.createOffer = AsyncMock(return_value=mock_offer)
+        mock_pc.setLocalDescription = AsyncMock()
+        mock_pc.localDescription = mock_offer
+        mock_pc.createDataChannel = Mock(return_value=Mock())
+
+        # Capture the on decorator to simulate events
+        handlers = {}
+
+        def mock_on(event):
+            def decorator(fn):
+                handlers[event] = fn
+                return fn
+
+            return decorator
+
+        mock_pc.on = mock_on
+
+        # Use pc_factory to inject mock
+        peer = PeerConnection(pc_factory=lambda cfg: mock_pc)
+
+        # Create offer - should complete quickly without real network
+        offer = await peer.create_offer()
+        assert offer is not None
+        assert peer.state == PeerState.CONNECTING
+        mock_pc.createOffer.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_ice_candidate_priority_ordering(self):
@@ -109,6 +134,7 @@ class TestICEGathering:
 # SECTION 2: Data Channel Tests (aiortc patterns)
 # =============================================================================
 
+
 class TestDataChannel:
     """Tests for WebRTC data channel behavior (aiortc patterns).
 
@@ -122,10 +148,10 @@ class TestDataChannel:
 
         peer = PeerConnection()
 
-        if hasattr(peer, 'create_data_channel'):
+        if hasattr(peer, "create_data_channel"):
             channel = peer.create_data_channel("test-channel")
             if channel:
-                assert hasattr(channel, 'label') or hasattr(channel, '_label')
+                assert hasattr(channel, "label") or hasattr(channel, "_label")
 
     @pytest.mark.asyncio
     async def test_data_channel_binary_messages(self):
@@ -167,6 +193,7 @@ class TestDataChannel:
 # =============================================================================
 # SECTION 3: SDP Handling (aiortc + simple-peer patterns)
 # =============================================================================
+
 
 class TestSDPHandling:
     """Tests for SDP parsing and generation (aiortc/simple-peer patterns).
@@ -244,6 +271,7 @@ a=sctp-port:5000
 # SECTION 4: Network Recovery (mosh patterns)
 # =============================================================================
 
+
 class TestNetworkRecovery:
     """Tests for network recovery and resilience (mosh patterns).
 
@@ -267,16 +295,13 @@ class TestNetworkRecovery:
         mock_codec.encode = Mock(return_value=b"encoded")
 
         await manager.add_connection(
-            device_id="test",
-            peer=mock_peer,
-            codec=mock_codec,
-            on_message=Mock()
+            device_id="test", peer=mock_peer, codec=mock_codec, on_message=Mock()
         )
 
         conn = manager.get_connection("test")
 
         # Connection should track last activity for timeout detection
-        if hasattr(conn, 'last_activity') and hasattr(conn, 'is_stale'):
+        if hasattr(conn, "last_activity") and hasattr(conn, "is_stale"):
             # Check staleness detection
             pass  # Implementation specific
 
@@ -328,6 +353,7 @@ class TestNetworkRecovery:
 # SECTION 5: Terminal Emulation (mosh patterns)
 # =============================================================================
 
+
 class TestTerminalEmulation:
     """Tests for terminal emulation (mosh patterns).
 
@@ -356,11 +382,11 @@ class TestTerminalEmulation:
         control_chars = {
             "ctrl_c": 0x03,  # ETX
             "ctrl_d": 0x04,  # EOT
-            "ctrl_z": 0x1a,  # SUB
-            "escape": 0x1b,  # ESC
-            "backspace": 0x7f,  # DEL
-            "carriage_return": 0x0d,  # CR
-            "line_feed": 0x0a,  # LF
+            "ctrl_z": 0x1A,  # SUB
+            "escape": 0x1B,  # ESC
+            "backspace": 0x7F,  # DEL
+            "carriage_return": 0x0D,  # CR
+            "line_feed": 0x0A,  # LF
         }
 
         for name, value in control_chars.items():
@@ -370,10 +396,10 @@ class TestTerminalEmulation:
         """Terminal dimensions should be validated."""
         # Valid dimensions within reasonable bounds
         valid_dimensions = [
-            (80, 24),   # Standard
+            (80, 24),  # Standard
             (120, 40),  # Large
-            (10, 5),    # Minimum reasonable
-            (500, 200), # Maximum reasonable
+            (10, 5),  # Minimum reasonable
+            (500, 200),  # Maximum reasonable
         ]
 
         for cols, rows in valid_dimensions:
@@ -382,10 +408,10 @@ class TestTerminalEmulation:
 
         # Invalid dimensions
         invalid_dimensions = [
-            (0, 0),     # Too small
-            (-1, 24),   # Negative
-            (80, -1),   # Negative rows
-            (9, 4),     # Below minimum
+            (0, 0),  # Too small
+            (-1, 24),  # Negative
+            (80, -1),  # Negative rows
+            (9, 4),  # Below minimum
         ]
 
         for cols, rows in invalid_dimensions:
@@ -431,6 +457,7 @@ class TestTerminalEmulation:
 # =============================================================================
 # SECTION 6: Crypto and Key Management (WireGuard patterns)
 # =============================================================================
+
 
 class TestCryptoOperations:
     """Tests for cryptographic operations (WireGuard patterns).
@@ -499,6 +526,7 @@ class TestCryptoOperations:
 # =============================================================================
 # SECTION 7: Authentication Flow (WireGuard patterns)
 # =============================================================================
+
 
 class TestAuthenticationFlow:
     """Tests for authentication flow (WireGuard handshake patterns).
@@ -582,6 +610,7 @@ class TestAuthenticationFlow:
 # SECTION 8: Connection Lifecycle (libp2p/simple-peer patterns)
 # =============================================================================
 
+
 class TestConnectionLifecycle:
     """Tests for connection lifecycle (libp2p/simple-peer patterns).
 
@@ -620,10 +649,7 @@ class TestConnectionLifecycle:
 
         # Add connection
         await manager.add_connection(
-            device_id="device1",
-            peer=mock_peer,
-            codec=mock_codec,
-            on_message=Mock()
+            device_id="device1", peer=mock_peer, codec=mock_codec, on_message=Mock()
         )
 
         assert manager.get_connection("device1") is not None
@@ -653,7 +679,7 @@ class TestConnectionLifecycle:
                 device_id=f"device{i}",
                 peer=mock_peer,
                 codec=mock_codec,
-                on_message=Mock()
+                on_message=Mock(),
             )
 
         # All should be accessible
@@ -685,10 +711,7 @@ class TestConnectionLifecycle:
         mock_codec = Mock()
 
         await manager.add_connection(
-            device_id="test",
-            peer=mock_peer,
-            codec=mock_codec,
-            on_message=Mock()
+            device_id="test", peer=mock_peer, codec=mock_codec, on_message=Mock()
         )
 
         # Simulate peer disconnect by calling the stored close handler
@@ -708,6 +731,7 @@ class TestConnectionLifecycle:
 # =============================================================================
 # SECTION 9: Message Routing (libp2p patterns)
 # =============================================================================
+
 
 class TestMessageRouting:
     """Tests for message routing (libp2p patterns).
@@ -769,6 +793,7 @@ class TestMessageRouting:
 # SECTION 10: Rate Limiting and DoS Protection (various patterns)
 # =============================================================================
 
+
 class TestRateLimiting:
     """Tests for rate limiting and DoS protection.
 
@@ -792,7 +817,7 @@ class TestRateLimiting:
         server = SignalingServer(pairing_manager=mock_manager)
 
         # Should have rate limiting
-        assert hasattr(server, 'session_limiter') or hasattr(server, 'ip_limiter')
+        assert hasattr(server, "session_limiter") or hasattr(server, "ip_limiter")
 
     @pytest.mark.asyncio
     async def test_connection_limit_enforcement(self):
@@ -815,7 +840,7 @@ class TestRateLimiting:
                     device_id=f"device{i}",
                     peer=mock_peer,
                     codec=mock_codec,
-                    on_message=Mock()
+                    on_message=Mock(),
                 )
             except Exception:
                 # Might reject if over limit
@@ -827,6 +852,7 @@ class TestRateLimiting:
 # =============================================================================
 # SECTION 11: Concurrent Operations (simple-peer patterns)
 # =============================================================================
+
 
 class TestConcurrentOperations:
     """Tests for concurrent operation handling (simple-peer patterns).
@@ -851,10 +877,7 @@ class TestConcurrentOperations:
         mock_codec.encode = Mock(return_value=b"encoded")
 
         await manager.add_connection(
-            device_id="test",
-            peer=mock_peer,
-            codec=mock_codec,
-            on_message=Mock()
+            device_id="test", peer=mock_peer, codec=mock_codec, on_message=Mock()
         )
 
         conn = manager.get_connection("test")
@@ -905,10 +928,7 @@ class TestConcurrentOperations:
         mock_codec = Mock()
 
         await manager.add_connection(
-            device_id="test",
-            peer=mock_peer,
-            codec=mock_codec,
-            on_message=Mock()
+            device_id="test", peer=mock_peer, codec=mock_codec, on_message=Mock()
         )
 
         # Close twice - should not raise
@@ -931,10 +951,7 @@ class TestConcurrentOperations:
             mock_codec = Mock()
 
             await manager.add_connection(
-                device_id=device_id,
-                peer=mock_peer,
-                codec=mock_codec,
-                on_message=Mock()
+                device_id=device_id, peer=mock_peer, codec=mock_codec, on_message=Mock()
             )
 
         # Add same device ID concurrently
@@ -950,6 +967,7 @@ class TestConcurrentOperations:
 # =============================================================================
 # SECTION 12: Error Handling and Edge Cases
 # =============================================================================
+
 
 class TestErrorHandling:
     """Tests for error handling and edge cases.
@@ -1026,6 +1044,7 @@ class TestErrorHandling:
 # SECTION 13: Configuration and Defaults (various patterns)
 # =============================================================================
 
+
 class TestConfiguration:
     """Tests for configuration handling.
 
@@ -1038,7 +1057,7 @@ class TestConfiguration:
 
         peer = PeerConnection()
 
-        servers = getattr(peer, 'stun_servers', getattr(peer, '_stun_servers', []))
+        servers = getattr(peer, "stun_servers", getattr(peer, "_stun_servers", []))
         assert len(servers) >= 1
 
     def test_custom_stun_servers(self):
@@ -1048,7 +1067,7 @@ class TestConfiguration:
         custom = ["stun:custom.example.com:3478"]
         peer = PeerConnection(stun_servers=custom)
 
-        servers = getattr(peer, 'stun_servers', getattr(peer, '_stun_servers', []))
+        servers = getattr(peer, "stun_servers", getattr(peer, "_stun_servers", []))
         assert servers == custom
 
     def test_config_validation(self):
@@ -1064,6 +1083,7 @@ class TestConfiguration:
 # =============================================================================
 # SECTION 14: Session Management
 # =============================================================================
+
 
 class TestSessionManagement:
     """Tests for session management.
@@ -1155,6 +1175,7 @@ class TestSessionManagement:
 # SECTION 15: Protobuf Message Handling
 # =============================================================================
 
+
 class TestProtobufMessages:
     """Tests for protobuf message handling.
 
@@ -1166,10 +1187,7 @@ class TestProtobufMessages:
         """TerminalInput message should serialize/deserialize."""
         from ras.proto.ras.ras import TerminalInput
 
-        msg = TerminalInput(
-            session_id="abc123def456",
-            data=b"test input"
-        )
+        msg = TerminalInput(session_id="abc123def456", data=b"test input")
 
         # Serialize (betterproto uses bytes())
         serialized = bytes(msg)
@@ -1185,10 +1203,7 @@ class TestProtobufMessages:
         """TerminalOutput message should serialize/deserialize."""
         from ras.proto.ras.ras import TerminalOutput
 
-        msg = TerminalOutput(
-            session_id="abc123def456",
-            data=b"output data"
-        )
+        msg = TerminalOutput(session_id="abc123def456", data=b"output data")
 
         serialized = bytes(msg)
         parsed = TerminalOutput().parse(serialized)
@@ -1212,6 +1227,7 @@ class TestProtobufMessages:
 # =============================================================================
 # SECTION 16: Integration Patterns
 # =============================================================================
+
 
 class TestIntegrationPatterns:
     """Integration-style tests combining multiple components.
