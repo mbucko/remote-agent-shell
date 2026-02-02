@@ -40,6 +40,7 @@ fun DeviceCard(
     deviceName: String,
     deviceType: DeviceType,
     connectionState: ConnectionState,
+    sessionCount: Int = 0,
     onConnect: () -> Unit,
     onOpenSessions: () -> Unit,
     onUnpair: () -> Unit,
@@ -77,7 +78,7 @@ fun DeviceCard(
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        text = connectionState.toDisplayText(),
+                        text = connectionState.toDisplayText(sessionCount),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -139,9 +140,13 @@ private fun DeviceType.toIcon(): ImageVector = when (this) {
 
 /**
  * Convert ConnectionState to display text.
+ * Shows session count when connected (e.g., "Connected · 5 sessions").
  */
-private fun ConnectionState.toDisplayText(): String = when (this) {
-    ConnectionState.CONNECTED -> "Connected"
+private fun ConnectionState.toDisplayText(sessionCount: Int = 0): String = when (this) {
+    ConnectionState.CONNECTED -> {
+        val sessionText = if (sessionCount == 1) "1 session" else "$sessionCount sessions"
+        "Connected · $sessionText"
+    }
     ConnectionState.CONNECTING -> "Connecting..."
     ConnectionState.DISCONNECTED -> "Disconnected"
 }

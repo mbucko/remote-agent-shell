@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.credentials.CredentialRepository
+import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -24,7 +25,8 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val credentialRepository: CredentialRepository,
     private val connectionManager: ConnectionManager,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val sessionRepository: SessionRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
@@ -40,6 +42,7 @@ class HomeViewModel @Inject constructor(
     init {
         loadDeviceInfo()
         observeConnectionState()
+        observeSessionCount()
     }
 
     private fun loadDeviceInfo() {
@@ -55,10 +58,12 @@ class HomeViewModel @Inject constructor(
             val deviceType = credentialRepository.getDeviceType()
             val isConnected = connectionManager.isConnected.value
 
+            val sessions = sessionRepository.sessions.value
             _state.value = HomeState.HasDevice(
                 name = deviceName,
                 type = deviceType,
-                connectionState = if (isConnected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED
+                connectionState = if (isConnected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
+                sessionCount = if (isConnected) sessions.size else 0
             )
 
             // Auto-connect if enabled and we have a device
@@ -77,13 +82,25 @@ class HomeViewModel @Inject constructor(
                 val currentState = _state.value
                 if (currentState is HomeState.HasDevice) {
                     _state.value = currentState.copy(
-                        connectionState = if (isConnected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED
+                        connectionState = if (isConnected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
+                        sessionCount = if (isConnected) currentState.sessionCount else 0
                     )
 
                     // Navigate to sessions when connected
                     if (isConnected) {
                         _events.emit(HomeUiEvent.NavigateToSessions)
                     }
+                }
+            }
+        }
+    }
+
+    private fun observeSessionCount() {
+        viewModelScope.launch {
+            sessionRepository.sessions.collect { sessions ->
+                val currentState = _state.value
+                if (currentState is HomeState.HasDevice && currentState.connectionState == ConnectionState.CONNECTED) {
+                    _state.value = currentState.copy(sessionCount = sessions.size)
                 }
             }
         }

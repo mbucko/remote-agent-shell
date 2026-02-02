@@ -25,7 +25,8 @@ sealed class HomeState {
     data class HasDevice(
         val name: String,
         val type: DeviceType,
-        val connectionState: ConnectionState
+        val connectionState: ConnectionState,
+        val sessionCount: Int = 0
     ) : HomeState()
 }
 

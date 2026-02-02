@@ -109,6 +109,7 @@ fun HomeScreen(
                     deviceName = currentState.name,
                     deviceType = currentState.type,
                     connectionState = currentState.connectionState,
+                    sessionCount = currentState.sessionCount,
                     autoConnectEnabled = autoConnectEnabled,
                     onConnect = { viewModel.connect() },
                     onOpenSessions = { viewModel.openSessions() },
@@ -191,6 +192,7 @@ private fun HasDeviceContent(
     deviceName: String,
     deviceType: com.ras.data.model.DeviceType,
     connectionState: ConnectionState,
+    sessionCount: Int,
     autoConnectEnabled: Boolean,
     onConnect: () -> Unit,
     onOpenSessions: () -> Unit,
@@ -217,6 +219,7 @@ private fun HasDeviceContent(
             deviceName = deviceName,
             deviceType = deviceType,
             connectionState = connectionState,
+            sessionCount = sessionCount,
             onConnect = onConnect,
             onOpenSessions = onOpenSessions,
             onUnpair = onUnpair
