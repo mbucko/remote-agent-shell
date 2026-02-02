@@ -58,6 +58,7 @@ CLAUDE.md
 AGENT.md
 .cursorrules
 .github/copilot-instructions.md
+opencode.json
 
 # Task planning (local only)
 .tasks/
