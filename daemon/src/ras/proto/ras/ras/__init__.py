@@ -11,6 +11,15 @@ import betterproto
 from . import clipboard
 
 
+class DeviceType(betterproto.Enum):
+    """Device type for UI display"""
+
+    UNKNOWN = 0
+    LAPTOP = 1
+    DESKTOP = 2
+    SERVER = 3
+
+
 class AuthErrorErrorCode(betterproto.Enum):
     UNKNOWN = 0
     INVALID_HMAC = 1
@@ -67,6 +76,8 @@ class KeyType(betterproto.Enum):
 
     KEY_CTRL_D = 51
     KEY_CTRL_Z = 52
+    KEY_PASTE_HOST = 60
+    """Special actions"""
 
 
 class NotificationType(betterproto.Enum):
@@ -140,6 +151,12 @@ class AuthSuccess(betterproto.Message):
 
     device_id: str = betterproto.string_field(1)
     """Device was registered/updated"""
+
+    hostname: str = betterproto.string_field(2)
+    """System hostname (e.g., "MacBook-Pro.local")"""
+
+    device_type: "DeviceType" = betterproto.enum_field(3)
+    """Device type for UI display"""
 
 
 @dataclass(eq=False, repr=False)
@@ -409,6 +426,11 @@ class Heartbeat(betterproto.Message):
 
 
 @dataclass(eq=False, repr=False)
+class Disconnect(betterproto.Message):
+    reason: str = betterproto.string_field(1)
+
+
+@dataclass(eq=False, repr=False)
 class InitialState(betterproto.Message):
     """Sent to phone immediately after connection established"""
 
@@ -434,6 +456,7 @@ class RasCommand(betterproto.Message):
     ping: "Ping" = betterproto.message_field(4, group="command")
     connection_ready: "ConnectionReady" = betterproto.message_field(5, group="command")
     heartbeat: "Heartbeat" = betterproto.message_field(6, group="command")
+    disconnect: "Disconnect" = betterproto.message_field(7, group="command")
 
 
 @dataclass(eq=False, repr=False)

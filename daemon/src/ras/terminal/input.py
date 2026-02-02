@@ -134,6 +134,10 @@ class InputHandler:
         Returns:
             Error code if failed, None on success.
         """
+        # Handle paste from host clipboard
+        if special.key == KeyType.KEY_PASTE_HOST:
+            return await self._handle_paste_host(tmux_name)
+
         seq = get_key_sequence(special.key, special.modifiers)
         if not seq:
             logger.warning(f"Unknown key type: {special.key}")
@@ -145,6 +149,67 @@ class InputHandler:
             return None
         except Exception as e:
             logger.error(f"Failed to send special key: {e}")
+            return "PIPE_ERROR"
+
+    async def _handle_paste_host(self, tmux_name: str) -> str | None:
+        """Handle paste from host clipboard.
+
+        Reads from the system clipboard and sends to tmux.
+
+        Args:
+            tmux_name: The tmux session name.
+
+        Returns:
+            Error code if failed, None on success.
+        """
+        import subprocess
+        import sys
+
+        try:
+            # Read from system clipboard
+            if sys.platform == "darwin":
+                result = subprocess.run(
+                    ["pbpaste"],
+                    capture_output=True,
+                    timeout=5,
+                )
+            else:
+                # Linux - try xclip first, then xsel
+                try:
+                    result = subprocess.run(
+                        ["xclip", "-selection", "clipboard", "-o"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                except FileNotFoundError:
+                    result = subprocess.run(
+                        ["xsel", "--clipboard", "--output"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+
+            if result.returncode != 0:
+                logger.warning(f"Clipboard read failed: {result.stderr}")
+                return None
+
+            clipboard_data = result.stdout
+            if not clipboard_data:
+                logger.debug("Host clipboard is empty")
+                return None
+
+            # Send clipboard content to tmux
+            await self._tmux.send_keys(tmux_name, clipboard_data, literal=True)
+            logger.info(f"Pasted {len(clipboard_data)} bytes from host clipboard")
+            return None
+
+        except subprocess.TimeoutExpired:
+            logger.error("Clipboard read timed out")
+            return "PIPE_ERROR"
+        except FileNotFoundError as e:
+            logger.error(f"Clipboard tool not found: {e}")
+            return "PIPE_ERROR"
+        except Exception as e:
+            logger.error(f"Failed to paste from host clipboard: {e}")
             return "PIPE_ERROR"
 
     async def _handle_resize(

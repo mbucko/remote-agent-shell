@@ -76,6 +76,8 @@ class KeyType(betterproto.Enum):
 
     KEY_CTRL_D = 51
     KEY_CTRL_Z = 52
+    KEY_PASTE_HOST = 60
+    """Special actions"""
 
 
 class NotificationType(betterproto.Enum):

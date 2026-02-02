@@ -69,6 +69,9 @@ enum KeyType {
     KEY_CTRL_C = 50;              // 0x03
     KEY_CTRL_D = 51;              // 0x04
     KEY_CTRL_Z = 52;              // 0x1A
+
+    // Special actions
+    KEY_PASTE_HOST = 60;          // Paste from host (daemon) clipboard
 }
 
 message TerminalResize {

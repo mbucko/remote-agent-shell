@@ -56,13 +56,11 @@ fun ModifierMode.toggle(): ModifierMode = when (this) {
 }
 
 /**
- * App-level actions that the terminal emulator handles directly.
- * These shortcuts are intercepted by the app, not sent to the shell.
- * This is how real terminal emulators (iTerm, Terminal.app, etc.) work.
+ * App-level actions triggered by keyboard shortcuts.
  */
 enum class AppAction {
-    PASTE,
-    COPY,  // Future: when we have text selection
+    PASTE_HOST,  // Paste from host (daemon) clipboard - Meta+V, Ctrl+Shift+V
+    COPY,        // Future: when we have text selection
 }
 
 /**
@@ -72,14 +70,14 @@ enum class AppAction {
 fun ModifierState.getAppShortcut(char: Char): AppAction? {
     val lowerChar = char.lowercaseChar()
 
-    // Meta+V or Meta+v → Paste (Mac style: ⌘+V)
+    // Meta+V → Paste from host clipboard (Mac style: ⌘+V)
     if (meta != ModifierMode.OFF && lowerChar == 'v') {
-        return AppAction.PASTE
+        return AppAction.PASTE_HOST
     }
 
-    // Ctrl+Shift+V → Paste (Linux terminal style)
+    // Ctrl+Shift+V → Paste from host clipboard (Linux terminal style)
     if (ctrl != ModifierMode.OFF && shift != ModifierMode.OFF && lowerChar == 'v') {
-        return AppAction.PASTE
+        return AppAction.PASTE_HOST
     }
 
     // Future: Meta+C or Ctrl+Shift+C for copy when we have selection

@@ -466,12 +466,19 @@ class TerminalViewModel @Inject constructor(
 
     /**
      * Handle app-level actions (shortcuts intercepted by the terminal emulator).
-     * These are actions that real terminal emulators handle directly,
-     * not sent to the shell.
      */
     private fun handleAppAction(action: AppAction) {
         when (action) {
-            AppAction.PASTE -> onPasteClicked()
+            AppAction.PASTE_HOST -> {
+                // Send KEY_PASTE_HOST to daemon - it will paste from host clipboard
+                viewModelScope.launch {
+                    try {
+                        repository.sendSpecialKey(KeyType.KEY_PASTE_HOST)
+                    } catch (e: Exception) {
+                        _uiEvents.emit(TerminalUiEvent.ShowError("Failed to paste: ${e.message}"))
+                    }
+                }
+            }
             AppAction.COPY -> {
                 // Future: implement when we have text selection
                 Log.d(TAG, "Copy action - not implemented yet (no text selection)")
