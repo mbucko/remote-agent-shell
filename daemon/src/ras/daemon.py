@@ -37,6 +37,9 @@ from ras.proto.ras import (
     SessionEvent,
     TerminalCommand,
     TerminalEvent,
+    UnpairRequest,
+    UnpairAck,
+    UnpairNotification,
 )
 
 logger = logging.getLogger(__name__)
@@ -218,6 +221,7 @@ class Daemon:
         self._dispatcher.register("heartbeat", self._handle_heartbeat)
         self._dispatcher.register("connection_ready", self._handle_connection_ready)
         self._dispatcher.register("disconnect", self._handle_disconnect)
+        self._dispatcher.register("unpair_request", self._handle_unpair_request)
         logger.debug("Message handlers registered")
 
     async def _initialize_managers(self) -> None:
@@ -651,6 +655,98 @@ class Daemon:
 
         # Close the connection - this triggers _on_connection_lost which handles cleanup
         await self._connection_manager.close_connection(device_id)
+
+    async def _handle_unpair_request(
+        self, device_id: str, request: UnpairRequest
+    ) -> None:
+        """Handle unpair request from phone.
+
+        Security: Verify the request is for the authenticated device.
+        This prevents a compromised phone from unpairing other devices.
+        """
+        # Verify request is for this device (security check)
+        if request.device_id != device_id:
+            logger.warning(
+                f"Security: Device {device_id[:8]}... tried to unpair "
+                f"{request.device_id[:8]}..."
+            )
+            return
+
+        # Remove from device store
+        if self._device_store:
+            removed = await self._device_store.remove(device_id)
+            if removed:
+                logger.info(
+                    f"Device unpaired via UnpairRequest: {device_id[:8]}...",
+                    extra={
+                        "event": "device_unpaired",
+                        "device_id": device_id,
+                        "initiated_by": "phone",
+                        "timestamp": time.time(),
+                    },
+                )
+
+                # Send acknowledgment (best effort - connection may be unstable)
+                conn = self._connection_manager.get_connection(device_id)
+                if conn:
+                    try:
+                        ack = UnpairAck(device_id=device_id)
+                        event = RasEvent(unpair_ack=ack)
+                        await conn.send(bytes(event))
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to send UnpairAck to {device_id[:8]}...: {e}"
+                        )
+                    finally:
+                        # Always close connection, even if ack failed
+                        await self._connection_manager.close_connection(device_id)
+            else:
+                logger.warning(f"UnpairRequest for unknown device: {device_id[:8]}...")
+
+    async def send_unpair_notification(
+        self, device_id: str, reason: str = "Removed via CLI"
+    ) -> bool:
+        """Send unpair notification to device if connected.
+
+        Args:
+            device_id: Device to notify.
+            reason: Human-readable reason for unpair.
+
+        Returns:
+            True if notification was sent, False if device not connected.
+
+        Note: This method is ready for when we add daemon IPC to CLI.
+              For now, CLI operates independently (reads/writes devices.json).
+        """
+        conn = self._connection_manager.get_connection(device_id)
+        if not conn:
+            return False
+
+        # Audit log before attempting send
+        logger.info(
+            f"Sending UnpairNotification to {device_id[:8]}...",
+            extra={
+                "event": "device_unpair_notification_sent",
+                "device_id": device_id,
+                "reason": reason,
+                "initiated_by": "daemon",
+                "timestamp": time.time(),
+            },
+        )
+
+        notification = UnpairNotification(device_id=device_id, reason=reason)
+        event = RasEvent(unpair_notification=notification)
+
+        try:
+            await conn.send(bytes(event))
+            logger.info(f"UnpairNotification sent to {device_id[:8]}...")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send UnpairNotification to {device_id[:8]}...: {e}")
+            return False
+        finally:
+            # Always close connection, even if notification failed
+            await self._connection_manager.close_connection(device_id)
 
     async def _handle_connection_ready(
         self, device_id: str, ready: ConnectionReady

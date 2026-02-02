@@ -431,6 +431,28 @@ class Disconnect(betterproto.Message):
 
 
 @dataclass(eq=False, repr=False)
+class UnpairRequest(betterproto.Message):
+    """Phone -> Daemon: Request to unpair this device"""
+
+    device_id: str = betterproto.string_field(1)
+
+
+@dataclass(eq=False, repr=False)
+class UnpairAck(betterproto.Message):
+    """Daemon -> Phone: Acknowledge unpair completed"""
+
+    device_id: str = betterproto.string_field(1)
+
+
+@dataclass(eq=False, repr=False)
+class UnpairNotification(betterproto.Message):
+    """Daemon -> Phone: Notify that daemon has unpaired this device"""
+
+    device_id: str = betterproto.string_field(1)
+    reason: str = betterproto.string_field(2)
+
+
+@dataclass(eq=False, repr=False)
 class InitialState(betterproto.Message):
     """Sent to phone immediately after connection established"""
 
@@ -457,6 +479,7 @@ class RasCommand(betterproto.Message):
     connection_ready: "ConnectionReady" = betterproto.message_field(5, group="command")
     heartbeat: "Heartbeat" = betterproto.message_field(6, group="command")
     disconnect: "Disconnect" = betterproto.message_field(7, group="command")
+    unpair_request: "UnpairRequest" = betterproto.message_field(8, group="command")
 
 
 @dataclass(eq=False, repr=False)
@@ -472,6 +495,10 @@ class RasEvent(betterproto.Message):
     initial_state: "InitialState" = betterproto.message_field(5, group="event")
     error: "ErrorResponse" = betterproto.message_field(6, group="event")
     heartbeat: "Heartbeat" = betterproto.message_field(7, group="event")
+    unpair_ack: "UnpairAck" = betterproto.message_field(8, group="event")
+    unpair_notification: "UnpairNotification" = betterproto.message_field(
+        9, group="event"
+    )
 
 
 @dataclass(eq=False, repr=False)

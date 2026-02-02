@@ -6,7 +6,9 @@ import click
 
 from ras import __version__
 from ras.config import load_config
+from ras.formatting import format_time_ago
 from ras.logging import setup_logging
+from ras.device_store import JsonDeviceStore
 
 
 @click.group()
@@ -312,3 +314,111 @@ def pair(ctx: click.Context, timeout: int, browser: bool, output: str | None) ->
                     pass
 
     asyncio.run(_pair())
+
+
+@main.group()
+def devices() -> None:
+    """Device management commands."""
+    pass
+
+
+@devices.command("list")
+@click.pass_context
+def devices_list(ctx: click.Context) -> None:
+    """List all paired devices."""
+    import asyncio
+
+    async def _list():
+        config = ctx.obj["config"]
+        devices_path = Path(config.daemon.devices_file).expanduser()
+        store = JsonDeviceStore(devices_path)
+        await store.load()
+
+        all_devices = store.all()
+
+        if not all_devices:
+            click.echo("No paired devices.")
+            return
+
+        # Print header
+        click.echo(f"{'ID':<12} {'NAME':<20} {'PAIRED':<12} {'LAST SEEN'}")
+        click.echo("-" * 70)
+
+        # Sort by last_seen (most recent first)
+        sorted_devices = sorted(
+            all_devices,
+            key=lambda d: d.last_seen or d.paired_at,
+            reverse=True
+        )
+
+        for device in sorted_devices:
+            device_id_short = device.device_id[:8]
+            paired_date = device.paired_at[:10]  # "2024-01-01" from ISO
+            last_seen = format_time_ago(device.last_seen)
+
+            click.echo(
+                f"{device_id_short:<12} "
+                f"{device.name:<20} "
+                f"{paired_date:<12} "
+                f"{last_seen}"
+            )
+
+    asyncio.run(_list())
+
+
+@devices.command("remove")
+@click.argument("device_id", required=False)
+@click.option("--all", is_flag=True, help="Remove all devices")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+@click.pass_context
+def devices_remove(
+    ctx: click.Context,
+    device_id: str | None,
+    all: bool,
+    force: bool,
+) -> None:
+    """Remove a paired device."""
+    import asyncio
+
+    async def _remove():
+        config = ctx.obj["config"]
+        devices_path = Path(config.daemon.devices_file).expanduser()
+        store = JsonDeviceStore(devices_path)
+        await store.load()
+
+        if all:
+            all_devices = store.all()
+            if not all_devices:
+                click.echo("No devices to remove.")
+                return
+
+            if not force:
+                if not click.confirm(f"Remove all {len(all_devices)} devices?"):
+                    click.echo("Aborted.")
+                    return
+
+            for device in all_devices:
+                await store.remove(device.device_id)
+
+            click.echo(f"Removed {len(all_devices)} devices.")
+
+        elif device_id:
+            device = store.get(device_id)
+            if not device:
+                click.echo(f"Error: Device '{device_id}' not found.", err=True)
+                raise SystemExit(1)
+
+            if not force:
+                last_seen = format_time_ago(device.last_seen)
+                if not click.confirm(f"Remove device '{device.name}' (last seen {last_seen})?"):
+                    click.echo("Aborted.")
+                    return
+
+            await store.remove(device_id)
+            click.echo("Device removed.")
+
+        else:
+            click.echo("Error: Specify a device ID or use --all", err=True)
+            raise SystemExit(1)
+
+    asyncio.run(_remove())

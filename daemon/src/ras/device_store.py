@@ -1,5 +1,6 @@
 """Persist paired devices to JSON file."""
 
+import asyncio
 import base64
 import json
 import logging
@@ -48,7 +49,11 @@ class PairedDevice:
 
 
 class JsonDeviceStore:
-    """JSON file-based device storage."""
+    """JSON file-based device storage.
+
+    Thread-safe device storage with file locking to prevent race conditions
+    when CLI and daemon both access devices.json.
+    """
 
     def __init__(self, path: Path):
         """Initialize device store.
@@ -58,33 +63,35 @@ class JsonDeviceStore:
         """
         self.path = path
         self._devices: dict[str, PairedDevice] = {}
+        self._lock = asyncio.Lock()
 
     async def load(self) -> None:
-        """Load devices from file."""
-        if not self.path.exists():
-            logger.debug(f"No devices file at {self.path}")
-            return
+        """Load devices from file (thread-safe)."""
+        async with self._lock:
+            if not self.path.exists():
+                logger.debug(f"No devices file at {self.path}")
+                return
 
-        try:
-            with open(self.path) as f:
-                data = json.load(f)
+            try:
+                with open(self.path) as f:
+                    data = json.load(f)
 
-            for item in data.get("devices", []):
-                try:
-                    device = PairedDevice.from_dict(item)
-                    self._devices[device.device_id] = device
-                except (KeyError, TypeError) as e:
-                    logger.warning(f"Skipping malformed device entry: {e}")
+                for item in data.get("devices", []):
+                    try:
+                        device = PairedDevice.from_dict(item)
+                        self._devices[device.device_id] = device
+                    except (KeyError, TypeError) as e:
+                        logger.warning(f"Skipping malformed device entry: {e}")
 
-            logger.debug(f"Loaded {len(self._devices)} devices")
+                logger.debug(f"Loaded {len(self._devices)} devices")
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse devices file: {e}")
-        except Exception as e:
-            logger.error(f"Failed to load devices: {e}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse devices file: {e}")
+            except Exception as e:
+                logger.error(f"Failed to load devices: {e}")
 
-    async def save(self) -> None:
-        """Save devices to file."""
+    async def _save_unlocked(self) -> None:
+        """Save devices to file without acquiring lock (internal use only)."""
         try:
             # Ensure parent directory exists
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,6 +105,11 @@ class JsonDeviceStore:
 
         except Exception as e:
             logger.error(f"Failed to save devices: {e}")
+
+    async def save(self) -> None:
+        """Save devices to file (thread-safe)."""
+        async with self._lock:
+            await self._save_unlocked()
 
     async def add(self, device: PairedDevice) -> None:
         """Add or update a device."""
@@ -129,16 +141,17 @@ class JsonDeviceStore:
         await self.add(device)
 
     async def remove(self, device_id: str) -> bool:
-        """Remove a device.
+        """Remove a device (thread-safe).
 
         Returns:
             True if device was removed, False if not found.
         """
-        if device_id in self._devices:
-            del self._devices[device_id]
-            await self.save()
-            return True
-        return False
+        async with self._lock:
+            if device_id in self._devices:
+                del self._devices[device_id]
+                await self._save_unlocked()
+                return True
+            return False
 
     def get(self, device_id: str) -> Optional[PairedDevice]:
         """Get device by ID."""

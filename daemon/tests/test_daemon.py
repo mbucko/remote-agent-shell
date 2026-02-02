@@ -340,3 +340,155 @@ class TestHeartbeatIntegration:
 
         # Verify heartbeat manager was notified
         daemon._heartbeat_manager.on_connection_removed.assert_called_once_with("device1")
+
+
+class TestUnpairHandling:
+    """Tests for unpair request handling."""
+
+    @pytest.mark.asyncio
+    async def test_handle_unpair_request_success(self):
+        """Handle valid unpair request - removes device and sends ack."""
+        from ras.proto.ras import UnpairRequest
+
+        config = Config()
+        config.daemon = DaemonConfig(
+            devices_file="/tmp/test.json",
+            send_timeout=5.0,
+            handler_timeout=10.0
+        )
+
+        daemon = Daemon(config=config)
+        daemon._device_store = AsyncMock()
+        daemon._device_store.remove = AsyncMock(return_value=True)
+
+        mock_conn = AsyncMock()
+        daemon._connection_manager.connections = {"device123": mock_conn}
+        daemon._connection_manager.get_connection = Mock(return_value=mock_conn)
+        daemon._connection_manager.close_connection = AsyncMock()
+
+        request = UnpairRequest(device_id="device123")
+        await daemon._handle_unpair_request("device123", request)
+
+        daemon._device_store.remove.assert_called_once_with("device123")
+        assert mock_conn.send.called
+        daemon._connection_manager.close_connection.assert_called_once_with("device123")
+
+    @pytest.mark.asyncio
+    async def test_handle_unpair_request_wrong_device(self, caplog):
+        """Reject unpair request for different device (security)."""
+        import logging
+        from ras.proto.ras import UnpairRequest
+
+        caplog.set_level(logging.WARNING)
+
+        config = Config()
+        config.daemon = DaemonConfig(devices_file="/tmp/test.json")
+
+        daemon = Daemon(config=config)
+        daemon._device_store = AsyncMock()
+
+        # Device "device123" tries to unpair "device456"
+        request = UnpairRequest(device_id="device456")
+        await daemon._handle_unpair_request("device123", request)
+
+        # Verify store was NOT called
+        daemon._device_store.remove.assert_not_called()
+        assert "Security" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_send_unpair_notification_connected(self):
+        """Send unpair notification to connected device."""
+        config = Config()
+        config.daemon = DaemonConfig(devices_file="/tmp/test.json")
+
+        daemon = Daemon(config=config)
+
+        mock_conn = AsyncMock()
+        daemon._connection_manager.get_connection = Mock(return_value=mock_conn)
+        daemon._connection_manager.close_connection = AsyncMock()
+
+        result = await daemon.send_unpair_notification("device123", "Test reason")
+
+        assert result is True
+        assert mock_conn.send.called
+        daemon._connection_manager.close_connection.assert_called_once_with("device123")
+
+    @pytest.mark.asyncio
+    async def test_send_unpair_notification_not_connected(self):
+        """Send unpair notification when device not connected returns False."""
+        config = Config()
+        config.daemon = DaemonConfig(devices_file="/tmp/test.json")
+
+        daemon = Daemon(config=config)
+        daemon._connection_manager.get_connection = Mock(return_value=None)
+
+        result = await daemon.send_unpair_notification("device123")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_handle_unpair_request_send_ack_fails(self):
+        """When sending UnpairAck fails, device should still be removed and connection closed."""
+        from ras.proto.ras import UnpairRequest
+
+        config = Config()
+        config.daemon = DaemonConfig(devices_file="/tmp/test.json")
+
+        daemon = Daemon(config=config)
+        daemon._device_store = AsyncMock()
+        daemon._device_store.remove = AsyncMock(return_value=True)
+
+        mock_conn = AsyncMock()
+        mock_conn.send = AsyncMock(side_effect=ConnectionError("Connection lost"))
+        daemon._connection_manager.connections = {"device123": mock_conn}
+        daemon._connection_manager.get_connection = Mock(return_value=mock_conn)
+        daemon._connection_manager.close_connection = AsyncMock()
+
+        request = UnpairRequest(device_id="device123")
+
+        # Should not raise exception
+        await daemon._handle_unpair_request("device123", request)
+
+        # Device should still be removed even if ack failed
+        daemon._device_store.remove.assert_called_once_with("device123")
+        daemon._connection_manager.close_connection.assert_called_once_with("device123")
+
+    @pytest.mark.asyncio
+    async def test_handle_unpair_request_device_store_none(self):
+        """When device_store is None (not initialized), should handle gracefully."""
+        from ras.proto.ras import UnpairRequest
+
+        config = Config()
+        config.daemon = DaemonConfig(devices_file="/tmp/test.json")
+
+        daemon = Daemon(config=config)
+        daemon._device_store = None  # Not initialized
+        daemon._connection_manager.close_connection = AsyncMock()
+
+        request = UnpairRequest(device_id="device123")
+
+        # Should not crash
+        await daemon._handle_unpair_request("device123", request)
+
+        # Connection should NOT be closed if device_store not available
+        daemon._connection_manager.close_connection.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_send_unpair_notification_send_fails(self):
+        """When sending UnpairNotification fails, connection should still close."""
+        config = Config()
+        config.daemon = DaemonConfig(devices_file="/tmp/test.json")
+
+        daemon = Daemon(config=config)
+
+        mock_conn = AsyncMock()
+        mock_conn.send = AsyncMock(side_effect=asyncio.TimeoutError("Send timeout"))
+        daemon._connection_manager.get_connection = Mock(return_value=mock_conn)
+        daemon._connection_manager.close_connection = AsyncMock()
+
+        result = await daemon.send_unpair_notification("device123", "Test reason")
+
+        # Should return False but not crash
+        assert result is False
+        # Connection should still be closed
+        daemon._connection_manager.close_connection.assert_called_once_with("device123")

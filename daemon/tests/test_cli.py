@@ -1,5 +1,6 @@
 """Tests for CLI module."""
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -207,3 +208,132 @@ class TestPairCommand:
         terminal_output = qr_gen.to_terminal()
         assert terminal_output  # Not empty
         assert len(terminal_output) > 100  # Has QR code content
+
+
+class TestDevicesCommands:
+    """Test devices subcommands."""
+
+    def test_devices_list_no_devices(self, runner, tmp_path):
+        """List with no devices shows message."""
+        config_file = tmp_path / "config.yaml"
+        devices_file = tmp_path / "devices.json"
+
+        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n")
+        devices_file.write_text('{"devices": []}')
+
+        result = runner.invoke(main, ["--config", str(config_file), "devices", "list"])
+
+        assert result.exit_code == 0
+        assert "No paired devices" in result.output
+
+    def test_devices_list_with_devices(self, runner, tmp_path):
+        """List shows all devices in formatted table."""
+        import base64
+
+        config_file = tmp_path / "config.yaml"
+        devices_file = tmp_path / "devices.json"
+
+        secret = base64.b64encode(b"\x00" * 32).decode("ascii")
+        devices_file.write_text(json.dumps({
+            "devices": [{
+                "device_id": "device123",
+                "name": "Pixel 8",
+                "master_secret": secret,
+                "paired_at": "2024-01-01T00:00:00Z",
+                "last_seen": "2024-01-02T12:00:00Z",
+            }]
+        }))
+
+        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n")
+
+        result = runner.invoke(main, ["--config", str(config_file), "devices", "list"])
+
+        assert result.exit_code == 0
+        assert "Pixel 8" in result.output
+        assert "2024-01-01" in result.output
+
+    def test_devices_remove_with_force(self, runner, tmp_path):
+        """Remove with --force skips confirmation."""
+        import base64
+
+        config_file = tmp_path / "config.yaml"
+        devices_file = tmp_path / "devices.json"
+
+        secret = base64.b64encode(b"\x00" * 32).decode("ascii")
+        devices_file.write_text(json.dumps({
+            "devices": [{
+                "device_id": "device123",
+                "name": "Test Phone",
+                "master_secret": secret,
+                "paired_at": "2024-01-01T00:00:00Z",
+            }]
+        }))
+
+        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n")
+
+        result = runner.invoke(
+            main,
+            ["--config", str(config_file), "devices", "remove", "device123", "--force"]
+        )
+
+        assert result.exit_code == 0
+        assert "Device removed" in result.output
+
+        # Verify device was removed
+        data = json.loads(devices_file.read_text())
+        assert len(data["devices"]) == 0
+
+    def test_devices_remove_not_found(self, runner, tmp_path):
+        """Remove unknown device shows error."""
+        config_file = tmp_path / "config.yaml"
+        devices_file = tmp_path / "devices.json"
+
+        devices_file.write_text('{"devices": []}')
+        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n")
+
+        result = runner.invoke(
+            main,
+            ["--config", str(config_file), "devices", "remove", "unknown", "--force"]
+        )
+
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_devices_remove_all_force(self, runner, tmp_path):
+        """Remove --all --force removes all devices."""
+        import base64
+
+        config_file = tmp_path / "config.yaml"
+        devices_file = tmp_path / "devices.json"
+
+        secret = base64.b64encode(b"\x00" * 32).decode("ascii")
+        devices_file.write_text(json.dumps({
+            "devices": [
+                {
+                    "device_id": "device1",
+                    "name": "Phone 1",
+                    "master_secret": secret,
+                    "paired_at": "2024-01-01T00:00:00Z",
+                },
+                {
+                    "device_id": "device2",
+                    "name": "Phone 2",
+                    "master_secret": secret,
+                    "paired_at": "2024-01-02T00:00:00Z",
+                }
+            ]
+        }))
+
+        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n")
+
+        result = runner.invoke(
+            main,
+            ["--config", str(config_file), "devices", "remove", "--all", "--force"]
+        )
+
+        assert result.exit_code == 0
+        assert "Removed 2 devices" in result.output
+
+        # Verify all devices removed
+        data = json.loads(devices_file.read_text())
+        assert len(data["devices"]) == 0
