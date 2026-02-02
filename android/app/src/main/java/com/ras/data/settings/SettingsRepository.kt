@@ -23,7 +23,7 @@ import javax.inject.Singleton
 @Singleton
 class SettingsRepository @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : ModifierKeySettings {
     companion object {
         private const val TAG = "SettingsRepository"
     }
@@ -141,16 +141,16 @@ class SettingsRepository @Inject constructor(
     // ==========================================================================
 
     private val _showCtrlKey = MutableStateFlow(loadShowCtrlKey())
-    val showCtrlKey: StateFlow<Boolean> = _showCtrlKey.asStateFlow()
+    override val showCtrlKey: StateFlow<Boolean> = _showCtrlKey.asStateFlow()
 
     private val _showShiftKey = MutableStateFlow(loadShowShiftKey())
-    val showShiftKey: StateFlow<Boolean> = _showShiftKey.asStateFlow()
+    override val showShiftKey: StateFlow<Boolean> = _showShiftKey.asStateFlow()
 
     private val _showAltKey = MutableStateFlow(loadShowAltKey())
-    val showAltKey: StateFlow<Boolean> = _showAltKey.asStateFlow()
+    override val showAltKey: StateFlow<Boolean> = _showAltKey.asStateFlow()
 
     private val _showMetaKey = MutableStateFlow(loadShowMetaKey())
-    val showMetaKey: StateFlow<Boolean> = _showMetaKey.asStateFlow()
+    override val showMetaKey: StateFlow<Boolean> = _showMetaKey.asStateFlow()
 
     fun getShowCtrlKey(): Boolean = _showCtrlKey.value
     fun getShowShiftKey(): Boolean = _showShiftKey.value

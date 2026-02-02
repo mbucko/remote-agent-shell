@@ -5,8 +5,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.ras.data.connection.ConnectionConfig
+import com.ras.data.settings.ModifierKeySettings
+import com.ras.data.settings.SettingsRepository
 import com.ras.util.AndroidClipboardService
 import com.ras.util.ClipboardService
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -72,4 +75,18 @@ object AppModule {
     fun provideClipboardService(@ApplicationContext context: Context): ClipboardService {
         return AndroidClipboardService(context)
     }
+}
+
+/**
+ * Bindings module for interface implementations.
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class AppBindingsModule {
+    /**
+     * Binds ModifierKeySettings interface to SettingsRepository implementation.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindModifierKeySettings(impl: SettingsRepository): ModifierKeySettings
 }

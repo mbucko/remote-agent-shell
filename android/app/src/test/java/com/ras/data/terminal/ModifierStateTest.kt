@@ -1,6 +1,7 @@
 package com.ras.data.terminal
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ModifierStateTest {
@@ -122,5 +123,89 @@ class ModifierStateTest {
         // XTerm standard: Ctrl = 4
         val state = ModifierState(ctrl = ModifierMode.LOCKED)
         assertEquals(4, state.bitmask)
+    }
+
+    // ==========================================================================
+    // getAppShortcut() Tests - Paste Shortcuts
+    // ==========================================================================
+
+    @Test
+    fun `getAppShortcut returns PASTE for Meta+v`() {
+        val state = ModifierState(meta = ModifierMode.STICKY)
+        assertEquals(AppAction.PASTE, state.getAppShortcut('v'))
+    }
+
+    @Test
+    fun `getAppShortcut returns PASTE for Meta+V uppercase`() {
+        val state = ModifierState(meta = ModifierMode.STICKY)
+        assertEquals(AppAction.PASTE, state.getAppShortcut('V'))
+    }
+
+    @Test
+    fun `getAppShortcut returns PASTE for Ctrl+Shift+v`() {
+        val state = ModifierState(ctrl = ModifierMode.STICKY, shift = ModifierMode.STICKY)
+        assertEquals(AppAction.PASTE, state.getAppShortcut('v'))
+    }
+
+    @Test
+    fun `getAppShortcut returns PASTE for Ctrl+Shift+V uppercase`() {
+        val state = ModifierState(ctrl = ModifierMode.STICKY, shift = ModifierMode.STICKY)
+        assertEquals(AppAction.PASTE, state.getAppShortcut('V'))
+    }
+
+    @Test
+    fun `getAppShortcut handles LOCKED mode same as STICKY for Meta+V`() {
+        val state = ModifierState(meta = ModifierMode.LOCKED)
+        assertEquals(AppAction.PASTE, state.getAppShortcut('v'))
+    }
+
+    @Test
+    fun `getAppShortcut handles LOCKED mode same as STICKY for Ctrl+Shift+V`() {
+        val state = ModifierState(ctrl = ModifierMode.LOCKED, shift = ModifierMode.LOCKED)
+        assertEquals(AppAction.PASTE, state.getAppShortcut('v'))
+    }
+
+    // ==========================================================================
+    // getAppShortcut() Tests - Non-Shortcuts (should return null)
+    // ==========================================================================
+
+    @Test
+    fun `getAppShortcut returns null for Ctrl+V alone`() {
+        val state = ModifierState(ctrl = ModifierMode.STICKY)
+        assertNull(state.getAppShortcut('v'))
+    }
+
+    @Test
+    fun `getAppShortcut returns null for Shift+V alone`() {
+        val state = ModifierState(shift = ModifierMode.STICKY)
+        assertNull(state.getAppShortcut('v'))
+    }
+
+    @Test
+    fun `getAppShortcut returns null for no modifiers`() {
+        val state = ModifierState()
+        assertNull(state.getAppShortcut('v'))
+    }
+
+    @Test
+    fun `getAppShortcut returns null for Meta with other characters`() {
+        val state = ModifierState(meta = ModifierMode.STICKY)
+        assertNull(state.getAppShortcut('c')) // Copy not implemented yet
+        assertNull(state.getAppShortcut('x'))
+        assertNull(state.getAppShortcut('a'))
+        assertNull(state.getAppShortcut('z'))
+    }
+
+    @Test
+    fun `getAppShortcut returns null for Ctrl+Shift with other characters`() {
+        val state = ModifierState(ctrl = ModifierMode.STICKY, shift = ModifierMode.STICKY)
+        assertNull(state.getAppShortcut('c')) // Copy not implemented yet
+        assertNull(state.getAppShortcut('x'))
+    }
+
+    @Test
+    fun `getAppShortcut returns null for Alt+V`() {
+        val state = ModifierState(alt = ModifierMode.STICKY)
+        assertNull(state.getAppShortcut('v'))
     }
 }

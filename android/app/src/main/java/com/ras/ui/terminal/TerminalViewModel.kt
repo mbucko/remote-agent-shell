@@ -6,12 +6,15 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.sessions.SessionRepository
+import com.ras.data.settings.ModifierKeySettings
 import com.ras.data.settings.SettingsRepository
 import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
 import com.ras.data.terminal.KeyMapper
+import com.ras.data.terminal.AppAction
 import com.ras.data.terminal.ModifierKey
 import com.ras.data.terminal.ModifierMode
 import com.ras.data.terminal.ModifierState
+import com.ras.data.terminal.getAppShortcut
 import com.ras.data.terminal.QuickButton
 import com.ras.data.terminal.TerminalEvent
 import com.ras.data.terminal.TerminalRepository
@@ -61,6 +64,7 @@ class TerminalViewModel @Inject constructor(
     private val repository: TerminalRepository,
     private val sessionRepository: SessionRepository,
     private val settingsRepository: SettingsRepository,
+    private val modifierKeySettings: ModifierKeySettings,
     private val buttonSettings: QuickButtonSettings,
     private val clipboardService: ClipboardService
 ) : ViewModel() {
@@ -105,10 +109,10 @@ class TerminalViewModel @Inject constructor(
     val modifierState: StateFlow<ModifierState> = _modifierState.asStateFlow()
 
     // Modifier key visibility settings
-    val showCtrlKey: StateFlow<Boolean> = settingsRepository.showCtrlKey
-    val showShiftKey: StateFlow<Boolean> = settingsRepository.showShiftKey
-    val showAltKey: StateFlow<Boolean> = settingsRepository.showAltKey
-    val showMetaKey: StateFlow<Boolean> = settingsRepository.showMetaKey
+    val showCtrlKey: StateFlow<Boolean> = modifierKeySettings.showCtrlKey
+    val showShiftKey: StateFlow<Boolean> = modifierKeySettings.showShiftKey
+    val showAltKey: StateFlow<Boolean> = modifierKeySettings.showAltKey
+    val showMetaKey: StateFlow<Boolean> = modifierKeySettings.showMetaKey
 
     // Input text (for line-buffered mode)
     private val _inputText = MutableStateFlow("")
@@ -339,6 +343,7 @@ class TerminalViewModel @Inject constructor(
     /**
      * Handle quick button click.
      * Sends key with current modifier state, then clears sticky modifiers.
+     * Intercepts app shortcuts (like ⌘+V for paste) before sending to terminal.
      */
     fun onQuickButtonClicked(button: QuickButton) {
         viewModelScope.launch {
@@ -349,6 +354,16 @@ class TerminalViewModel @Inject constructor(
                 when {
                     button.keyType != null -> repository.sendSpecialKey(button.keyType, modifiers)
                     button.character != null -> {
+                        // Check for app shortcuts first (e.g., ⌘+V for paste)
+                        if (button.character.length == 1) {
+                            val appAction = state.getAppShortcut(button.character[0])
+                            if (appAction != null) {
+                                handleAppAction(appAction)
+                                clearStickyModifiers()
+                                return@launch
+                            }
+                        }
+
                         // Apply modifiers to character buttons
                         val modifiedChar = applyModifiersToCharacter(button.character, state)
                         repository.sendInput(modifiedChar)
@@ -444,6 +459,21 @@ class TerminalViewModel @Inject constructor(
     }
 
     /**
+     * Handle app-level actions (shortcuts intercepted by the terminal emulator).
+     * These are actions that real terminal emulators handle directly,
+     * not sent to the shell.
+     */
+    private fun handleAppAction(action: AppAction) {
+        when (action) {
+            AppAction.PASTE -> onPasteClicked()
+            AppAction.COPY -> {
+                // Future: implement when we have text selection
+                Log.d(TAG, "Copy action - not implemented yet (no text selection)")
+            }
+        }
+    }
+
+    /**
      * Toggle raw mode.
      */
     fun onRawModeToggle() {
@@ -514,13 +544,33 @@ class TerminalViewModel @Inject constructor(
 
     /**
      * Handle raw character input (in raw mode).
+     * Intercepts app shortcuts before sending to terminal.
      */
     fun onRawCharacterInput(char: Char) {
         if (!terminalState.value.isRawMode) return
 
+        // Check for app shortcuts with current modifier state
+        val state = _modifierState.value
+        val appAction = state.getAppShortcut(char)
+        if (appAction != null) {
+            handleAppAction(appAction)
+            clearStickyModifiers()
+            return
+        }
+
+        // Apply modifiers and prepare input synchronously
+        val input = if (state.hasActiveModifiers) {
+            applyModifiersToCharacter(char.toString(), state)
+        } else {
+            char.toString()
+        }
+
+        // Clear modifiers before async send (consistent with app shortcut path)
+        clearStickyModifiers()
+
         viewModelScope.launch {
             try {
-                repository.sendInput(char.toString())
+                repository.sendInput(input)
             } catch (e: Exception) {
                 _uiEvents.emit(TerminalUiEvent.ShowError("Failed to send: ${e.message}"))
             }

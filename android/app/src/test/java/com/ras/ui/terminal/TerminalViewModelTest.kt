@@ -2,6 +2,7 @@ package com.ras.ui.terminal
 
 import androidx.lifecycle.SavedStateHandle
 import com.ras.data.sessions.SessionRepository
+import com.ras.data.settings.ModifierKeySettings
 import com.ras.data.settings.SettingsDefaults
 import com.ras.data.settings.SettingsRepository
 import com.ras.data.terminal.TerminalRepository
@@ -9,10 +10,10 @@ import com.ras.data.terminal.TerminalState
 import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
 import com.ras.util.ClipboardService
-import io.mockk.clearAllMocks
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.unmockkAll
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -44,6 +45,7 @@ class TerminalViewModelTest {
     private lateinit var terminalRepository: TerminalRepository
     private lateinit var sessionRepository: SessionRepository
     private lateinit var settingsRepository: SettingsRepository
+    private lateinit var modifierKeySettings: ModifierKeySettings
     private lateinit var buttonSettings: QuickButtonSettings
     private lateinit var clipboardService: ClipboardService
 
@@ -60,9 +62,9 @@ class TerminalViewModelTest {
     private val showAltKeyFlow = MutableStateFlow(false)
     private val showMetaKeyFlow = MutableStateFlow(false)
 
+
     @Before
     fun setup() {
-        clearAllMocks()
         Dispatchers.setMain(testDispatcher)
 
         savedStateHandle = SavedStateHandle(mapOf(NavArgs.SESSION_ID to "test-session-123"))
@@ -70,6 +72,7 @@ class TerminalViewModelTest {
         terminalRepository = mockk(relaxed = true)
         sessionRepository = mockk(relaxed = true)
         settingsRepository = mockk(relaxed = true)
+        modifierKeySettings = mockk(relaxed = true)
         buttonSettings = mockk(relaxed = true)
         clipboardService = mockk(relaxed = true)
 
@@ -85,11 +88,11 @@ class TerminalViewModelTest {
         // Setup settings repository with default font size
         every { settingsRepository.getTerminalFontSize() } returns SettingsDefaults.TERMINAL_FONT_SIZE
 
-        // Setup modifier key visibility settings
-        every { settingsRepository.showCtrlKey } returns showCtrlKeyFlow
-        every { settingsRepository.showShiftKey } returns showShiftKeyFlow
-        every { settingsRepository.showAltKey } returns showAltKeyFlow
-        every { settingsRepository.showMetaKey } returns showMetaKeyFlow
+        // Setup modifier key visibility settings (via interface - easily mockable)
+        every { modifierKeySettings.showCtrlKey } returns showCtrlKeyFlow
+        every { modifierKeySettings.showShiftKey } returns showShiftKeyFlow
+        every { modifierKeySettings.showAltKey } returns showAltKeyFlow
+        every { modifierKeySettings.showMetaKey } returns showMetaKeyFlow
 
         // Setup button settings
         every { buttonSettings.getButtons() } returns emptyList()
@@ -101,6 +104,7 @@ class TerminalViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+        unmockkAll()
     }
 
     private fun createViewModel(): TerminalViewModel {
@@ -109,6 +113,7 @@ class TerminalViewModelTest {
             repository = terminalRepository,
             sessionRepository = sessionRepository,
             settingsRepository = settingsRepository,
+            modifierKeySettings = modifierKeySettings,
             buttonSettings = buttonSettings,
             clipboardService = clipboardService
         )
