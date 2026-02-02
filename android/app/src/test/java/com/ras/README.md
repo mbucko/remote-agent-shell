@@ -91,4 +91,21 @@ class MyViewModelTest {
 
 ---
 
+## Test Classification
+
+Prefix test names for clarity:
+| Prefix | Type | Description |
+|--------|------|-------------|
+| `[Unit]` | Unit | Pure logic, all mocks |
+| `[Integration]` | Integration | Real DB/network with mocks |
+| `[E2E]` | End-to-End | Full stack, no mocks |
+| `[Performance]` | Performance | Load/stress tests |
+
+## Strict Rules
+
+- **No `Thread.sleep()` or `delay()`** in [Unit] tests - use `testDispatcher.scheduler.advanceUntilIdle()` or `yield()`
+- **No system/IO calls** in [Unit] tests (files, network, DB) - mock everything
+- **[Integration] tests** may use real DB/network but mock external services
+- **[Unit] tests** must be < 100ms execution time
+
 *Last updated: February 2026*

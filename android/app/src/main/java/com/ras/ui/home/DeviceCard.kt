@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
+import com.ras.R
 import androidx.compose.ui.unit.dp
 import com.ras.data.model.DeviceType
 
@@ -144,8 +146,11 @@ private fun DeviceType.toIcon(): ImageVector = when (this) {
  */
 private fun ConnectionState.toDisplayText(sessionCount: Int = 0): String = when (this) {
     ConnectionState.CONNECTED -> {
-        val sessionText = if (sessionCount == 1) "1 session" else "$sessionCount sessions"
-        "Connected · $sessionText"
+        "Connected · " + pluralStringResource(
+            R.plurals.sessions_count,
+            sessionCount,
+            sessionCount
+        )
     }
     ConnectionState.CONNECTING -> "Connecting..."
     ConnectionState.DISCONNECTED -> "Disconnected"
