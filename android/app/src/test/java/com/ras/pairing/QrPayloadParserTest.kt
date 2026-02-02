@@ -7,15 +7,16 @@ import com.google.protobuf.ByteString
 import io.mockk.every
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 class QrPayloadParserTest {
 
-    @Before
+    @BeforeEach
     fun setup() {
         // Mock Android's Base64 since it's not available in unit tests
         mockkStatic(Base64::class)
@@ -25,11 +26,12 @@ class QrPayloadParserTest {
         }
     }
 
-    @After
+    @AfterEach
     fun teardown() {
         unmockkAll()
     }
 
+    @Tag("unit")
     @Test
     fun `parse valid payload with only master secret`() {
         // New QR format: only master_secret is required, everything else derived
@@ -52,6 +54,7 @@ class QrPayloadParserTest {
         assertTrue(success.payload.ntfyTopic.startsWith("ras-"))
     }
 
+    @Tag("unit")
     @Test
     fun `parse valid IPv6 payload`() {
         val masterSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -73,6 +76,7 @@ class QrPayloadParserTest {
         assertEquals("::1", success.payload.ip)
     }
 
+    @Tag("unit")
     @Test
     fun `reject invalid base64`() {
         val result = QrPayloadParser.parse("not-valid-base64!!!")
@@ -81,6 +85,7 @@ class QrPayloadParserTest {
         assertEquals(QrParseResult.ErrorCode.INVALID_BASE64, (result as QrParseResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `reject invalid version`() {
         val masterSecret = ByteArray(32)
@@ -101,6 +106,7 @@ class QrPayloadParserTest {
         assertEquals(QrParseResult.ErrorCode.UNSUPPORTED_VERSION, (result as QrParseResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `accept empty IP - discovered via mDNS`() {
         // New QR format: IP is optional (discovered via mDNS)
@@ -119,6 +125,7 @@ class QrPayloadParserTest {
         assertTrue(result is QrParseResult.Success)
     }
 
+    @Tag("unit")
     @Test
     fun `reject invalid secret length - too short`() {
         val masterSecret = ByteArray(16) // Should be 32
@@ -139,6 +146,7 @@ class QrPayloadParserTest {
         assertEquals(QrParseResult.ErrorCode.INVALID_SECRET_LENGTH, (result as QrParseResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `accept port zero - discovered via mDNS`() {
         // New QR format: port 0 means "discover via mDNS"
@@ -157,6 +165,7 @@ class QrPayloadParserTest {
         assertTrue(result is QrParseResult.Success)
     }
 
+    @Tag("unit")
     @Test
     fun `accept port in valid range if provided`() {
         // If a port is provided, it should be valid (1-65535)
@@ -177,6 +186,7 @@ class QrPayloadParserTest {
         assertEquals(8765, success.payload.port)
     }
 
+    @Tag("unit")
     @Test
     fun `accept valid port boundary - port 1`() {
         val masterSecret = ByteArray(32)
@@ -196,6 +206,7 @@ class QrPayloadParserTest {
         assertTrue(result is QrParseResult.Success)
     }
 
+    @Tag("unit")
     @Test
     fun `accept valid port boundary - port 65535`() {
         val masterSecret = ByteArray(32)

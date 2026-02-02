@@ -19,10 +19,11 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Tests for ReconnectionController.
@@ -51,7 +52,7 @@ class ReconnectionControllerTest {
     private val appInForegroundFlow = MutableStateFlow(true)
     private val connectionErrorsFlow = MutableSharedFlow<ConnectionError>()
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockConnectionManager = mockk(relaxed = true)
         mockReconnectionService = mockk()
@@ -80,6 +81,7 @@ class ReconnectionControllerTest {
     // SECTION 1: Guard Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `attemptReconnectIfNeeded does nothing when already connected`() = runTest(testDispatcher) {
         isConnectedFlow.value = true
@@ -90,6 +92,7 @@ class ReconnectionControllerTest {
         coVerify(exactly = 0) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `attemptReconnectIfNeeded does nothing when no credentials`() = runTest(testDispatcher) {
         coEvery { mockCredentialRepository.hasCredentials() } returns false
@@ -100,6 +103,7 @@ class ReconnectionControllerTest {
         coVerify(exactly = 0) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `attemptReconnectIfNeeded does nothing when user manually disconnected`() = runTest(testDispatcher) {
         coEvery { mockKeyManager.isDisconnectedOnce() } returns true
@@ -110,6 +114,7 @@ class ReconnectionControllerTest {
         coVerify(exactly = 0) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `attemptReconnectIfNeeded prevents duplicate attempts`() = runTest(testDispatcher) {
         // Make reconnection take a while
@@ -125,11 +130,12 @@ class ReconnectionControllerTest {
         // Try second attempt while first is running
         val secondResult = controller.attemptReconnectIfNeeded()
 
-        assertFalse("Second attempt should be rejected", secondResult)
+        assertFalse(secondResult, "Second attempt should be rejected")
         advanceUntilIdle()
         coVerify(exactly = 1) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `attemptReconnectIfNeeded succeeds when all conditions met`() = runTest(testDispatcher) {
         val result = controller.attemptReconnectIfNeeded()
@@ -142,6 +148,7 @@ class ReconnectionControllerTest {
     // SECTION 2: Auto-Reconnect on Foreground
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `does not reconnect on initialize due to initial foreground value`() = runTest(testDispatcher) {
         // appInForegroundFlow starts as true (default)
@@ -153,6 +160,7 @@ class ReconnectionControllerTest {
         coVerify(exactly = 0) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `reconnects when app comes to foreground and disconnected`() = runTest(testDispatcher) {
         controller.initialize()
@@ -168,6 +176,7 @@ class ReconnectionControllerTest {
         coVerify { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `does not reconnect on foreground when already connected`() = runTest(testDispatcher) {
         isConnectedFlow.value = true
@@ -183,6 +192,7 @@ class ReconnectionControllerTest {
         coVerify(exactly = 0) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `does not reconnect on foreground when user manually disconnected`() = runTest(testDispatcher) {
         coEvery { mockKeyManager.isDisconnectedOnce() } returns true
@@ -202,6 +212,7 @@ class ReconnectionControllerTest {
     // SECTION 3: Auto-Reconnect on Connection Error
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnects when connection error occurs`() = runTest(testDispatcher) {
         controller.initialize()
@@ -214,6 +225,7 @@ class ReconnectionControllerTest {
         coVerify { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `does not reconnect on connection error when user manually disconnected`() = runTest(testDispatcher) {
         coEvery { mockKeyManager.isDisconnectedOnce() } returns true
@@ -232,6 +244,7 @@ class ReconnectionControllerTest {
     // SECTION 4: State Exposure
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `isReconnecting is true during reconnection`() = runTest(testDispatcher) {
         var wasReconnecting = false
@@ -245,10 +258,11 @@ class ReconnectionControllerTest {
         controller.attemptReconnectIfNeeded()
         advanceUntilIdle()
 
-        assertTrue("isReconnecting should be true during reconnection", wasReconnecting)
-        assertFalse("isReconnecting should be false after reconnection", controller.isReconnecting.value)
+        assertTrue(wasReconnecting, "isReconnecting should be true during reconnection")
+        assertFalse(controller.isReconnecting.value, "isReconnecting should be false after reconnection")
     }
 
+    @Tag("unit")
     @Test
     fun `isReconnecting starts as false`() = runTest(testDispatcher) {
         assertFalse(controller.isReconnecting.value)
@@ -258,6 +272,7 @@ class ReconnectionControllerTest {
     // SECTION 5: Failure Handling
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `attemptReconnectIfNeeded returns false on failure`() = runTest(testDispatcher) {
         coEvery { mockReconnectionService.reconnect(any()) } returns
@@ -268,6 +283,7 @@ class ReconnectionControllerTest {
         assertFalse(result)
     }
 
+    @Tag("unit")
     @Test
     fun `isReconnecting resets to false on failure`() = runTest(testDispatcher) {
         coEvery { mockReconnectionService.reconnect(any()) } returns
@@ -283,6 +299,7 @@ class ReconnectionControllerTest {
     // SECTION 6: Mutex-Based Race Condition Prevention
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `concurrent reconnection attempts from foreground and error are deduplicated`() = runTest(testDispatcher) {
         // Make reconnection slow so we can test concurrent attempts
@@ -312,6 +329,7 @@ class ReconnectionControllerTest {
         coVerify(exactly = 1) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `mutex prevents multiple simultaneous reconnection attempts`() = runTest(testDispatcher) {
         var reconnectCallCount = 0
@@ -330,9 +348,10 @@ class ReconnectionControllerTest {
         advanceUntilIdle()
 
         // Only one should have succeeded due to mutex
-        assertTrue("Only one reconnect call should be made", reconnectCallCount == 1)
+        assertTrue(reconnectCallCount == 1, "Only one reconnect call should be made")
     }
 
+    @Tag("unit")
     @Test
     fun `mutex is released after reconnection completes allowing subsequent attempts`() = runTest(testDispatcher) {
         coEvery { mockReconnectionService.reconnect(any()) } coAnswers {
@@ -343,7 +362,7 @@ class ReconnectionControllerTest {
         // First attempt
         val firstResult = controller.attemptReconnectIfNeeded()
         advanceUntilIdle()
-        assertTrue("First attempt should succeed", firstResult)
+        assertTrue(firstResult, "First attempt should succeed")
 
         // Disconnect so we can reconnect again
         isConnectedFlow.value = false
@@ -351,11 +370,12 @@ class ReconnectionControllerTest {
         // Second attempt after first completes
         val secondResult = controller.attemptReconnectIfNeeded()
         advanceUntilIdle()
-        assertTrue("Second attempt should succeed after first completes", secondResult)
+        assertTrue(secondResult, "Second attempt should succeed after first completes")
 
         coVerify(exactly = 2) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `mutex is released even on reconnection failure`() = runTest(testDispatcher) {
         coEvery { mockReconnectionService.reconnect(any()) } returns
@@ -364,16 +384,17 @@ class ReconnectionControllerTest {
         // First attempt (fails)
         val firstResult = controller.attemptReconnectIfNeeded()
         advanceUntilIdle()
-        assertFalse("First attempt should fail", firstResult)
+        assertFalse(firstResult, "First attempt should fail")
 
         // Second attempt should be able to proceed
-        val secondResult = controller.attemptReconnectIfNeeded()
+        controller.attemptReconnectIfNeeded()
         advanceUntilIdle()
 
         // Both attempts should have been made
         coVerify(exactly = 2) { mockReconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `tryLock provides fail-fast behavior for concurrent attempts`() = runTest(testDispatcher) {
         val attemptResults = mutableListOf<Boolean>()
@@ -402,8 +423,8 @@ class ReconnectionControllerTest {
         advanceUntilIdle()
 
         // One success (first attempt), one fail-fast (second attempt)
-        assertTrue("Should have exactly 2 results", attemptResults.size == 2)
-        assertTrue("One should succeed", attemptResults.count { it } == 1)
-        assertTrue("One should fail fast", attemptResults.count { !it } == 1)
+        assertTrue(attemptResults.size == 2, "Should have exactly 2 results")
+        assertTrue(attemptResults.count { it } == 1, "One should succeed")
+        assertTrue(attemptResults.count { !it } == 1, "One should fail fast")
     }
 }

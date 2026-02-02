@@ -1,10 +1,12 @@
 package com.ras.signaling
 
-import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertArrayEquals
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 /**
  * Tests for NtfySignalingCrypto.
@@ -15,6 +17,7 @@ class NtfySignalingCryptoTest {
 
     // ==================== Key Derivation Tests ====================
 
+    @Tag("unit")
     @Test
     fun `derives 32-byte key from master secret`() {
         val masterSecret = ByteArray(32)
@@ -22,6 +25,7 @@ class NtfySignalingCryptoTest {
         assertEquals(32, signalingKey.size)
     }
 
+    @Tag("unit")
     @Test
     fun `different master secrets produce different keys`() {
         val key1 = NtfySignalingCrypto.deriveSignalingKey(ByteArray(32))
@@ -29,6 +33,7 @@ class NtfySignalingCryptoTest {
         assertFalse(key1.contentEquals(key2))
     }
 
+    @Tag("unit")
     @Test
     fun `matches test vector - standard master secret`() {
         // Test vector: derive_signaling_key_1
@@ -40,6 +45,7 @@ class NtfySignalingCryptoTest {
         assertArrayEquals(expected, signalingKey)
     }
 
+    @Tag("unit")
     @Test
     fun `matches test vector - zeros`() {
         // Test vector: derive_signaling_key_zeros
@@ -51,6 +57,7 @@ class NtfySignalingCryptoTest {
         assertArrayEquals(expected, signalingKey)
     }
 
+    @Tag("unit")
     @Test
     fun `matches test vector - ones`() {
         // Test vector: derive_signaling_key_ones
@@ -62,18 +69,23 @@ class NtfySignalingCryptoTest {
         assertArrayEquals(expected, signalingKey)
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `derive key rejects short master secret`() {
-        NtfySignalingCrypto.deriveSignalingKey(ByteArray(16))
+        assertThrows(IllegalArgumentException::class.java) {
+            NtfySignalingCrypto.deriveSignalingKey(ByteArray(16))
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `derive key rejects long master secret`() {
-        NtfySignalingCrypto.deriveSignalingKey(ByteArray(64))
+        assertThrows(IllegalArgumentException::class.java) {
+            NtfySignalingCrypto.deriveSignalingKey(ByteArray(64))
+        }
     }
 
     // ==================== Encryption Tests ====================
 
+    @Tag("unit")
     @Test
     fun `encrypt produces iv plus ciphertext plus tag`() {
         val key = ByteArray(32)
@@ -88,6 +100,7 @@ class NtfySignalingCryptoTest {
         assertEquals(40, encrypted.size)
     }
 
+    @Tag("unit")
     @Test
     fun `decrypt reverses encrypt`() {
         val key = ByteArray(32) { it.toByte() }
@@ -100,6 +113,7 @@ class NtfySignalingCryptoTest {
         assertArrayEquals(plaintext, decrypted)
     }
 
+    @Tag("unit")
     @Test
     fun `encrypt and decrypt empty message`() {
         val key = ByteArray(32) { it.toByte() }
@@ -114,7 +128,7 @@ class NtfySignalingCryptoTest {
         assertEquals(28, encrypted.size)
     }
 
-    @Test(expected = DecryptionException::class)
+    @Test
     fun `decrypt with wrong key throws`() {
         val key1 = ByteArray(32)
         val key2 = ByteArray(32) { 0xFF.toByte() }
@@ -123,10 +137,12 @@ class NtfySignalingCryptoTest {
         val crypto2 = NtfySignalingCrypto(key2)
 
         val encrypted = crypto1.encrypt("test".toByteArray())
-        crypto2.decrypt(encrypted)
+        assertThrows(DecryptionException::class.java) {
+            crypto2.decrypt(encrypted)
+        }
     }
 
-    @Test(expected = DecryptionException::class)
+    @Test
     fun `decrypt tampered ciphertext throws`() {
         val key = ByteArray(32)
         val crypto = NtfySignalingCrypto(key)
@@ -135,28 +151,35 @@ class NtfySignalingCryptoTest {
         // Tamper with the last byte (part of auth tag)
         encrypted[encrypted.size - 1] = (encrypted[encrypted.size - 1].toInt() xor 0xFF).toByte()
 
-        crypto.decrypt(encrypted)
+        assertThrows(DecryptionException::class.java) {
+            crypto.decrypt(encrypted)
+        }
     }
 
-    @Test(expected = DecryptionException::class)
+    @Test
     fun `decrypt message too short throws`() {
         val key = ByteArray(32)
         val crypto = NtfySignalingCrypto(key)
 
         // Less than minimum (28 bytes)
-        crypto.decrypt(ByteArray(27))
+        assertThrows(DecryptionException::class.java) {
+            crypto.decrypt(ByteArray(27))
+        }
     }
 
-    @Test(expected = DecryptionException::class)
+    @Test
     fun `decrypt message too large throws - DoS protection`() {
         val key = ByteArray(32)
         val crypto = NtfySignalingCrypto(key)
 
         // Exceeds 64KB limit
         val tooLarge = ByteArray(65 * 1024)  // 65 KB
-        crypto.decrypt(tooLarge)
+        assertThrows(DecryptionException::class.java) {
+            crypto.decrypt(tooLarge)
+        }
     }
 
+    @Tag("unit")
     @Test
     fun `decrypt message at 64KB boundary succeeds`() {
         val key = ByteArray(32) { it.toByte() }
@@ -174,6 +197,7 @@ class NtfySignalingCryptoTest {
 
     // ==================== Base64 Encryption Tests ====================
 
+    @Tag("unit")
     @Test
     fun `encrypt to base64 and decrypt`() {
         val key = ByteArray(32) { it.toByte() }
@@ -186,6 +210,7 @@ class NtfySignalingCryptoTest {
         assertArrayEquals(plaintext, decrypted)
     }
 
+    @Tag("unit")
     @Test
     fun `matches encryption test vector`() {
         // Test vector: encrypt_offer_message
@@ -200,6 +225,7 @@ class NtfySignalingCryptoTest {
         assertEquals(expectedBase64, encryptedBase64)
     }
 
+    @Tag("unit")
     @Test
     fun `matches encryption test vector - empty plaintext`() {
         // Test vector: encrypt_empty
@@ -214,16 +240,19 @@ class NtfySignalingCryptoTest {
         assertEquals(expectedBase64, encryptedBase64)
     }
 
-    @Test(expected = DecryptionException::class)
+    @Test
     fun `decrypt invalid base64 throws`() {
         val key = ByteArray(32)
         val crypto = NtfySignalingCrypto(key)
 
-        crypto.decryptFromBase64("not valid base64!!!")
+        assertThrows(DecryptionException::class.java) {
+            crypto.decryptFromBase64("not valid base64!!!")
+        }
     }
 
     // ==================== Key Zeroing Tests ====================
 
+    @Tag("unit")
     @Test
     fun `zeroKey clears the key`() {
         val key = ByteArray(32) { it.toByte() }
@@ -241,14 +270,18 @@ class NtfySignalingCryptoTest {
         // but at least verify no crash
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `constructor rejects short key`() {
-        NtfySignalingCrypto(ByteArray(16))
+        assertThrows(IllegalArgumentException::class.java) {
+            NtfySignalingCrypto(ByteArray(16))
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `constructor rejects long key`() {
-        NtfySignalingCrypto(ByteArray(64))
+        assertThrows(IllegalArgumentException::class.java) {
+            NtfySignalingCrypto(ByteArray(64))
+        }
     }
 }
 

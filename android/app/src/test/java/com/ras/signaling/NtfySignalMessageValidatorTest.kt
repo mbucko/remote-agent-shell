@@ -2,11 +2,12 @@ package com.ras.signaling
 
 import com.google.protobuf.ByteString
 import com.ras.proto.NtfySignalMessage
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Tests for NtfySignalMessageValidator.
@@ -17,7 +18,7 @@ class NtfySignalMessageValidatorTest {
 
     private lateinit var validator: NtfySignalMessageValidator
 
-    @Before
+    @BeforeEach
     fun setup() {
         validator = NtfySignalMessageValidator(
             pendingSessionId = "abc123",
@@ -28,6 +29,7 @@ class NtfySignalMessageValidatorTest {
 
     // ==================== Valid Message Tests ====================
 
+    @Tag("unit")
     @Test
     fun `valid answer passes validation`() {
         val msg = validAnswerMessage()
@@ -36,6 +38,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(null, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `valid answer at timestamp boundary passes`() {
         // 30 seconds in past (inclusive boundary)
@@ -44,6 +47,7 @@ class NtfySignalMessageValidatorTest {
         assertTrue(result.isValid)
     }
 
+    @Tag("unit")
     @Test
     fun `valid answer at future timestamp boundary passes`() {
         // 30 seconds in future (inclusive boundary)
@@ -54,6 +58,7 @@ class NtfySignalMessageValidatorTest {
 
     // ==================== Session ID Tests ====================
 
+    @Tag("unit")
     @Test
     fun `wrong session id rejected`() {
         val msg = validAnswerMessage(sessionId = "wrong-session")
@@ -62,6 +67,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_SESSION, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `empty session id rejected when expecting non-empty`() {
         val msg = validAnswerMessage(sessionId = "")
@@ -70,6 +76,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_SESSION, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `empty session id accepted in reconnection mode`() {
         // Reconnection mode uses empty session ID for both pending and message
@@ -88,11 +95,12 @@ class NtfySignalMessageValidatorTest {
             .build()
 
         val result = reconnectionValidator.validate(msg)
-        assertTrue("Reconnection mode should accept empty session IDs", result.isValid)
+        assertTrue(result.isValid, "Reconnection mode should accept empty session IDs")
     }
 
     // ==================== Timestamp Tests ====================
 
+    @Tag("unit")
     @Test
     fun `timestamp too old rejected`() {
         // 31 seconds in past (outside boundary)
@@ -102,6 +110,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_TIMESTAMP, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `timestamp too new rejected`() {
         // 31 seconds in future (outside boundary)
@@ -111,6 +120,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_TIMESTAMP, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `timestamp far in past rejected`() {
         val msg = validAnswerMessage(timestamp = currentTimestamp() - 3600)
@@ -119,6 +129,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_TIMESTAMP, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `timestamp far in future rejected`() {
         val msg = validAnswerMessage(timestamp = currentTimestamp() + 3600)
@@ -129,6 +140,7 @@ class NtfySignalMessageValidatorTest {
 
     // ==================== Nonce Tests ====================
 
+    @Tag("unit")
     @Test
     fun `nonce replay rejected`() {
         val nonce = ByteArray(16) { it.toByte() }
@@ -145,6 +157,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.NONCE_REPLAY, result2.error)
     }
 
+    @Tag("unit")
     @Test
     fun `nonce too short rejected`() {
         val msg = validAnswerMessage(nonce = ByteArray(15))
@@ -153,6 +166,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_NONCE, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `nonce too long rejected`() {
         val msg = validAnswerMessage(nonce = ByteArray(17))
@@ -161,6 +175,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_NONCE, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `empty nonce rejected`() {
         val msg = validAnswerMessage(nonce = ByteArray(0))
@@ -171,6 +186,7 @@ class NtfySignalMessageValidatorTest {
 
     // ==================== SDP Tests ====================
 
+    @Tag("unit")
     @Test
     fun `empty sdp rejected`() {
         val msg = validAnswerMessage(sdp = "")
@@ -179,6 +195,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_SDP, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `sdp missing version rejected`() {
         val msg = validAnswerMessage(sdp = "m=application 9 UDP/DTLS/SCTP webrtc-datachannel")
@@ -187,6 +204,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_SDP, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `sdp missing media line rejected`() {
         val msg = validAnswerMessage(sdp = "v=0\r\no=- 123 2 IN IP4 127.0.0.1\r\n")
@@ -195,6 +213,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.INVALID_SDP, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `valid sdp with version and media passes`() {
         val msg = validAnswerMessage(sdp = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n")
@@ -204,6 +223,7 @@ class NtfySignalMessageValidatorTest {
 
     // ==================== Message Type Tests ====================
 
+    @Tag("unit")
     @Test
     fun `wrong message type rejected`() {
         // Validator expects ANSWER, but receives OFFER
@@ -224,6 +244,7 @@ class NtfySignalMessageValidatorTest {
 
     // ==================== OFFER Validation Tests ====================
 
+    @Tag("unit")
     @Test
     fun `offer without device id rejected`() {
         val offerValidator = NtfySignalMessageValidator(
@@ -247,6 +268,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.MISSING_DEVICE_ID, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `offer without device name rejected`() {
         val offerValidator = NtfySignalMessageValidator(
@@ -270,6 +292,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.MISSING_DEVICE_NAME, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `offer with device id containing control chars rejected`() {
         val offerValidator = NtfySignalMessageValidator(
@@ -293,6 +316,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(ValidationError.MISSING_DEVICE_ID, result.error)
     }
 
+    @Tag("unit")
     @Test
     fun `valid offer passes`() {
         val offerValidator = NtfySignalMessageValidator(
@@ -317,6 +341,7 @@ class NtfySignalMessageValidatorTest {
 
     // ==================== Nonce Cache Tests ====================
 
+    @Tag("unit")
     @Test
     fun `clear nonce cache allows replay`() {
         val nonce = ByteArray(16) { it.toByte() }
@@ -333,6 +358,7 @@ class NtfySignalMessageValidatorTest {
         assertTrue(result.isValid)
     }
 
+    @Tag("unit")
     @Test
     fun `nonce cache evicts oldest when full`() {
         // Fill cache with MAX_NONCES entries (100)
@@ -358,26 +384,30 @@ class NtfySignalMessageValidatorTest {
         firstNonce[1] = 0
         val msg = validAnswerMessage(nonce = firstNonce)
         val result = validator.validate(msg)
-        assertTrue("First nonce should be evicted and accepted again", result.isValid)
+        assertTrue(result.isValid, "First nonce should be evicted and accepted again")
     }
 
     // ==================== Device Name Sanitization Tests ====================
 
+    @Tag("unit")
     @Test
     fun `sanitize device name trims whitespace`() {
         assertEquals("My Phone", sanitizeDeviceName("  My Phone  "))
     }
 
+    @Tag("unit")
     @Test
     fun `sanitize device name removes control chars`() {
         assertEquals("Phone Test", sanitizeDeviceName("Phone\u0000\u0001\u0002Test"))
     }
 
+    @Tag("unit")
     @Test
     fun `sanitize device name preserves unicode`() {
         assertEquals("📱 Téléphone 日本語", sanitizeDeviceName("📱 Téléphone 日本語"))
     }
 
+    @Tag("unit")
     @Test
     fun `sanitize device name truncates to max length`() {
         val longName = "A".repeat(100)
@@ -385,6 +415,7 @@ class NtfySignalMessageValidatorTest {
         assertEquals(64, sanitized.length)
     }
 
+    @Tag("unit")
     @Test
     fun `sanitize device name returns original for normal input`() {
         assertEquals("My Phone", sanitizeDeviceName("My Phone"))

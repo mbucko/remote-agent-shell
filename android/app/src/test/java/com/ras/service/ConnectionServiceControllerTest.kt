@@ -19,9 +19,10 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Tests for ConnectionServiceController.
@@ -46,7 +47,7 @@ class ConnectionServiceControllerTest {
     // Debounce delay constant from ConnectionServiceController
     private val STOP_DELAY_MS = 3000L
 
-    @Before
+    @BeforeEach
     fun setup() {
         // Set Main dispatcher for tests (service calls use withContext(Dispatchers.Main))
         Dispatchers.setMain(testDispatcher)
@@ -61,7 +62,7 @@ class ConnectionServiceControllerTest {
         io.mockk.justRun { ContextCompat.startForegroundService(any(), any()) }
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
         unmockkStatic(ContextCompat::class)
@@ -71,6 +72,7 @@ class ConnectionServiceControllerTest {
     // Basic Service Lifecycle
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `starts service when connection established`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -87,6 +89,7 @@ class ConnectionServiceControllerTest {
         verify { ContextCompat.startForegroundService(mockContext, any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `stops service when disconnected after debounce delay`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -116,6 +119,7 @@ class ConnectionServiceControllerTest {
         verify(exactly = 1) { mockContext.stopService(any<Intent>()) }
     }
 
+    @Tag("unit")
     @Test
     fun `does not start service when already started`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -138,6 +142,7 @@ class ConnectionServiceControllerTest {
         verify(exactly = 1) { ContextCompat.startForegroundService(mockContext, any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `does not stop service when already stopped`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -157,6 +162,7 @@ class ConnectionServiceControllerTest {
         verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
     }
 
+    @Tag("unit")
     @Test
     fun `does nothing before initialize is called`() = runTest(testDispatcher) {
         ConnectionServiceController(
@@ -177,6 +183,7 @@ class ConnectionServiceControllerTest {
     // Debounce Behavior
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect before debounce delay cancels pending stop`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -211,6 +218,7 @@ class ConnectionServiceControllerTest {
         verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
     }
 
+    @Tag("unit")
     @Test
     fun `service stops after debounce delay when still disconnected`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -244,6 +252,7 @@ class ConnectionServiceControllerTest {
         verify(exactly = 1) { mockContext.stopService(any<Intent>()) }
     }
 
+    @Tag("unit")
     @Test
     fun `multiple disconnects within debounce resets timer`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -291,6 +300,7 @@ class ConnectionServiceControllerTest {
     // Rapid Connection Cycles
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `handles rapid connect disconnect without debounce completion`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -326,6 +336,7 @@ class ConnectionServiceControllerTest {
         verify(exactly = 1) { mockContext.stopService(any<Intent>()) }
     }
 
+    @Tag("unit")
     @Test
     fun `handles rapid connect disconnect with debounce completion`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -361,6 +372,7 @@ class ConnectionServiceControllerTest {
     // Edge Cases
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect immediately after disconnect cancels stop`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -391,6 +403,7 @@ class ConnectionServiceControllerTest {
         verify(exactly = 1) { ContextCompat.startForegroundService(mockContext, any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `service not stopped if reconnected after partial debounce`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -425,6 +438,7 @@ class ConnectionServiceControllerTest {
         verify(exactly = 0) { mockContext.stopService(any<Intent>()) }
     }
 
+    @Tag("unit")
     @Test
     fun `multiple initializations are safe`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(
@@ -446,6 +460,7 @@ class ConnectionServiceControllerTest {
         verify(atLeast = 1) { ContextCompat.startForegroundService(mockContext, any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `stop not triggered when connection restored just before debounce completes`() = runTest(testDispatcher) {
         val controller = ConnectionServiceController(

@@ -29,12 +29,13 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import okhttp3.OkHttpClient
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Comprehensive tests for ReconnectionServiceImpl.
@@ -69,20 +70,21 @@ class ReconnectionServiceImplTest {
         ntfyTopic = "ras-abc123"
     )
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         mockContext = mockk(relaxed = true)
         credentialRepository = mockk()
         httpClient = mockk()
         connectionManager = mockk(relaxed = true)
+        every { connectionManager.isConnected } returns kotlinx.coroutines.flow.MutableStateFlow(false)
         ntfyClient = mockk(relaxed = true)
         orchestrator = mockk()
         mdnsDiscoveryService = mockk(relaxed = true)
         coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
@@ -102,6 +104,7 @@ class ReconnectionServiceImplTest {
     // SECTION 1: Credential Validation Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect returns NoCredentials when no stored credentials`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns null
@@ -112,6 +115,7 @@ class ReconnectionServiceImplTest {
         assertTrue(result is ReconnectionResult.Failure.NoCredentials)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect returns Unknown when credential repository throws`() = runTest {
         coEvery { credentialRepository.getCredentials() } throws RuntimeException("Database error")
@@ -119,9 +123,10 @@ class ReconnectionServiceImplTest {
         val service = createService()
         val result = service.reconnect()
 
-        assertTrue("Should return Unknown on repository error", result is ReconnectionResult.Failure.Unknown)
+        assertTrue(result is ReconnectionResult.Failure.Unknown, "Should return Unknown on repository error")
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect handles empty deviceId in credentials`() = runTest {
         val emptyDeviceCredentials = StoredCredentials(
@@ -138,10 +143,10 @@ class ReconnectionServiceImplTest {
         val result = service.reconnect()
 
         // Should still attempt connection (empty deviceId might be valid for some flows)
-        assertTrue("Should return NetworkError when all strategies fail",
-            result is ReconnectionResult.Failure.NetworkError)
+        assertTrue(result is ReconnectionResult.Failure.NetworkError, "Should return NetworkError when all strategies fail")
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect uses correct credentials in context`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -156,13 +161,14 @@ class ReconnectionServiceImplTest {
         assertEquals(testCredentials.deviceId, context.deviceId)
         assertEquals(testCredentials.daemonHost, context.daemonHost)
         assertEquals(testCredentials.daemonPort, context.daemonPort)
-        assertNotNull("Auth token should not be null", context.authToken)
+        assertNotNull(context.authToken, "Auth token should not be null")
     }
 
     // ============================================================================
     // SECTION 2: Orchestrator Connection Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect returns NetworkError when orchestrator returns null`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -174,6 +180,7 @@ class ReconnectionServiceImplTest {
         assertTrue(result is ReconnectionResult.Failure.NetworkError)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect returns Unknown when orchestrator throws`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -185,6 +192,7 @@ class ReconnectionServiceImplTest {
         assertTrue(result is ReconnectionResult.Failure.Unknown)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect returns Unknown when orchestrator throws CancellationException`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -193,14 +201,14 @@ class ReconnectionServiceImplTest {
         val service = createService()
         val result = service.reconnect()
 
-        assertTrue("Should return Unknown on cancellation",
-            result is ReconnectionResult.Failure.Unknown)
+        assertTrue(result is ReconnectionResult.Failure.Unknown, "Should return Unknown on cancellation")
     }
 
     // ============================================================================
     // SECTION 3: Progress Reporting Tests - All Progress Types
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect reports Detecting progress from orchestrator`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -216,10 +224,11 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val detecting = progressUpdates.filterIsInstance<ConnectionProgress.Detecting>().firstOrNull()
-        assertNotNull("Should report detecting", detecting)
+        assertNotNull(detecting, "Should report detecting")
         assertEquals("Tailscale", detecting?.strategyName)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect reports StrategyAvailable progress`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -235,10 +244,11 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val available = progressUpdates.filterIsInstance<ConnectionProgress.StrategyAvailable>().firstOrNull()
-        assertNotNull("Should report available", available)
+        assertNotNull(available, "Should report available")
         assertEquals("WebRTC", available?.strategyName)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect reports StrategyUnavailable progress`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -254,10 +264,11 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val unavailable = progressUpdates.filterIsInstance<ConnectionProgress.StrategyUnavailable>().firstOrNull()
-        assertNotNull("Should report unavailable", unavailable)
+        assertNotNull(unavailable, "Should report unavailable")
         assertEquals("Not in network", unavailable?.reason)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect reports Connecting progress`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -273,10 +284,11 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val connecting = progressUpdates.filterIsInstance<ConnectionProgress.Connecting>().firstOrNull()
-        assertNotNull("Should report connecting", connecting)
+        assertNotNull(connecting, "Should report connecting")
         assertEquals("WebRTC", connecting?.strategyName)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect reports StrategyFailed progress`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -292,10 +304,11 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val failed = progressUpdates.filterIsInstance<ConnectionProgress.StrategyFailed>().firstOrNull()
-        assertNotNull("Should report failed", failed)
+        assertNotNull(failed, "Should report failed")
         assertEquals("Connection refused", failed?.error)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect reports Connected progress`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -314,10 +327,11 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val connected = progressUpdates.filterIsInstance<ConnectionProgress.Connected>().firstOrNull()
-        assertNotNull("Should report connected", connected)
+        assertNotNull(connected, "Should report connected")
         assertEquals("WebRTC", connected?.strategyName)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect reports AllFailed progress`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -337,10 +351,11 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val allFailed = progressUpdates.filterIsInstance<ConnectionProgress.AllFailed>().firstOrNull()
-        assertNotNull("Should report all failed", allFailed)
+        assertNotNull(allFailed, "Should report all failed")
         assertEquals(2, allFailed?.attempts?.size)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect reports Cancelled progress`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -356,9 +371,10 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val cancelled = progressUpdates.filterIsInstance<ConnectionProgress.Cancelled>().firstOrNull()
-        assertNotNull("Should report cancelled", cancelled)
+        assertNotNull(cancelled, "Should report cancelled")
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect handles null progress callback gracefully`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -372,6 +388,7 @@ class ReconnectionServiceImplTest {
         assertTrue(result is ReconnectionResult.Failure.NetworkError)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect reports Authenticating progress before auth`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -385,13 +402,14 @@ class ReconnectionServiceImplTest {
         service.reconnect { progressUpdates.add(it) }
 
         val auth = progressUpdates.filterIsInstance<ConnectionProgress.Authenticating>().firstOrNull()
-        assertNotNull("Should report authenticating", auth)
+        assertNotNull(auth, "Should report authenticating")
     }
 
     // ============================================================================
     // SECTION 4: Authentication Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect returns AuthenticationFailed when auth throws`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -403,9 +421,10 @@ class ReconnectionServiceImplTest {
         val service = createService()
         val result = service.reconnect()
 
-        assertTrue("Should fail auth", result is ReconnectionResult.Failure.AuthenticationFailed)
+        assertTrue(result is ReconnectionResult.Failure.AuthenticationFailed, "Should fail auth")
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect closes transport on auth failure`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -420,6 +439,7 @@ class ReconnectionServiceImplTest {
         coVerify { mockTransport.close() }
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect returns AuthenticationFailed on receive timeout`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -434,6 +454,7 @@ class ReconnectionServiceImplTest {
         assertTrue(result is ReconnectionResult.Failure.AuthenticationFailed)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect returns AuthenticationFailed when receive returns empty`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -454,6 +475,7 @@ class ReconnectionServiceImplTest {
     // SECTION 5: Strategy Selection Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect uses Tailscale transport when available`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -478,6 +500,7 @@ class ReconnectionServiceImplTest {
         assertEquals(TransportType.TAILSCALE, tailscaleTransport.type)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect falls back to WebRTC when Tailscale unavailable`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -504,9 +527,10 @@ class ReconnectionServiceImplTest {
 
         val unavailable = progressUpdates.filterIsInstance<ConnectionProgress.StrategyUnavailable>()
             .find { it.strategyName == "Tailscale" }
-        assertTrue("Should report Tailscale unavailable", unavailable != null)
+        assertTrue(unavailable != null, "Should report Tailscale unavailable")
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect tries all strategies before failing`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -546,6 +570,7 @@ class ReconnectionServiceImplTest {
     // SECTION 6: ConnectionManager Handoff Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect calls connectWithTransport on success`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -560,6 +585,7 @@ class ReconnectionServiceImplTest {
         coVerify(atLeast = 0) { connectionManager.connectWithTransport(any(), any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect returns Unknown when ConnectionManager throws`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -586,6 +612,7 @@ class ReconnectionServiceImplTest {
     // SECTION 7: Transport State Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect handles transport disconnect before auth`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -604,6 +631,7 @@ class ReconnectionServiceImplTest {
         coVerify { mockTransport.close() }
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect handles transport send failure during auth`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -626,6 +654,7 @@ class ReconnectionServiceImplTest {
     // SECTION 8: Error Message Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `Unknown failure contains error message`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -636,9 +665,10 @@ class ReconnectionServiceImplTest {
 
         assertTrue(result is ReconnectionResult.Failure.Unknown)
         val unknown = result as ReconnectionResult.Failure.Unknown
-        assertTrue("Should contain error message", unknown.message.contains("Specific error message"))
+        assertTrue(unknown.message.contains("Specific error message"), "Should contain error message")
     }
 
+    @Tag("unit")
     @Test
     fun `Unknown failure handles null exception message`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -656,6 +686,7 @@ class ReconnectionServiceImplTest {
     // SECTION 9: Multiple Reconnection Attempts
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `multiple reconnect calls work independently`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -672,13 +703,14 @@ class ReconnectionServiceImplTest {
         service.reconnect()
         service.reconnect()
 
-        assertEquals("Should call orchestrator 3 times", 3, connectCount)
+        assertEquals(3, connectCount, "Should call orchestrator 3 times")
     }
 
     // ============================================================================
     // SECTION 10: Credential Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reconnect with different daemon ports`() = runTest {
         val customPortCredentials = testCredentials.copy(daemonPort = 12345)
@@ -693,6 +725,7 @@ class ReconnectionServiceImplTest {
         assertEquals(12345, contextSlot.captured.daemonPort)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect with IPv6 daemon host`() = runTest {
         val ipv6Credentials = testCredentials.copy(daemonHost = "::1")
@@ -707,6 +740,7 @@ class ReconnectionServiceImplTest {
         assertEquals("::1", contextSlot.captured.daemonHost)
     }
 
+    @Tag("unit")
     @Test
     fun `reconnect with hostname daemon host`() = runTest {
         val hostnameCredentials = testCredentials.copy(daemonHost = "my-computer.local")

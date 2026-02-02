@@ -2,6 +2,7 @@ package com.ras.notifications
 
 import android.content.Intent
 import android.os.Build
+import com.ras.TestApplication
 import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.sessions.SessionStatus
@@ -15,16 +16,17 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.extension.ExtendWith
 import org.robolectric.annotation.Config
+import tech.apter.junit.jupiter.robolectric.RobolectricExtension
 import java.time.Instant
 
 /**
@@ -38,17 +40,18 @@ import java.time.Instant
  * - DL05: Already on session - stays on session (no-op)
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [Build.VERSION_CODES.TIRAMISU])
+@ExtendWith(RobolectricExtension::class)
+@Config(sdk = [Build.VERSION_CODES.TIRAMISU], application = TestApplication::class)
 class DeepLinkHandlerTest {
 
-    private val testDispatcher = StandardTestDispatcher()
+    private lateinit var testDispatcher: kotlinx.coroutines.test.TestDispatcher
     private lateinit var mockSessionRepository: SessionRepository
     private lateinit var mockNotificationHandler: NotificationHandler
     private lateinit var sessionsFlow: MutableStateFlow<List<SessionInfo>>
 
-    @Before
+    @BeforeEach
     fun setup() {
+        testDispatcher = StandardTestDispatcher()
         Dispatchers.setMain(testDispatcher)
         sessionsFlow = MutableStateFlow(emptyList())
 
@@ -59,7 +62,7 @@ class DeepLinkHandlerTest {
         mockNotificationHandler = mockk(relaxed = true)
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
@@ -68,6 +71,7 @@ class DeepLinkHandlerTest {
     // DL01: Valid session - opens session terminal
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `dl01 valid session id navigates to terminal`() = runTest {
         // Given: session exists
@@ -81,13 +85,14 @@ class DeepLinkHandlerTest {
 
         // Then: session found
         assertEquals(sessionId, extractedSessionId)
-        assertTrue("Session should exist", sessionExists)
+        assertTrue(sessionExists, "Session should exist")
     }
 
     // ==========================================================================
     // DL02: Invalid session - toast "Session not found"
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `dl02 invalid session id returns false`() = runTest {
         // Given: session does NOT exist
@@ -99,13 +104,14 @@ class DeepLinkHandlerTest {
         val sessionExists = sessionsFlow.value.any { it.id == extractedSessionId }
 
         // Then: session not found
-        assertFalse("Session should not exist", sessionExists)
+        assertFalse(sessionExists, "Session should not exist")
     }
 
     // ==========================================================================
     // DL03: App cold start - session id is preserved in intent
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `dl03 cold start intent has session id`() {
         // Given: notification intent with session ID
@@ -121,6 +127,7 @@ class DeepLinkHandlerTest {
     // DL04: App warm start - intent extras accessible
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `dl04 warm start intent has session id`() {
         // Same as cold start - intent carries session ID
@@ -135,6 +142,7 @@ class DeepLinkHandlerTest {
     // DL05: Already on session - navigation is idempotent
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `dl05 same session navigation is safe`() = runTest {
         // Given: on session A, receiving deep link for session A
@@ -151,13 +159,14 @@ class DeepLinkHandlerTest {
         val shouldNavigate = extractedSessionId != currentSessionId
 
         // Then: no navigation needed (already there)
-        assertFalse("Should not navigate when already on session", shouldNavigate)
+        assertFalse(shouldNavigate, "Should not navigate when already on session")
     }
 
     // ==========================================================================
     // Intent Parsing Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `intent without session id is ignored`() {
         // Given: intent without session extra
@@ -167,9 +176,10 @@ class DeepLinkHandlerTest {
         val sessionId = intent.getStringExtra(NotificationHandler.EXTRA_SESSION_ID)
 
         // Then: null session ID
-        assertNull("Session ID should be null", sessionId)
+        assertNull(sessionId, "Session ID should be null")
     }
 
+    @Tag("unit")
     @Test
     fun `intent without from_notification flag is ignored`() {
         // Given: intent with session but no from_notification flag
@@ -182,13 +192,14 @@ class DeepLinkHandlerTest {
         val fromNotification = intent.getBooleanExtra(NotificationHandler.EXTRA_FROM_NOTIFICATION, false)
 
         // Then: flag is false
-        assertFalse("from_notification should be false", fromNotification)
+        assertFalse(fromNotification, "from_notification should be false")
     }
 
     // ==========================================================================
     // Notification Dismissal Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `notification dismissed after navigation`() {
         // Given: valid session

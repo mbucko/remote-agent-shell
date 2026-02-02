@@ -1,10 +1,13 @@
 package com.ras.crypto
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 class KeyDerivationTest {
 
+    @Tag("unit")
     @Test
     fun `derive auth key matches test vector 1`() {
         val masterSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -15,6 +18,7 @@ class KeyDerivationTest {
         assertEquals(expected, result.toHex())
     }
 
+    @Tag("unit")
     @Test
     fun `derive encrypt key matches test vector 1`() {
         val masterSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -25,6 +29,7 @@ class KeyDerivationTest {
         assertEquals(expected, result.toHex())
     }
 
+    @Tag("unit")
     @Test
     fun `derive ntfy key matches test vector 1`() {
         val masterSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -35,6 +40,7 @@ class KeyDerivationTest {
         assertEquals(expected, result.toHex())
     }
 
+    @Tag("unit")
     @Test
     fun `derive auth key with zeros matches test vector`() {
         val masterSecret = "0000000000000000000000000000000000000000000000000000000000000000".hexToBytes()
@@ -45,6 +51,7 @@ class KeyDerivationTest {
         assertEquals(expected, result.toHex())
     }
 
+    @Tag("unit")
     @Test
     fun `derive auth key with ones matches test vector`() {
         val masterSecret = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".hexToBytes()
@@ -55,6 +62,7 @@ class KeyDerivationTest {
         assertEquals(expected, result.toHex())
     }
 
+    @Tag("unit")
     @Test
     fun `derive ntfy topic matches test vector`() {
         val masterSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -65,21 +73,30 @@ class KeyDerivationTest {
         assertEquals(expected, result)
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `derive key rejects short master secret`() {
         val shortSecret = ByteArray(16)
-        KeyDerivation.deriveKey(shortSecret, "auth")
+        assertThrows(IllegalArgumentException::class.java) {
+            KeyDerivation.deriveKey(shortSecret, "auth")
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `derive key rejects long master secret`() {
         val longSecret = ByteArray(64)
-        KeyDerivation.deriveKey(longSecret, "auth")
+        assertThrows(IllegalArgumentException::class.java) {
+            KeyDerivation.deriveKey(longSecret, "auth")
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `derive topic rejects short master secret`() {
         val shortSecret = ByteArray(16)
-        KeyDerivation.deriveNtfyTopic(shortSecret)
+        assertThrows(IllegalArgumentException::class.java) {
+            KeyDerivation.deriveNtfyTopic(shortSecret)
+        }
     }
 }

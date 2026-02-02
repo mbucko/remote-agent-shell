@@ -2,9 +2,10 @@ package com.ras.data.connection
 
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
@@ -24,7 +25,7 @@ class SocketFactoryTest {
     private lateinit var mockSocket: DatagramSocket
     private lateinit var mockSocketFactory: DatagramSocketFactory
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockSocket = mockk(relaxed = true)
         mockSocketFactory = mockk()
@@ -35,6 +36,7 @@ class SocketFactoryTest {
 
     // ==================== Factory Interface Tests ====================
 
+    @Tag("unit")
     @Test
     fun `DefaultDatagramSocketFactory creates real socket`() {
         val factory = DefaultDatagramSocketFactory()
@@ -46,6 +48,7 @@ class SocketFactoryTest {
         socket.close()
     }
 
+    @Tag("unit")
     @Test
     fun `DefaultDatagramSocketFactory creates connected socket`() {
         val factory = DefaultDatagramSocketFactory()
@@ -61,6 +64,7 @@ class SocketFactoryTest {
 
     // ==================== Mock Socket Injection Tests ====================
 
+    @Tag("unit")
     @Test
     fun `mock socket factory is called by TailscaleTransport`() = runTest {
         // Setup mock to simulate successful handshake
@@ -97,6 +101,7 @@ class SocketFactoryTest {
         transport.close()
     }
 
+    @Tag("unit")
     @Test
     fun `mock socket can simulate handshake timeout`() = runTest {
         every { mockSocket.soTimeout = any() } just Runs
@@ -122,6 +127,7 @@ class SocketFactoryTest {
         verify { mockSocket.close() }
     }
 
+    @Tag("unit")
     @Test
     fun `mock socket can verify retry count`() = runTest {
         var receiveCallCount = 0
@@ -147,9 +153,10 @@ class SocketFactoryTest {
         }
 
         // Should have tried 3 times (HANDSHAKE_MAX_RETRIES = 3)
-        assertEquals("Should retry 3 times", 3, receiveCallCount)
+        assertEquals(3, receiveCallCount, "Should retry 3 times")
     }
 
+    @Tag("unit")
     @Test
     fun `mock socket can simulate success on second attempt`() = runTest {
         var attemptCount = 0
@@ -181,12 +188,13 @@ class SocketFactoryTest {
         )
 
         assertNotNull(transport)
-        assertEquals("Should succeed on second attempt", 2, attemptCount)
+        assertEquals(2, attemptCount, "Should succeed on second attempt")
         transport.close()
     }
 
     // ==================== Socket Reuse Tests ====================
 
+    @Tag("unit")
     @Test
     fun `handshake retry uses same socket - factory called only once`() = runTest {
         /**
@@ -220,6 +228,7 @@ class SocketFactoryTest {
         verify(exactly = 3) { mockSocket.send(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `socket closed on final failure`() = runTest {
         /**
@@ -247,6 +256,7 @@ class SocketFactoryTest {
         verify(exactly = 1) { mockSocket.close() }
     }
 
+    @Tag("unit")
     @Test
     fun `socket not closed on successful handshake`() = runTest {
         /**
@@ -286,6 +296,7 @@ class SocketFactoryTest {
 
     // ==================== Strategy with Mock Socket Tests ====================
 
+    @Tag("unit")
     @Test
     fun `TailscaleStrategy uses injected socket factory`() = runTest {
         val handshakeMagic = 0x52415354
@@ -323,7 +334,7 @@ class SocketFactoryTest {
             authToken = ByteArray(32) { it.toByte() }
         )
 
-        val result = strategy.connect(context) {}
+        strategy.connect(context) {}
 
         // Verify factory was used
         verify { mockSocketFactory.createConnected(any()) }

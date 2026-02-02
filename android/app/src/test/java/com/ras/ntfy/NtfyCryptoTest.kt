@@ -1,10 +1,11 @@
 package com.ras.ntfy
 
 import com.ras.crypto.hexToBytes
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 class NtfyCryptoTest {
 
@@ -15,6 +16,7 @@ class NtfyCryptoTest {
     // Success Cases - Test Vectors from Phase 8a
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `decrypt valid IPv4 message from test vector`() {
         // Test vector: IPv4 standard
@@ -33,6 +35,7 @@ class NtfyCryptoTest {
         assertEquals("00112233445566778899aabbccddeeff", result.nonce.toHexString())
     }
 
+    @Tag("unit")
     @Test
     fun `decrypt valid IPv6 message from test vector`() {
         // Test vector: IPv6 compressed
@@ -54,6 +57,7 @@ class NtfyCryptoTest {
     // Key Validation
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reject key that is too short`() {
         val shortKey = ByteArray(16)
@@ -65,6 +69,7 @@ class NtfyCryptoTest {
         assertTrue(exception.message?.contains("32 bytes") == true)
     }
 
+    @Tag("unit")
     @Test
     fun `reject key that is too long`() {
         val longKey = ByteArray(64)
@@ -80,6 +85,7 @@ class NtfyCryptoTest {
     // Message Validation
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reject message that is too short`() {
         val crypto = NtfyCrypto(ntfyKey)
@@ -94,6 +100,7 @@ class NtfyCryptoTest {
         assertTrue(exception.message?.contains("too short") == true)
     }
 
+    @Tag("unit")
     @Test
     fun `reject invalid base64`() {
         val crypto = NtfyCrypto(ntfyKey)
@@ -105,6 +112,7 @@ class NtfyCryptoTest {
         assertTrue(exception.message?.contains("base64") == true)
     }
 
+    @Tag("unit")
     @Test
     fun `reject empty string`() {
         val crypto = NtfyCrypto(ntfyKey)
@@ -120,6 +128,7 @@ class NtfyCryptoTest {
     // Decryption Failures
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `reject message with wrong key`() {
         val wrongKey = ByteArray(32) { 0xFF.toByte() }
@@ -134,6 +143,7 @@ class NtfyCryptoTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `reject tampered message`() {
         val crypto = NtfyCrypto(ntfyKey)
@@ -151,6 +161,7 @@ class NtfyCryptoTest {
     // IpChangeData Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `IpChangeData equals works correctly`() {
         val nonce = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
@@ -162,6 +173,7 @@ class NtfyCryptoTest {
         assertTrue(data1 != data3)
     }
 
+    @Tag("unit")
     @Test
     fun `IpChangeData hashCode works correctly`() {
         val nonce = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)

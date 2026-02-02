@@ -6,8 +6,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Contract tests for ntfy subscribe/publish ordering guarantees.
@@ -22,6 +23,7 @@ class NtfySubscribeContractTest {
      *
      * This is the primary guarantee that prevents race conditions.
      */
+    @Tag("unit")
     @Test
     fun `messages published after subscribe returns are received`() = runTest {
         val client = MockNtfyClient(connectionDelayMs = 100)
@@ -31,7 +33,7 @@ class NtfySubscribeContractTest {
         val flow = client.subscribe(topic)
 
         // Verify we're connected before publishing
-        assertTrue("Should be connected after subscribe returns", client.isConnected)
+        assertTrue(client.isConnected, "Should be connected after subscribe returns")
 
         // Publish after connected
         client.publish(topic, "test-message")
@@ -41,7 +43,7 @@ class NtfySubscribeContractTest {
             flow.first { it.event == "message" }
         }
 
-        assertNotNull("Message published after subscribe should be received", received)
+        assertNotNull(received, "Message published after subscribe should be received")
         assertEquals("test-message", received?.message)
     }
 
@@ -51,6 +53,7 @@ class NtfySubscribeContractTest {
      * Without message history (?since=), messages published before the WebSocket
      * connects are lost. This test documents this behavior.
      */
+    @Tag("unit")
     @Test
     fun `messages published before subscribe completes are lost without history`() = runTest {
         val client = MockNtfyClient(
@@ -73,7 +76,7 @@ class NtfySubscribeContractTest {
             flow.firstOrNull { it.event == "message" }
         }
 
-        assertNull("Message published before connection should be lost", received)
+        assertNull(received, "Message published before connection should be lost")
     }
 
     /**
@@ -82,6 +85,7 @@ class NtfySubscribeContractTest {
      * When using ?since=30s, messages from the last 30 seconds are delivered
      * when the WebSocket connects.
      */
+    @Tag("unit")
     @Test
     fun `messages published before subscribe are received with history enabled`() = runTest {
         val client = MockNtfyClient(
@@ -104,7 +108,7 @@ class NtfySubscribeContractTest {
             flow.first { it.event == "message" }
         }
 
-        assertNotNull("Message should be received via history", received)
+        assertNotNull(received, "Message should be received via history")
         assertEquals("early-message", received?.message)
     }
 
@@ -114,23 +118,25 @@ class NtfySubscribeContractTest {
      * This ensures the API is safe to use - callers can publish immediately
      * after subscribe() returns.
      */
+    @Tag("unit")
     @Test
     fun `subscribe blocks until connected`() = runTest {
         val client = MockNtfyClient(connectionDelayMs = 200)
         val topic = "test-topic"
 
-        assertFalse("Should not be connected before subscribe", client.isConnected)
+        assertFalse(client.isConnected, "Should not be connected before subscribe")
 
         // Subscribe - should block until connected
         client.subscribe(topic)
 
         // The key invariant: after subscribe() returns, we must be connected
-        assertTrue("Should be connected after subscribe returns", client.isConnected)
+        assertTrue(client.isConnected, "Should be connected after subscribe returns")
     }
 
     /**
      * CONTRACT: Multiple messages published after subscribe are all received.
      */
+    @Tag("unit")
     @Test
     fun `multiple messages after subscribe are all received`() = runTest {
         val client = MockNtfyClient(connectionDelayMs = 50)
@@ -161,6 +167,7 @@ class NtfySubscribeContractTest {
     /**
      * CONTRACT: Unsubscribe stops message delivery.
      */
+    @Tag("unit")
     @Test
     fun `unsubscribe stops message delivery`() = runTest {
         val client = MockNtfyClient()
@@ -176,6 +183,7 @@ class NtfySubscribeContractTest {
     /**
      * CONTRACT: simulateIncomingMessage only delivers to connected subscribers.
      */
+    @Tag("unit")
     @Test
     fun `simulateIncomingMessage requires connection`() = runTest {
         val client = MockNtfyClient()

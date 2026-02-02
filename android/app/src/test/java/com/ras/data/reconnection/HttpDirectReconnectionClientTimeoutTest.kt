@@ -11,9 +11,10 @@ import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -44,6 +45,7 @@ class HttpDirectReconnectionClientTimeoutTest {
      * - enqueue() + suspendCancellableCoroutine allows proper cancellation
      * - When timeout expires, call.cancel() is invoked
      */
+    @Tag("unit")
     @Test
     fun `exchangeCapabilities times out when server never responds`() = runTest {
         val callCancelled = AtomicBoolean(false)
@@ -73,12 +75,13 @@ class HttpDirectReconnectionClientTimeoutTest {
         }
 
         // Should return null due to timeout (not hang forever)
-        assertNull("Should timeout and return null", result)
+        assertNull(result, "Should timeout and return null")
 
         // The OkHttp call should have been cancelled when coroutine was cancelled
-        assertTrue("Call should be cancelled on timeout", callCancelled.get())
+        assertTrue(callCancelled.get(), "Call should be cancelled on timeout")
     }
 
+    @Tag("unit")
     @Test
     fun `sendReconnect times out when server never responds`() = runTest {
         val callCancelled = AtomicBoolean(false)
@@ -105,14 +108,15 @@ class HttpDirectReconnectionClientTimeoutTest {
             )
         }
 
-        assertNull("Should timeout and return null", result)
-        assertTrue("Call should be cancelled on timeout", callCancelled.get())
+        assertNull(result, "Should timeout and return null")
+        assertTrue(callCancelled.get(), "Call should be cancelled on timeout")
     }
 
     /**
      * Verifies that when the server eventually responds after timeout, the response
      * is properly ignored and doesn't crash.
      */
+    @Tag("unit")
     @Test
     fun `late response after timeout is safely ignored`() = runTest {
         var capturedCallback: Callback? = null
@@ -141,7 +145,7 @@ class HttpDirectReconnectionClientTimeoutTest {
             )
         }
 
-        assertNull("Should timeout", result)
+        assertNull(result, "Should timeout")
 
         // Now simulate the response arriving late (after timeout)
         // This should not crash - the continuation should be inactive
@@ -155,6 +159,7 @@ class HttpDirectReconnectionClientTimeoutTest {
         // Test passes if no exception is thrown
     }
 
+    @Tag("unit")
     @Test
     fun `network error is handled gracefully`() = runTest {
         val mockCall = mockk<Call>(relaxed = true)
@@ -177,6 +182,6 @@ class HttpDirectReconnectionClientTimeoutTest {
         )
 
         // Should return null on network error, not throw
-        assertNull("Should return null on network error", result)
+        assertNull(result, "Should return null on network error")
     }
 }

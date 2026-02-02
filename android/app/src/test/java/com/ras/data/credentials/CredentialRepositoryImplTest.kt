@@ -8,13 +8,14 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Unit tests for CredentialRepositoryImpl.
@@ -30,7 +31,7 @@ class CredentialRepositoryImplTest {
     private lateinit var keyManager: KeyManager
     private lateinit var repository: CredentialRepository
 
-    @Before
+    @BeforeEach
     fun setup() {
         keyManager = mockk(relaxed = true)
         repository = CredentialRepositoryImpl(keyManager)
@@ -40,6 +41,7 @@ class CredentialRepositoryImplTest {
     // hasCredentials Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `hasCredentials returns true when master secret exists`() = runTest {
         coEvery { keyManager.hasMasterSecret() } returns true
@@ -49,6 +51,7 @@ class CredentialRepositoryImplTest {
         assertTrue(result)
     }
 
+    @Tag("unit")
     @Test
     fun `hasCredentials returns false when master secret missing`() = runTest {
         coEvery { keyManager.hasMasterSecret() } returns false
@@ -62,6 +65,7 @@ class CredentialRepositoryImplTest {
     // getCredentials Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `getCredentials returns StoredCredentials when master secret exists`() = runTest {
         val masterSecret = ByteArray(32) { it.toByte() }
@@ -79,6 +83,7 @@ class CredentialRepositoryImplTest {
         assertEquals(8765, result.daemonPort)
     }
 
+    @Tag("unit")
     @Test
     fun `getCredentials derives ntfyTopic from master secret`() = runTest {
         val masterSecret = ByteArray(32) { it.toByte() }
@@ -92,6 +97,7 @@ class CredentialRepositoryImplTest {
         assertEquals(expectedTopic, result!!.ntfyTopic)
     }
 
+    @Tag("unit")
     @Test
     fun `getCredentials returns null when master secret missing`() = runTest {
         coEvery { keyManager.getMasterSecret() } returns null
@@ -101,6 +107,7 @@ class CredentialRepositoryImplTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `getCredentials succeeds when daemon IP is null`() = runTest {
         val masterSecret = ByteArray(32) { it.toByte() }
@@ -116,6 +123,7 @@ class CredentialRepositoryImplTest {
         assertEquals(8765, result.daemonPort)
     }
 
+    @Tag("unit")
     @Test
     fun `getCredentials succeeds when daemon port is null`() = runTest {
         val masterSecret = ByteArray(32) { it.toByte() }
@@ -131,6 +139,7 @@ class CredentialRepositoryImplTest {
         assertNull(result.daemonPort)
     }
 
+    @Tag("unit")
     @Test
     fun `getCredentials succeeds when all optional IPs are null`() = runTest {
         val masterSecret = ByteArray(32) { it.toByte() }
@@ -156,6 +165,7 @@ class CredentialRepositoryImplTest {
         assertNotNull(result.ntfyTopic)
     }
 
+    @Tag("unit")
     @Test
     fun `getCredentials includes tailscale and vpn info when present`() = runTest {
         val masterSecret = ByteArray(32) { it.toByte() }
@@ -181,6 +191,7 @@ class CredentialRepositoryImplTest {
     // getDeviceName Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `getDeviceName returns name from keyManager`() = runTest {
         coEvery { keyManager.getDeviceName() } returns "MacBook-Pro.local"
@@ -190,6 +201,7 @@ class CredentialRepositoryImplTest {
         assertEquals("MacBook-Pro.local", result)
     }
 
+    @Tag("unit")
     @Test
     fun `getDeviceName returns null when not stored`() = runTest {
         coEvery { keyManager.getDeviceName() } returns null
@@ -203,6 +215,7 @@ class CredentialRepositoryImplTest {
     // getDeviceType Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `getDeviceType returns type from keyManager`() = runTest {
         coEvery { keyManager.getDeviceType() } returns DeviceType.LAPTOP
@@ -212,6 +225,7 @@ class CredentialRepositoryImplTest {
         assertEquals(DeviceType.LAPTOP, result)
     }
 
+    @Tag("unit")
     @Test
     fun `getDeviceType returns UNKNOWN when not stored`() = runTest {
         coEvery { keyManager.getDeviceType() } returns DeviceType.UNKNOWN
@@ -225,6 +239,7 @@ class CredentialRepositoryImplTest {
     // clearCredentials Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `clearCredentials calls keyManager clearCredentials`() = runTest {
         repository.clearCredentials()
@@ -236,6 +251,7 @@ class CredentialRepositoryImplTest {
     // Device ID Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `getCredentials preserves device ID from KeyManager`() = runTest {
         val expectedDeviceId = "f40c395f078f4f1da3a7ce9393ddaadf"

@@ -248,7 +248,6 @@ private fun QrScannerView(
     onQrScanned: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var scanner by remember { mutableStateOf<QrScanner?>(null) }

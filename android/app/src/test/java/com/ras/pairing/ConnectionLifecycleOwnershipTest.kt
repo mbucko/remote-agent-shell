@@ -6,10 +6,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -78,6 +79,7 @@ class ConnectionLifecycleOwnershipTest {
 
     // Test 1: Basic ownership transfer
 
+    @Tag("unit")
     @Test
     fun `ownership transfer changes owner`() {
         val connection = MockOwnedConnection(ConnectionOwnership.PairingManager)
@@ -89,6 +91,7 @@ class ConnectionLifecycleOwnershipTest {
         assertEquals(ConnectionOwnership.ConnectionManager, connection.getOwner())
     }
 
+    @Tag("unit")
     @Test
     fun `cannot transfer from disposed connection`() {
         val connection = MockOwnedConnection(ConnectionOwnership.PairingManager)
@@ -102,6 +105,7 @@ class ConnectionLifecycleOwnershipTest {
 
     // Test 2: closeByOwner respects ownership
 
+    @Tag("unit")
     @Test
     fun `closeByOwner succeeds when caller is owner`() {
         val connection = MockOwnedConnection(ConnectionOwnership.PairingManager)
@@ -113,6 +117,7 @@ class ConnectionLifecycleOwnershipTest {
         assertEquals(1, connection.closeCount.get())
     }
 
+    @Tag("unit")
     @Test
     fun `closeByOwner fails when caller is not owner`() {
         val connection = MockOwnedConnection(ConnectionOwnership.PairingManager)
@@ -124,6 +129,7 @@ class ConnectionLifecycleOwnershipTest {
         assertEquals(0, connection.closeCount.get())
     }
 
+    @Tag("unit")
     @Test
     fun `closeByOwner fails after ownership transfer`() {
         val connection = MockOwnedConnection(ConnectionOwnership.PairingManager)
@@ -138,10 +144,11 @@ class ConnectionLifecycleOwnershipTest {
 
     // Test 3: Cleanup after handoff doesn't close connection
 
+    @Tag("unit")
     @Test
     fun `cleanup after successful handoff does not close connection`() {
         val connection = MockOwnedConnection(ConnectionOwnership.PairingManager)
-        var connectionState: PairingConnectionState = PairingConnectionState.Authenticating
+        val connectionState: PairingConnectionState
 
         // Simulate successful handoff
         connection.transferOwnership(ConnectionOwnership.ConnectionManager)
@@ -159,6 +166,7 @@ class ConnectionLifecycleOwnershipTest {
 
     // Test 4: Double close is safe
 
+    @Tag("unit")
     @Test
     fun `double close is idempotent`() {
         val connection = MockOwnedConnection(ConnectionOwnership.PairingManager)
@@ -170,6 +178,7 @@ class ConnectionLifecycleOwnershipTest {
         assertEquals(1, connection.closeCount.get())
     }
 
+    @Tag("unit")
     @Test
     fun `closeByOwner then close is idempotent`() {
         val connection = MockOwnedConnection(ConnectionOwnership.PairingManager)
@@ -183,6 +192,7 @@ class ConnectionLifecycleOwnershipTest {
 
     // Test 5: Concurrent access safety
 
+    @Tag("unit")
     @Test
     fun `concurrent transfer and close is safe`() = runBlocking {
         repeat(100) {
@@ -205,7 +215,7 @@ class ConnectionLifecycleOwnershipTest {
             // But connection should never be closed AND transferred
             if (transferSucceeded.get()) {
                 // If transfer succeeded, close by PairingManager should have failed
-                assertFalse("Close should fail after transfer", closeSucceeded.get())
+                assertFalse(closeSucceeded.get(), "Close should fail after transfer")
                 assertEquals(ConnectionOwnership.ConnectionManager, connection.getOwner())
             }
 
@@ -217,12 +227,13 @@ class ConnectionLifecycleOwnershipTest {
 
             // Close should have happened at most once
             assertTrue(
-                "Connection should be closed at most once",
-                connection.closeCount.get() <= 1
+                connection.closeCount.get() <= 1,
+                "Connection should be closed at most once"
             )
         }
     }
 
+    @Tag("unit")
     @Test
     fun `concurrent cleanup from multiple sources is safe`() = runBlocking {
         repeat(100) {
@@ -239,15 +250,16 @@ class ConnectionLifecycleOwnershipTest {
 
             // Only one close should have succeeded
             assertEquals(
-                "Connection should be closed exactly once",
                 1,
-                connection.closeCount.get()
+                connection.closeCount.get(),
+                "Connection should be closed exactly once"
             )
         }
     }
 
     // Test 6: State machine integration
 
+    @Tag("unit")
     @Test
     fun `state machine tracks valid handoff flow`() {
         val states = mutableListOf<PairingConnectionState>()
@@ -275,6 +287,7 @@ class ConnectionLifecycleOwnershipTest {
         assertFalse(state.shouldCloseOnCleanup())
     }
 
+    @Tag("unit")
     @Test
     fun `state machine tracks error flow`() {
         val states = mutableListOf<PairingConnectionState>()

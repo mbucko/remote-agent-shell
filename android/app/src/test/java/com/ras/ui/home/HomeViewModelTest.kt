@@ -24,11 +24,12 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.time.Instant
 
 /**
@@ -48,7 +49,7 @@ class HomeViewModelTest {
     private lateinit var sessionsFlow: MutableStateFlow<List<SessionInfo>>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
 
@@ -73,11 +74,12 @@ class HomeViewModelTest {
         every { sessionRepository.sessions } returns sessionsFlow
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
 
+    @Tag("unit")
     @Test
     fun `session count starts at 0`() = runTest {
         val viewModel = createViewModel()
@@ -88,6 +90,7 @@ class HomeViewModelTest {
         assertEquals(0, (state as HomeState.HasDevice).sessionCount)
     }
 
+    @Tag("unit")
     @Test
     fun `session count updates when sessions change while connected`() = runTest {
         // Start connected
@@ -110,6 +113,7 @@ class HomeViewModelTest {
         assertEquals(3, (state as HomeState.HasDevice).sessionCount)
     }
 
+    @Tag("unit")
     @Test
     fun `session count shows 0 when connected with no sessions`() = runTest {
         // Start connected
@@ -124,6 +128,7 @@ class HomeViewModelTest {
         assertEquals(0, (state as HomeState.HasDevice).sessionCount)
     }
 
+    @Tag("unit")
     @Test
     fun `session count resets to 0 when disconnected`() = runTest {
         // Start connected with sessions
@@ -147,6 +152,7 @@ class HomeViewModelTest {
         assertEquals(0, (state as HomeState.HasDevice).sessionCount)
     }
 
+    @Tag("unit")
     @Test
     fun `session count updates to exact number including 0`() = runTest {
         // Start connected

@@ -16,9 +16,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 class AuthClientTest {
 
@@ -53,6 +54,7 @@ class AuthClientTest {
     // Success Scenarios
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `successful handshake - full flow`() = runBlocking {
         val serverNonce = createServerNonce()
@@ -67,7 +69,7 @@ class AuthClientTest {
                 sendMessage = { data -> serverChannel.send(data) },
                 receiveMessage = { clientChannel.receive() }
             )
-            assertTrue("Expected success, got: $result", result is AuthResult.Success)
+            assertTrue(result is AuthResult.Success, "Expected success, got: $result")
             val success = result as AuthResult.Success
             assertEquals("device-123", success.deviceId)
             assertEquals("test-host.local", success.hostname)
@@ -124,6 +126,7 @@ class AuthClientTest {
     // Challenge Errors
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `invalid nonce length - too short`() = runBlocking {
         val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -152,6 +155,7 @@ class AuthClientTest {
         clientJob.join()
     }
 
+    @Tag("unit")
     @Test
     fun `invalid nonce length - too long`() = runBlocking {
         val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -180,6 +184,7 @@ class AuthClientTest {
         clientJob.join()
     }
 
+    @Tag("unit")
     @Test
     fun `wrong message type first - verify instead of challenge`() = runBlocking {
         val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -208,6 +213,7 @@ class AuthClientTest {
         clientJob.join()
     }
 
+    @Tag("unit")
     @Test
     fun `wrong message type first - success instead of challenge`() = runBlocking {
         val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -236,6 +242,7 @@ class AuthClientTest {
         clientJob.join()
     }
 
+    @Tag("unit")
     @Test
     fun `wrong message type first - error instead of challenge`() = runBlocking {
         val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -268,6 +275,7 @@ class AuthClientTest {
     // Response Phase Errors
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `server returns error after receiving client response`() = runBlocking {
         val serverNonce = createServerNonce()
@@ -313,6 +321,7 @@ class AuthClientTest {
     // Verify Phase Errors
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `server sends wrong HMAC in verify - client rejects`() = runBlocking {
         val serverNonce = createServerNonce()
@@ -355,6 +364,7 @@ class AuthClientTest {
         clientJob.join()
     }
 
+    @Tag("unit")
     @Test
     fun `wrong message type instead of verify - success`() = runBlocking {
         val serverNonce = createServerNonce()
@@ -396,6 +406,7 @@ class AuthClientTest {
         clientJob.join()
     }
 
+    @Tag("unit")
     @Test
     fun `wrong message type instead of verify - challenge`() = runBlocking {
         val serverNonce = createServerNonce()
@@ -435,6 +446,7 @@ class AuthClientTest {
     // Success Phase Errors
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `wrong message type instead of success`() = runBlocking {
         val serverNonce = createServerNonce()
@@ -442,8 +454,6 @@ class AuthClientTest {
         val serverChannel = Channel<ByteArray>(Channel.UNLIMITED)
 
         val authClient = AuthClient(authKey)
-
-        var clientNonce: ByteArray? = null
 
         val clientJob = launch {
             val result = authClient.runHandshake(
@@ -466,7 +476,7 @@ class AuthClientTest {
         // Receive response
         val responseBytes = serverChannel.receive()
         val responseEnvelope = AuthEnvelope.parseFrom(responseBytes)
-        clientNonce = responseEnvelope.response.nonce.toByteArray()
+        val clientNonce = responseEnvelope.response.nonce.toByteArray()
 
         // Send verify with correct HMAC
         val serverHmac = HmacUtils.computeHmac(authKey, clientNonce!!)
@@ -488,6 +498,7 @@ class AuthClientTest {
     // Timeout Scenarios
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `timeout waiting for challenge`() = runBlocking {
         val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -508,6 +519,7 @@ class AuthClientTest {
         assertTrue(result == AuthResult.Timeout || result == null)
     }
 
+    @Tag("unit")
     @Test
     fun `timeout waiting for verify`() = runBlocking {
         val serverNonce = createServerNonce()
@@ -546,6 +558,7 @@ class AuthClientTest {
     // Malformed Message Scenarios
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `malformed protobuf message`() = runBlocking {
         val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -568,6 +581,7 @@ class AuthClientTest {
         clientJob.join()
     }
 
+    @Tag("unit")
     @Test
     fun `empty message`() = runBlocking {
         val clientChannel = Channel<ByteArray>(Channel.UNLIMITED)
@@ -594,6 +608,7 @@ class AuthClientTest {
     // Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `client generates random nonce each handshake`() = runBlocking {
         val serverNonce = createServerNonce()
@@ -634,6 +649,7 @@ class AuthClientTest {
         assertEquals(5, nonces.size)
     }
 
+    @Tag("unit")
     @Test
     fun `client HMAC is computed correctly`() = runBlocking {
         val serverNonce = createServerNonce()

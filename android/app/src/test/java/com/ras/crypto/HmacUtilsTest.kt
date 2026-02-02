@@ -1,13 +1,15 @@
 package com.ras.crypto
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer
 
 class HmacUtilsTest {
 
+    @Tag("unit")
     @Test
     fun `compute hmac matches test vector - auth challenge`() {
         val key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -19,6 +21,7 @@ class HmacUtilsTest {
         assertEquals(expected, result.toHex())
     }
 
+    @Tag("unit")
     @Test
     fun `compute hmac matches test vector - empty message`() {
         val key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -30,6 +33,7 @@ class HmacUtilsTest {
         assertEquals(expected, result.toHex())
     }
 
+    @Tag("unit")
     @Test
     fun `compute hmac matches test vector - long message`() {
         val key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -41,6 +45,7 @@ class HmacUtilsTest {
         assertEquals(expected, result.toHex())
     }
 
+    @Tag("unit")
     @Test
     fun `verify hmac returns true for valid hmac`() {
         val key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -50,6 +55,7 @@ class HmacUtilsTest {
         assertTrue(HmacUtils.verifyHmac(key, message, validHmac))
     }
 
+    @Tag("unit")
     @Test
     fun `verify hmac returns false for invalid hmac`() {
         val key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
@@ -59,6 +65,7 @@ class HmacUtilsTest {
         assertFalse(HmacUtils.verifyHmac(key, message, invalidHmac))
     }
 
+    @Tag("unit")
     @Test
     fun `constant time equals returns true for equal arrays`() {
         val a = "0123456789abcdef".hexToBytes()
@@ -67,6 +74,7 @@ class HmacUtilsTest {
         assertTrue(HmacUtils.constantTimeEquals(a, b))
     }
 
+    @Tag("unit")
     @Test
     fun `constant time equals returns false for different arrays`() {
         val a = "0123456789abcdef".hexToBytes()
@@ -75,6 +83,7 @@ class HmacUtilsTest {
         assertFalse(HmacUtils.constantTimeEquals(a, b))
     }
 
+    @Tag("unit")
     @Test
     fun `constant time equals returns false for different lengths`() {
         val a = "0123456789".hexToBytes()
@@ -83,6 +92,7 @@ class HmacUtilsTest {
         assertFalse(HmacUtils.constantTimeEquals(a, b))
     }
 
+    @Tag("unit")
     @Test
     fun `constant time equals handles empty arrays`() {
         val a = ByteArray(0)
@@ -91,6 +101,7 @@ class HmacUtilsTest {
         assertTrue(HmacUtils.constantTimeEquals(a, b))
     }
 
+    @Tag("unit")
     @Test
     fun `compute signaling hmac produces correct format`() {
         val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()

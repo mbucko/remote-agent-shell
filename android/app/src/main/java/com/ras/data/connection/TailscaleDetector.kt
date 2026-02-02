@@ -44,7 +44,7 @@ object TailscaleDetector {
      * @param context Android context (kept for API compatibility)
      * @return TailscaleInfo if detected, null otherwise
      */
-    fun detect(context: Context): TailscaleInfo? {
+    fun detect(@Suppress("UNUSED_PARAMETER") context: Context): TailscaleInfo? {
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
             Log.d(TAG, "Checking ${interfaces.size} network interfaces for Tailscale")

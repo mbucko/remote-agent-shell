@@ -3,8 +3,8 @@
 
 .PHONY: help install install-dev test test-daemon test-pairing test-crypto \
         test-cov lint format proto clean build \
-        android-build android-install android-deploy android-test android-clean \
-        daemon-restart
+        android-build android-install android-deploy android-test android-test-unit \
+        android-test-integration android-test-e2e android-clean daemon-restart
 
 # Default target
 help:
@@ -36,11 +36,14 @@ help:
 	@echo "  make clean          Remove build artifacts"
 	@echo ""
 	@echo "Android:"
-	@echo "  make android-build    Build Android debug APK"
-	@echo "  make android-install  Install debug APK on connected device"
-	@echo "  make android-deploy   Build, install Android, and restart daemon"
-	@echo "  make android-test     Run Android unit tests"
-	@echo "  make android-clean    Clean Android build artifacts"
+	@echo "  make android-build          Build Android debug APK"
+	@echo "  make android-install        Install debug APK on connected device"
+	@echo "  make android-deploy         Build, install Android, and restart daemon"
+	@echo "  make android-test           Run all Android tests"
+	@echo "  make android-test-unit      Run Android unit tests only"
+	@echo "  make android-test-integration  Run Android integration tests only"
+	@echo "  make android-test-e2e       Run Android E2E tests only"
+	@echo "  make android-clean          Clean Android build artifacts"
 	@echo ""
 	@echo "Daemon:"
 	@echo "  make daemon-restart   Restart daemon with logs at /tmp/ras-logs/daemon.log"
@@ -174,10 +177,10 @@ docker-run:
 # =============================================================================
 
 android-build:
-	cd android && ./gradlew assembleDebug
+	@cd android && ./gradlew assembleDebug
 
 android-install:
-	cd android && ./gradlew installDebug
+	@cd android && ./gradlew installDebug
 
 android-deploy: android-build android-install daemon-restart
 	@echo "Android deployed and daemon restarted"
@@ -199,10 +202,19 @@ daemon-restart:
 	@echo "Daemon started. Logs: tail -f $(LOG_FILE)"
 
 android-test:
-	cd android && ./gradlew testDebugUnitTest
+	@cd android && ./gradlew testDebugUnitTest --rerun-tasks
+
+android-test-unit:
+	@cd android && ./gradlew testDebugUnitTest --rerun-tasks -Dtags=unit
+
+android-test-integration:
+	@cd android && ./gradlew testDebugUnitTest --rerun-tasks -Dtags=integration
+
+android-test-e2e:
+	@cd android && ./gradlew testDebugUnitTest --rerun-tasks -Dtags=e2e
 
 android-clean:
-	cd android && ./gradlew clean
+	@cd android && ./gradlew clean
 
 # =============================================================================
 # CI/CD helpers

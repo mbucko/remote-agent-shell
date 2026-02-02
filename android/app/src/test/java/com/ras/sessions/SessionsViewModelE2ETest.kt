@@ -23,12 +23,13 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.time.Instant
 
 /**
@@ -52,7 +53,7 @@ class SessionsViewModelE2ETest {
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
     private lateinit var viewModel: SessionsViewModel
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         sessionsFlow = MutableStateFlow(emptyList())
@@ -69,7 +70,7 @@ class SessionsViewModelE2ETest {
         viewModel = SessionsViewModel(mockRepository, mockKeyManager, mockConnectionManager)
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
@@ -78,8 +79,9 @@ class SessionsViewModelE2ETest {
     // Initial State Tests
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
-    fun `[E2E] initial state is loaded with empty list`() = runTest {
+    fun `initial state is loaded with empty list`() = runTest {
         viewModel.screenState.test {
             val state = awaitItem()
             assertTrue(state is SessionsScreenState.Loaded)
@@ -87,6 +89,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `transitions to loaded with sessions when sessions received`() = runTest {
         viewModel.screenState.test {
@@ -107,6 +110,7 @@ class SessionsViewModelE2ETest {
     // Session List Updates
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `UI updates when sessions are added`() = runTest {
         advanceUntilIdle()
@@ -128,6 +132,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `UI updates when sessions are removed`() = runTest {
         sessionsFlow.value = listOf(
@@ -150,6 +155,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `UI shows empty state when all sessions removed`() = runTest {
         sessionsFlow.value = listOf(createSession("abc123def456", "Test"))
@@ -168,6 +174,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `sessions are sorted by last activity descending`() = runTest {
         val now = Instant.now()
@@ -191,6 +198,7 @@ class SessionsViewModelE2ETest {
     // Dialog State Tests
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `showKillDialog sets dialog state`() = runTest {
         val session = createSession("abc123def456", "Test")
@@ -204,6 +212,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `dismissKillDialog clears dialog state`() = runTest {
         val session = createSession("abc123def456", "Test")
@@ -219,6 +228,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `showRenameDialog sets dialog state`() = runTest {
         val session = createSession("abc123def456", "Test")
@@ -232,6 +242,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `dismissRenameDialog clears dialog state`() = runTest {
         val session = createSession("abc123def456", "Test")
@@ -251,6 +262,7 @@ class SessionsViewModelE2ETest {
     // Kill Session Flow
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `confirmKillSession calls repository and dismisses dialog`() = runTest {
         val session = createSession("abc123def456", "Test")
@@ -267,6 +279,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `confirmKillSession does nothing if no dialog shown`() = runTest {
         advanceUntilIdle()
@@ -277,6 +290,7 @@ class SessionsViewModelE2ETest {
         coVerify(exactly = 0) { mockRepository.killSession(any()) }
     }
 
+    @Tag("e2e")
     @Test
     fun `kill session error emits error event`() = runTest {
         val session = createSession("abc123def456", "Test")
@@ -298,6 +312,7 @@ class SessionsViewModelE2ETest {
     // Rename Session Flow
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `confirmRenameSession calls repository and dismisses dialog`() = runTest {
         val session = createSession("abc123def456", "Old Name")
@@ -314,6 +329,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `confirmRenameSession does nothing if no dialog shown`() = runTest {
         advanceUntilIdle()
@@ -324,6 +340,7 @@ class SessionsViewModelE2ETest {
         coVerify(exactly = 0) { mockRepository.renameSession(any(), any()) }
     }
 
+    @Tag("e2e")
     @Test
     fun `rename session error emits error event`() = runTest {
         val session = createSession("abc123def456", "Test")
@@ -345,6 +362,7 @@ class SessionsViewModelE2ETest {
     // Refresh Flow
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `refreshSessions triggers repository list sessions`() = runTest {
         sessionsFlow.value = listOf(createSession("abc123def456", "Test"))
@@ -357,6 +375,7 @@ class SessionsViewModelE2ETest {
         coVerify(atLeast = 2) { mockRepository.listSessions() }
     }
 
+    @Tag("e2e")
     @Test
     fun `refreshSessions completes without leaving isRefreshing flag stuck`() = runTest {
         // Wait for initial state to settle and sessions to load
@@ -364,10 +383,7 @@ class SessionsViewModelE2ETest {
 
         // Initial state should be Loaded (either empty or with sessions)
         val initialState = viewModel.screenState.value
-        assertTrue(
-            "Expected Loaded state but got: ${initialState::class.simpleName}",
-            initialState is SessionsScreenState.Loaded
-        )
+        assertTrue(initialState is SessionsScreenState.Loaded, "Expected Loaded state but got: ${initialState::class.simpleName}")
 
         // Call refresh
         viewModel.refreshSessions()
@@ -375,14 +391,11 @@ class SessionsViewModelE2ETest {
 
         // After refresh completes, state should still be Loaded and not stuck refreshing
         val afterRefresh = viewModel.screenState.value
-        assertTrue(
-            "Expected Loaded state after refresh but got: ${afterRefresh::class.simpleName}",
-            afterRefresh is SessionsScreenState.Loaded
-        )
+        assertTrue(afterRefresh is SessionsScreenState.Loaded, "Expected Loaded state after refresh but got: ${afterRefresh::class.simpleName}")
         assertEquals(
-            "isRefreshing should be false after refresh completes",
             false,
-            (afterRefresh as SessionsScreenState.Loaded).isRefreshing
+            (afterRefresh as SessionsScreenState.Loaded).isRefreshing,
+            "isRefreshing should be false after refresh completes"
         )
     }
 
@@ -390,6 +403,7 @@ class SessionsViewModelE2ETest {
     // Repository Event Handling
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `SessionCreated event emits UI event`() = runTest {
         advanceUntilIdle()
@@ -404,6 +418,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `SessionKilled event emits UI event`() = runTest {
         advanceUntilIdle()
@@ -417,6 +432,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `SessionRenamed event emits UI event`() = runTest {
         advanceUntilIdle()
@@ -431,6 +447,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `SessionError event emits error UI event`() = runTest {
         advanceUntilIdle()
@@ -445,6 +462,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `SessionActivity event does not emit UI event`() = runTest {
         advanceUntilIdle()
@@ -461,6 +479,7 @@ class SessionsViewModelE2ETest {
     // Session Status Display
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `sessions with different statuses are displayed correctly`() = runTest {
         sessionsFlow.value = listOf(
@@ -481,6 +500,7 @@ class SessionsViewModelE2ETest {
     // Edge Cases
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `handles rapid state changes gracefully`() = runTest {
         advanceUntilIdle()
@@ -503,6 +523,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `session with empty display name uses tmux name for displayText`() = runTest {
         sessionsFlow.value = listOf(
@@ -526,6 +547,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `directory basename is correctly extracted`() = runTest {
         sessionsFlow.value = listOf(
@@ -540,6 +562,7 @@ class SessionsViewModelE2ETest {
         }
     }
 
+    @Tag("e2e")
     @Test
     fun `connection state is exposed from repository`() = runTest {
         viewModel.isConnected.test {

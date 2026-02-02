@@ -15,12 +15,13 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 class SettingsRepositoryTest {
 
@@ -32,7 +33,7 @@ class SettingsRepositoryTest {
     // In-memory storage for testing
     private val storage = mutableMapOf<String, Any?>()
 
-    @Before
+    @BeforeEach
     fun setup() {
         context = mockk(relaxed = true)
         prefs = mockk(relaxed = true)
@@ -91,17 +92,20 @@ class SettingsRepositoryTest {
     // Default Agent Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `DA01 - fresh install has no default agent`() {
         assertNull(repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `DA02 - set default agent persists`() {
         repository.setDefaultAgent("claude")
         assertEquals("claude", repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `DA03 - clear default agent by setting null`() {
         repository.setDefaultAgent("claude")
@@ -109,6 +113,7 @@ class SettingsRepositoryTest {
         assertNull(repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `DA04 - default agent observable flow updates`() = runTest {
         assertEquals(null, repository.defaultAgent.first())
@@ -117,6 +122,7 @@ class SettingsRepositoryTest {
         assertEquals("aider", repository.defaultAgent.first())
     }
 
+    @Tag("unit")
     @Test
     fun `DA05 - validate default agent exists`() {
         repository.setDefaultAgent("claude")
@@ -125,6 +131,7 @@ class SettingsRepositoryTest {
         assertEquals("claude", repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `DA06 - validate default agent removed clears it`() {
         repository.setDefaultAgent("claude")
@@ -133,6 +140,7 @@ class SettingsRepositoryTest {
         assertNull(repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `DA07 - validate with no default always returns true`() {
         val result = repository.validateDefaultAgent(listOf("aider"))
@@ -143,12 +151,14 @@ class SettingsRepositoryTest {
     // Quick Buttons Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `QB01 - fresh install has default buttons`() {
         val buttons = repository.getEnabledQuickButtons()
         assertEquals(SettingsDefaults.QUICK_BUTTONS, buttons)
     }
 
+    @Tag("unit")
     @Test
     fun `QB02 - set quick buttons persists`() {
         val buttons = listOf(SettingsQuickButton.CTRL_C, SettingsQuickButton.YES)
@@ -156,6 +166,7 @@ class SettingsRepositoryTest {
         assertEquals(buttons, repository.getEnabledQuickButtons())
     }
 
+    @Tag("unit")
     @Test
     fun `QB03 - enable button adds to list`() {
         repository.setEnabledQuickButtons(listOf(SettingsQuickButton.YES))
@@ -166,6 +177,7 @@ class SettingsRepositoryTest {
         assertTrue(buttons.contains(SettingsQuickButton.NO))
     }
 
+    @Tag("unit")
     @Test
     fun `QB04 - enable already enabled button is no-op`() {
         val initial = listOf(SettingsQuickButton.YES, SettingsQuickButton.NO)
@@ -174,6 +186,7 @@ class SettingsRepositoryTest {
         assertEquals(initial, repository.getEnabledQuickButtons())
     }
 
+    @Tag("unit")
     @Test
     fun `QB05 - disable button removes from list`() {
         repository.setEnabledQuickButtons(listOf(SettingsQuickButton.YES, SettingsQuickButton.NO))
@@ -181,6 +194,7 @@ class SettingsRepositoryTest {
         assertEquals(listOf(SettingsQuickButton.NO), repository.getEnabledQuickButtons())
     }
 
+    @Tag("unit")
     @Test
     fun `QB06 - disable all buttons results in empty list`() {
         repository.setEnabledQuickButtons(listOf(SettingsQuickButton.YES))
@@ -188,12 +202,14 @@ class SettingsRepositoryTest {
         assertTrue(repository.getEnabledQuickButtons().isEmpty())
     }
 
+    @Tag("unit")
     @Test
     fun `QB07 - enable all buttons`() {
         repository.setEnabledQuickButtons(SettingsQuickButton.ALL)
         assertEquals(SettingsQuickButton.ALL.size, repository.getEnabledQuickButtons().size)
     }
 
+    @Tag("unit")
     @Test
     fun `QB08 - reorder buttons`() {
         val initial = listOf(
@@ -211,6 +227,7 @@ class SettingsRepositoryTest {
         assertEquals(expected, repository.getEnabledQuickButtons())
     }
 
+    @Tag("unit")
     @Test
     fun `QB09 - reorder with invalid indices is no-op`() {
         val initial = listOf(SettingsQuickButton.YES)
@@ -219,6 +236,7 @@ class SettingsRepositoryTest {
         assertEquals(initial, repository.getEnabledQuickButtons())
     }
 
+    @Tag("unit")
     @Test
     fun `QB10 - quick buttons observable flow updates`() = runTest {
         val newButtons = listOf(SettingsQuickButton.TAB, SettingsQuickButton.ESC)
@@ -230,6 +248,7 @@ class SettingsRepositoryTest {
     // Quick Button Serialization Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `serialize default buttons`() {
         val buttons = listOf(
@@ -241,18 +260,21 @@ class SettingsRepositoryTest {
         assertEquals("""["yes","no","ctrl_c"]""", json)
     }
 
+    @Tag("unit")
     @Test
     fun `serialize empty buttons`() {
         val json = repository.serializeQuickButtons(emptyList())
         assertEquals("[]", json)
     }
 
+    @Tag("unit")
     @Test
     fun `serialize all buttons`() {
         val json = repository.serializeQuickButtons(SettingsQuickButton.ALL)
         assertEquals("""["yes","no","ctrl_c","esc","tab","shift_tab","up","down","backspace"]""", json)
     }
 
+    @Tag("unit")
     @Test
     fun `serialize custom order`() {
         val buttons = listOf(
@@ -264,6 +286,7 @@ class SettingsRepositoryTest {
         assertEquals("""["ctrl_c","yes","no"]""", json)
     }
 
+    @Tag("unit")
     @Test
     fun `deserialize default buttons`() {
         val buttons = repository.deserializeQuickButtons("""["yes","no","ctrl_c"]""")
@@ -277,12 +300,14 @@ class SettingsRepositoryTest {
         )
     }
 
+    @Tag("unit")
     @Test
     fun `deserialize empty list`() {
         val buttons = repository.deserializeQuickButtons("[]")
         assertTrue(buttons.isEmpty())
     }
 
+    @Tag("unit")
     @Test
     fun `deserialize with unknown ID skips it`() {
         val buttons = repository.deserializeQuickButtons("""["yes","unknown_button","no"]""")
@@ -292,6 +317,7 @@ class SettingsRepositoryTest {
         )
     }
 
+    @Tag("unit")
     @Test
     fun `deserialize invalid JSON returns defaults`() {
         val buttons = repository.deserializeQuickButtons("not valid json")
@@ -302,6 +328,7 @@ class SettingsRepositoryTest {
     // Notification Settings Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `NT01 - fresh install has all notifications enabled`() {
         val settings = repository.getNotificationSettings()
@@ -310,6 +337,7 @@ class SettingsRepositoryTest {
         assertTrue(settings.errorEnabled)
     }
 
+    @Tag("unit")
     @Test
     fun `NT02 - disable approval notification`() {
         repository.setNotificationEnabled(NotificationType.APPROVAL, false)
@@ -319,6 +347,7 @@ class SettingsRepositoryTest {
         assertTrue(settings.errorEnabled)
     }
 
+    @Tag("unit")
     @Test
     fun `NT03 - disable completion notification`() {
         repository.setNotificationEnabled(NotificationType.COMPLETION, false)
@@ -328,6 +357,7 @@ class SettingsRepositoryTest {
         assertTrue(settings.errorEnabled)
     }
 
+    @Tag("unit")
     @Test
     fun `NT04 - disable error notification`() {
         repository.setNotificationEnabled(NotificationType.ERROR, false)
@@ -337,6 +367,7 @@ class SettingsRepositoryTest {
         assertFalse(settings.errorEnabled)
     }
 
+    @Tag("unit")
     @Test
     fun `NT05 - disable all notifications`() {
         val allOff = NotificationSettings(
@@ -348,6 +379,7 @@ class SettingsRepositoryTest {
         assertEquals(allOff, repository.getNotificationSettings())
     }
 
+    @Tag("unit")
     @Test
     fun `NT06 - set and get all notification settings`() {
         val settings = NotificationSettings(
@@ -359,6 +391,7 @@ class SettingsRepositoryTest {
         assertEquals(settings, repository.getNotificationSettings())
     }
 
+    @Tag("unit")
     @Test
     fun `NT07 - isNotificationEnabled checks individual types`() {
         repository.setNotificationSettings(
@@ -373,6 +406,7 @@ class SettingsRepositoryTest {
         assertTrue(repository.isNotificationEnabled(NotificationType.ERROR))
     }
 
+    @Tag("unit")
     @Test
     fun `NT08 - notification settings observable flow updates`() = runTest {
         val settings = NotificationSettings(
@@ -388,29 +422,34 @@ class SettingsRepositoryTest {
     // Terminal Font Size Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `FS01 - fresh install returns default font size`() {
         assertEquals(SettingsDefaults.TERMINAL_FONT_SIZE, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS02 - set font size persists`() {
         repository.setTerminalFontSize(16f)
         assertEquals(16f, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS03 - set minimum font size`() {
         repository.setTerminalFontSize(8f)
         assertEquals(8f, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS04 - set maximum font size`() {
         repository.setTerminalFontSize(24f)
         assertEquals(24f, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS05 - set font size zero`() {
         // Edge case: font size should technically be > 0, but repository doesn't validate
@@ -418,6 +457,7 @@ class SettingsRepositoryTest {
         assertEquals(0f, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS06 - set negative font size`() {
         // Edge case: repository stores whatever is passed (validation happens in UI)
@@ -425,12 +465,14 @@ class SettingsRepositoryTest {
         assertEquals(-5f, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS07 - set font size with decimals`() {
         repository.setTerminalFontSize(14.5f)
         assertEquals(14.5f, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS08 - set font size multiple times uses last value`() {
         repository.setTerminalFontSize(10f)
@@ -439,6 +481,7 @@ class SettingsRepositoryTest {
         assertEquals(18f, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS09 - set same font size is no-op`() {
         repository.setTerminalFontSize(12f)
@@ -446,6 +489,7 @@ class SettingsRepositoryTest {
         assertEquals(12f, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `FS10 - font size persisted to SharedPreferences`() {
         repository.setTerminalFontSize(20f)
@@ -457,6 +501,7 @@ class SettingsRepositoryTest {
     // Reset Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `RS01 - reset sessions section clears default agent`() {
         repository.setDefaultAgent("claude")
@@ -464,6 +509,7 @@ class SettingsRepositoryTest {
         assertNull(repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `RS02 - reset terminal section restores default buttons`() {
         repository.setEnabledQuickButtons(listOf(SettingsQuickButton.TAB))
@@ -471,6 +517,7 @@ class SettingsRepositoryTest {
         assertEquals(SettingsDefaults.QUICK_BUTTONS, repository.getEnabledQuickButtons())
     }
 
+    @Tag("unit")
     @Test
     fun `RS02a - reset terminal section restores default font size`() {
         repository.setTerminalFontSize(20f)
@@ -478,6 +525,7 @@ class SettingsRepositoryTest {
         assertEquals(SettingsDefaults.TERMINAL_FONT_SIZE, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `RS02b - reset terminal section restores both buttons and font size`() {
         repository.setEnabledQuickButtons(listOf(SettingsQuickButton.TAB))
@@ -487,6 +535,7 @@ class SettingsRepositoryTest {
         assertEquals(SettingsDefaults.TERMINAL_FONT_SIZE, repository.getTerminalFontSize())
     }
 
+    @Tag("unit")
     @Test
     fun `RS03 - reset notifications section enables all`() {
         repository.setNotificationSettings(
@@ -500,6 +549,7 @@ class SettingsRepositoryTest {
         assertEquals(SettingsDefaults.NOTIFICATIONS, repository.getNotificationSettings())
     }
 
+    @Tag("unit")
     @Test
     fun `RS04 - reset one section preserves others`() {
         // Set all
@@ -523,6 +573,7 @@ class SettingsRepositoryTest {
         )
     }
 
+    @Tag("unit")
     @Test
     fun `RS04a - reset terminal section preserves sessions and notifications`() {
         // Set all
@@ -546,6 +597,7 @@ class SettingsRepositoryTest {
         )
     }
 
+    @Tag("unit")
     @Test
     fun `RS05 - reset all clears everything`() {
         repository.setDefaultAgent("claude")
@@ -567,11 +619,13 @@ class SettingsRepositoryTest {
     // Migration Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `MG01 - fresh install sets version`() {
         assertEquals(SETTINGS_VERSION, repository.getSettingsVersion())
     }
 
+    @Tag("unit")
     @Test
     fun `MG02 - version is persisted`() {
         verify { editor.putInt(SettingsKeys.VERSION, SETTINGS_VERSION) }
@@ -581,6 +635,7 @@ class SettingsRepositoryTest {
     // SettingsQuickButton Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton fromId returns correct button`() {
         assertEquals(SettingsQuickButton.YES, SettingsQuickButton.fromId("yes"))
@@ -591,6 +646,7 @@ class SettingsRepositoryTest {
         assertEquals(SettingsQuickButton.ARROW_UP, SettingsQuickButton.fromId("up"))
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton fromId returns null for unknown`() {
         assertNull(SettingsQuickButton.fromId("unknown"))
@@ -598,6 +654,7 @@ class SettingsRepositoryTest {
         assertNull(SettingsQuickButton.fromId("YES"))  // case sensitive
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton ALL contains all buttons`() {
         assertEquals(9, SettingsQuickButton.ALL.size)
@@ -612,6 +669,7 @@ class SettingsRepositoryTest {
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.BACKSPACE))
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton has correct key sequences`() {
         assertEquals("Yes", SettingsQuickButton.YES.keySequence)
@@ -629,6 +687,7 @@ class SettingsRepositoryTest {
     // Edge Cases
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `EC01 - very long agent name is stored`() {
         val longName = "a".repeat(200)
@@ -636,12 +695,14 @@ class SettingsRepositoryTest {
         assertEquals(longName, repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `EC02 - empty agent name is stored`() {
         repository.setDefaultAgent("")
         assertEquals("", repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `EC03 - agent name with special characters`() {
         val specialName = "claude-v2.0_beta@test"
@@ -649,6 +710,7 @@ class SettingsRepositoryTest {
         assertEquals(specialName, repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `EC04 - agent name with unicode`() {
         val unicodeName = "claude-日本語-\uD83E\uDD16"
@@ -656,6 +718,7 @@ class SettingsRepositoryTest {
         assertEquals(unicodeName, repository.getDefaultAgent())
     }
 
+    @Tag("unit")
     @Test
     fun `EC05 - reorder same index is no-op`() {
         val initial = listOf(SettingsQuickButton.YES, SettingsQuickButton.NO)
@@ -665,6 +728,7 @@ class SettingsRepositoryTest {
         assertEquals(2, repository.getEnabledQuickButtons().size)
     }
 
+    @Tag("unit")
     @Test
     fun `EC06 - reorder with negative indices is no-op`() {
         val initial = listOf(SettingsQuickButton.YES, SettingsQuickButton.NO)

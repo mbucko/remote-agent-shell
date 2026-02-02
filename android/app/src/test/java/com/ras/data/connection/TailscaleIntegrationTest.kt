@@ -15,12 +15,13 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import okhttp3.OkHttpClient
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer
 
 /**
@@ -71,7 +72,7 @@ class TailscaleIntegrationTest {
     private val daemonTailscaleIp = "100.125.247.41"
     private val daemonTailscalePort = 9876
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
 
@@ -81,6 +82,7 @@ class TailscaleIntegrationTest {
         mockSignaling = mockk(relaxed = true)
         credentialRepository = mockk()
         connectionManager = mockk(relaxed = true)
+        every { connectionManager.isConnected } returns kotlinx.coroutines.flow.MutableStateFlow(false)
         httpClient = mockk()
         ntfyClient = mockk(relaxed = true)
 
@@ -105,7 +107,7 @@ class TailscaleIntegrationTest {
         coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
         unmockkObject(TailscaleDetector)
@@ -116,6 +118,7 @@ class TailscaleIntegrationTest {
     // SCENARIO 1: Happy Path - Tailscale Available on Both Sides
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `full flow - Tailscale detected locally and on daemon - connection succeeds`() = runTest {
         // Setup: Local Tailscale detected
@@ -142,7 +145,7 @@ class TailscaleIntegrationTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
 
         // Create the service with REAL orchestrator
-        val service = ReconnectionServiceImpl(
+        ReconnectionServiceImpl(
             appContext = mockContext,
             credentialRepository = credentialRepository,
             httpClient = httpClient,
@@ -171,12 +174,12 @@ class TailscaleIntegrationTest {
         val transport = orchestrator.connect(context) { progressUpdates.add(it) }
 
         // Verify: Transport returned
-        assertNotNull("Should return transport", transport)
+        assertNotNull(transport, "Should return transport")
         assertEquals(TransportType.TAILSCALE, transport?.type)
 
         // Verify: TailscaleStrategy was used (Connected progress with Tailscale)
         val connected = progressUpdates.filterIsInstance<ConnectionProgress.Connected>().firstOrNull()
-        assertNotNull("Should have Connected progress", connected)
+        assertNotNull(connected, "Should have Connected progress")
         assertEquals("Tailscale Direct", connected?.strategyName)
 
         // Verify: TailscaleTransport.connect was called with daemon's Tailscale IP
@@ -186,6 +189,7 @@ class TailscaleIntegrationTest {
         coVerify { mockTransport.send(any()) }
     }
 
+    @Tag("integration")
     @Test
     fun `auth message format is correct in full flow`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
@@ -222,26 +226,27 @@ class TailscaleIntegrationTest {
         orchestrator.connect(context) {}
 
         // Verify auth message format: [4-byte len BE][device_id UTF-8][32-byte auth]
-        assertTrue("Should have captured message", capturedMessage.isCaptured)
+        assertTrue(capturedMessage.isCaptured, "Should have captured message")
         val message = capturedMessage.captured
         val buffer = ByteBuffer.wrap(message)
 
         val deviceIdLen = buffer.int
-        assertEquals("Device ID length should match", deviceId.length, deviceIdLen)
+        assertEquals(deviceId.length, deviceIdLen, "Device ID length should match")
 
         val deviceIdBytes = ByteArray(deviceIdLen)
         buffer.get(deviceIdBytes)
-        assertEquals("Device ID should match", deviceId, String(deviceIdBytes, Charsets.UTF_8))
+        assertEquals(deviceId, String(deviceIdBytes, Charsets.UTF_8), "Device ID should match")
 
         val actualAuth = ByteArray(32)
         buffer.get(actualAuth)
-        assertTrue("Auth token should match", authToken.contentEquals(actualAuth))
+        assertTrue(authToken.contentEquals(actualAuth), "Auth token should match")
     }
 
     // ============================================================================
     // SCENARIO 2: Capability Exchange Provides Daemon Tailscale IP
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `daemon Tailscale IP from capability exchange is used in TailscaleStrategy`() = runTest {
         // This test verifies Bug 2 prevention: enriched context is passed to strategy
@@ -288,6 +293,7 @@ class TailscaleIntegrationTest {
     // SCENARIO 3: TailscaleStrategy Detection
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `TailscaleStrategy is tried first due to priority`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
@@ -320,9 +326,10 @@ class TailscaleIntegrationTest {
 
         // Verify: Tailscale was detected first
         val detectingUpdates = progressUpdates.filterIsInstance<ConnectionProgress.Detecting>()
-        assertTrue("Should detect Tailscale first", detectingUpdates.firstOrNull()?.strategyName == "Tailscale Direct")
+        assertTrue(detectingUpdates.firstOrNull()?.strategyName == "Tailscale Direct", "Should detect Tailscale first")
     }
 
+    @Tag("integration")
     @Test
     fun `TailscaleStrategy marked available when local Tailscale detected`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
@@ -356,10 +363,11 @@ class TailscaleIntegrationTest {
         // Verify: Tailscale was marked as available
         val available = progressUpdates.filterIsInstance<ConnectionProgress.StrategyAvailable>()
             .find { it.strategyName == "Tailscale Direct" }
-        assertNotNull("Tailscale should be marked available", available)
+        assertNotNull(available, "Tailscale should be marked available")
         assertEquals(localTailscaleIp, available?.info)
     }
 
+    @Tag("integration")
     @Test
     fun `TailscaleStrategy marked unavailable when no local Tailscale`() = runTest {
         // No local Tailscale
@@ -388,7 +396,7 @@ class TailscaleIntegrationTest {
         // Verify: Tailscale was marked as unavailable
         val unavailable = progressUpdates.filterIsInstance<ConnectionProgress.StrategyUnavailable>()
             .find { it.strategyName == "Tailscale Direct" }
-        assertNotNull("Tailscale should be marked unavailable", unavailable)
+        assertNotNull(unavailable, "Tailscale should be marked unavailable")
         assertEquals("Tailscale not connected", unavailable?.reason)
     }
 
@@ -396,6 +404,7 @@ class TailscaleIntegrationTest {
     // SCENARIO 4: Connection Failures and Fallback
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `falls back to WebRTC when TailscaleTransport connect fails`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
@@ -428,13 +437,14 @@ class TailscaleIntegrationTest {
         // Verify: Tailscale failed
         val failed = progressUpdates.filterIsInstance<ConnectionProgress.StrategyFailed>()
             .find { it.strategyName == "Tailscale Direct" }
-        assertNotNull("Tailscale should have failed", failed)
-        assertTrue("Error should mention connection", failed?.error?.contains("Connection") == true)
+        assertNotNull(failed, "Tailscale should have failed")
+        assertTrue(failed?.error?.contains("Connection") == true, "Error should mention connection")
 
         // Verify: No transport (all strategies failed)
         assertEquals(null, transport)
     }
 
+    @Tag("integration")
     @Test
     fun `fails gracefully when daemon has no Tailscale capability`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
@@ -463,14 +473,15 @@ class TailscaleIntegrationTest {
         // Verify: Tailscale strategy failed due to unknown daemon IP
         val failed = progressUpdates.filterIsInstance<ConnectionProgress.StrategyFailed>()
             .find { it.strategyName == "Tailscale Direct" }
-        assertNotNull("Tailscale should have failed", failed)
-        assertTrue("Error should mention unknown IP", failed?.error?.contains("unknown") == true)
+        assertNotNull(failed, "Tailscale should have failed")
+        assertTrue(failed?.error?.contains("unknown") == true, "Error should mention unknown IP")
     }
 
     // ============================================================================
     // SCENARIO 5: Authentication Failures
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `auth failure returns Failed result`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
@@ -506,8 +517,8 @@ class TailscaleIntegrationTest {
         // Verify: Strategy failed due to auth
         val failed = progressUpdates.filterIsInstance<ConnectionProgress.StrategyFailed>()
             .find { it.strategyName == "Tailscale Direct" }
-        assertNotNull("Should have failed", failed)
-        assertTrue("Error should mention auth", failed?.error?.contains("Authentication") == true)
+        assertNotNull(failed, "Should have failed")
+        assertTrue(failed?.error?.contains("Authentication") == true, "Error should mention auth")
 
         // Verify: Transport closed
         coVerify { mockTransport.close() }
@@ -515,6 +526,7 @@ class TailscaleIntegrationTest {
         assertEquals(null, transport)
     }
 
+    @Tag("integration")
     @Test
     fun `auth timeout returns Failed result`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
@@ -553,13 +565,14 @@ class TailscaleIntegrationTest {
         // Verify: Strategy failed with timeout-related error
         val failed = progressUpdates.filterIsInstance<ConnectionProgress.StrategyFailed>()
             .find { it.strategyName == "Tailscale Direct" }
-        assertNotNull("Tailscale should have failed", failed)
+        assertNotNull(failed, "Tailscale should have failed")
     }
 
     // ============================================================================
     // SCENARIO 6: Capability Exchange Failure
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `connection proceeds with stored credentials when capability exchange fails`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(localTailscaleIp, "tun0")
@@ -594,13 +607,14 @@ class TailscaleIntegrationTest {
 
         // Verify: Capability exchange failure was reported
         val capFailed = progressUpdates.filterIsInstance<ConnectionProgress.CapabilityExchangeFailed>()
-        assertTrue("Should report capability exchange failed", capFailed.isNotEmpty())
+        assertTrue(capFailed.isNotEmpty(), "Should report capability exchange failed")
     }
 
     // ============================================================================
     // SCENARIO 7: Full ReconnectionService Integration
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `ReconnectionServiceImpl skips double auth for Tailscale transport`() = runTest {
         // This test verifies Bug 1 prevention: No double authentication
@@ -649,20 +663,21 @@ class TailscaleIntegrationTest {
         val result = service.reconnect { progressUpdates.add(it) }
 
         // Verify: Success
-        assertTrue("Should succeed", result is ReconnectionResult.Success)
+        assertTrue(result is ReconnectionResult.Success, "Should succeed")
 
         // Verify: NO Authenticating progress for Tailscale (auth is skipped)
         val authenticating = progressUpdates.filterIsInstance<ConnectionProgress.Authenticating>()
-        assertTrue("Should skip authentication step for Tailscale", authenticating.isEmpty())
+        assertTrue(authenticating.isEmpty(), "Should skip authentication step for Tailscale")
 
         // Verify: Authenticated progress is reported (from the skip path)
         val authenticated = progressUpdates.filterIsInstance<ConnectionProgress.Authenticated>()
-        assertTrue("Should report Authenticated", authenticated.isNotEmpty())
+        assertTrue(authenticated.isNotEmpty(), "Should report Authenticated")
 
         // Verify: ConnectionManager.connectWithTransport was called
         coVerify { connectionManager.connectWithTransport(tailscaleTransport, any()) }
     }
 
+    @Tag("integration")
     @Test
     fun `ReconnectionServiceImpl performs auth for WebRTC transport`() = runTest {
         // Verify that non-Tailscale transports still go through auth
@@ -698,6 +713,6 @@ class TailscaleIntegrationTest {
 
         // Verify: Authenticating progress WAS reported for WebRTC
         val authenticating = progressUpdates.filterIsInstance<ConnectionProgress.Authenticating>()
-        assertTrue("Should perform authentication for WebRTC", authenticating.isNotEmpty())
+        assertTrue(authenticating.isNotEmpty(), "Should perform authentication for WebRTC")
     }
 }

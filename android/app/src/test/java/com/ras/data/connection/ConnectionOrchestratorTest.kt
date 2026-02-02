@@ -5,12 +5,13 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Tests for ConnectionOrchestrator.
@@ -30,7 +31,7 @@ class ConnectionOrchestratorTest {
     private lateinit var mockSignaling: SignalingChannel
     private lateinit var mockContext: Context
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockContext = mockk(relaxed = true)
         tailscaleStrategy = mockk(relaxed = true)
@@ -55,6 +56,7 @@ class ConnectionOrchestratorTest {
         authToken = ByteArray(32)
     )
 
+    @Tag("unit")
     @Test
     fun `strategies are tried in priority order - lowest priority first`() = runTest {
         // Both strategies available
@@ -84,6 +86,7 @@ class ConnectionOrchestratorTest {
         assertEquals("WebRTC P2P", detectingSteps[1].strategyName)
     }
 
+    @Tag("unit")
     @Test
     fun `falls back to WebRTC when Tailscale unavailable`() = runTest {
         // Tailscale unavailable, WebRTC available
@@ -112,6 +115,7 @@ class ConnectionOrchestratorTest {
         assertEquals("Tailscale Direct", unavailable[0].strategyName)
     }
 
+    @Tag("unit")
     @Test
     fun `falls back to WebRTC when Tailscale connection fails`() = runTest {
         // Both available
@@ -143,6 +147,7 @@ class ConnectionOrchestratorTest {
         assertTrue(failed[0].willTryNext)
     }
 
+    @Tag("unit")
     @Test
     fun `reports all failed when no strategy succeeds`() = runTest {
         // Both available but both fail
@@ -170,6 +175,7 @@ class ConnectionOrchestratorTest {
         assertEquals(2, (lastProgress as ConnectionProgress.AllFailed).attempts.size)
     }
 
+    @Tag("unit")
     @Test
     fun `reports correct progress when connected via Tailscale`() = runTest {
         coEvery { tailscaleStrategy.detect() } returns DetectionResult.Available("100.64.0.1")
@@ -191,6 +197,7 @@ class ConnectionOrchestratorTest {
         assertEquals("Tailscale Direct", connected[0].strategyName)
     }
 
+    @Tag("unit")
     @Test
     fun `reports correct progress when connected via WebRTC`() = runTest {
         coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No VPN")

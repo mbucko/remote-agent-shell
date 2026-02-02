@@ -8,10 +8,11 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
@@ -51,7 +52,7 @@ class ReconnectionSignalerEchoTest {
         .setTailscalePort(9876)
         .build()
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockDirectClient = mockk(relaxed = true)
         mockNtfyClient = mockk(relaxed = true)
@@ -105,6 +106,7 @@ class ReconnectionSignalerEchoTest {
 
     // ==================== Echo Filtering Tests ====================
 
+    @Tag("unit")
     @Test
     fun `exchangeCapabilities filters out own request echoed back via ntfy`() = runTest {
         /**
@@ -152,15 +154,16 @@ class ReconnectionSignalerEchoTest {
         )
 
         // Then: Should return daemon's capabilities, not our own echoed back
-        assertTrue("Should be success", result is CapabilityExchangeResult.Success)
+        assertTrue(result is CapabilityExchangeResult.Success, "Should be success")
         val success = result as CapabilityExchangeResult.Success
         assertEquals(
-            "Should have daemon's IP, not ours",
             "100.64.0.2",
-            success.capabilities.tailscaleIp
+            success.capabilities.tailscaleIp,
+            "Should have daemon's IP, not ours"
         )
     }
 
+    @Tag("unit")
     @Test
     fun `exchangeCapabilities handles multiple echoed requests before response`() = runTest {
         /**
@@ -203,6 +206,7 @@ class ReconnectionSignalerEchoTest {
         )
     }
 
+    @Tag("unit")
     @Test
     fun `exchangeCapabilities ignores invalid messages`() = runTest {
         /**
@@ -243,6 +247,7 @@ class ReconnectionSignalerEchoTest {
         )
     }
 
+    @Tag("unit")
     @Test
     fun `exchangeCapabilities handles response arriving before echo`() = runTest {
         /**
@@ -254,7 +259,6 @@ class ReconnectionSignalerEchoTest {
             mockDirectClient.exchangeCapabilities(any(), any(), any(), any(), any())
         } throws java.io.IOException("Network error")
 
-        val echoedRequest = createCapabilitiesRequest(ourDeviceId, ourCapabilities)
         val daemonResponse = createCapabilitiesResponse(daemonCapabilities)
 
         coEvery { mockNtfyClient.subscribe(any()) } returns flow {
@@ -282,6 +286,7 @@ class ReconnectionSignalerEchoTest {
         )
     }
 
+    @Tag("unit")
     @Test
     fun `exchangeCapabilities ignores non-CAPABILITIES messages`() = runTest {
         /**
@@ -324,6 +329,7 @@ class ReconnectionSignalerEchoTest {
         assertTrue(result is CapabilityExchangeResult.Success)
     }
 
+    @Tag("unit")
     @Test
     fun `exchangeCapabilities ignores keepalive and other ntfy events`() = runTest {
         /**
@@ -359,6 +365,7 @@ class ReconnectionSignalerEchoTest {
 
     // ==================== Documentation Tests ====================
 
+    @Tag("unit")
     @Test
     fun `CAPABILITIES request has device_id set`() {
         /**
@@ -367,12 +374,13 @@ class ReconnectionSignalerEchoTest {
         val request = createCapabilitiesRequest("test-device", ourCapabilities)
 
         assertTrue(
-            "Request should have device_id set",
-            request.deviceId.isNotEmpty()
+            request.deviceId.isNotEmpty(),
+            "Request should have device_id set"
         )
         assertEquals("test-device", request.deviceId)
     }
 
+    @Tag("unit")
     @Test
     fun `CAPABILITIES response has empty device_id`() {
         /**
@@ -381,8 +389,8 @@ class ReconnectionSignalerEchoTest {
         val response = createCapabilitiesResponse(daemonCapabilities)
 
         assertTrue(
-            "Response should have empty device_id",
-            response.deviceId.isEmpty()
+            response.deviceId.isEmpty(),
+            "Response should have empty device_id"
         )
     }
 }

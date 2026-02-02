@@ -111,8 +111,8 @@ class PairingProgressTracker @Inject constructor(
         stepDurations[INDEX_QR_SCANNED] = duration
         currentStepIndex = INDEX_CREATING_CONNECTION
         stepStartTime = clock.currentTimeMillis()
-        
-        _progress.update { current ->
+
+        _progress.update { _ ->
             createProgressFromState(
                 steps = createSteps(step1Status = StepStatus.IN_PROGRESS),
                 message = MSG_CREATING_CONNECTION
@@ -145,8 +145,8 @@ class PairingProgressTracker @Inject constructor(
         stepDurations[INDEX_CREATING_CONNECTION] = duration
         currentStepIndex = INDEX_REACHING_HOST
         stepStartTime = clock.currentTimeMillis()
-        
-        _progress.update { current ->
+
+        _progress.update { _ ->
             createProgressFromState(
                 steps = createSteps(
                     step1Status = StepStatus.COMPLETED,
@@ -163,7 +163,7 @@ class PairingProgressTracker @Inject constructor(
      * Step 2 (reaching host) is in progress.
      */
     fun onDirectSignaling() {
-        _progress.update { current ->
+        _progress.update { _ ->
             createProgressFromState(
                 steps = createSteps(
                     step1Status = StepStatus.COMPLETED,
@@ -187,8 +187,8 @@ class PairingProgressTracker @Inject constructor(
         stepDurations[INDEX_DIRECT_CONNECTION] = 0  // Will be updated when relay completes
         currentStepIndex = INDEX_AUTHENTICATING
         stepStartTime = clock.currentTimeMillis()
-        
-        _progress.update { current ->
+
+        _progress.update { _ ->
             createProgressFromState(
                 steps = createStepsWithRelay(
                     step1Duration = stepDurations[INDEX_CREATING_CONNECTION],
@@ -204,7 +204,7 @@ class PairingProgressTracker @Inject constructor(
      * Called when ntfy subscription is in progress.
      */
     fun onNtfySubscribing() {
-        _progress.update { current ->
+        _progress.update { _ ->
             createProgressFromState(
                 steps = createStepsWithRelay(
                     step1Duration = stepDurations[INDEX_CREATING_CONNECTION],
@@ -220,7 +220,7 @@ class PairingProgressTracker @Inject constructor(
      * Called when waiting for host response via ntfy.
      */
     fun onNtfyWaitingForAnswer() {
-        _progress.update { current ->
+        _progress.update { _ ->
             createProgressFromState(
                 steps = createStepsWithRelay(
                     step1Duration = stepDurations[INDEX_CREATING_CONNECTION],
@@ -250,8 +250,8 @@ class PairingProgressTracker @Inject constructor(
             currentStepIndex = INDEX_SECURE_CHANNEL
         }
         stepStartTime = clock.currentTimeMillis()
-        
-        _progress.update { current ->
+
+        _progress.update { _ ->
             if (usedNtfy) {
                 createProgressFromState(
                     steps = createStepsWithRelay(
@@ -295,8 +295,8 @@ class PairingProgressTracker @Inject constructor(
             currentStepIndex = INDEX_COMPLETE
         }
         stepStartTime = clock.currentTimeMillis()
-        
-        _progress.update { current ->
+
+        _progress.update { _ ->
             if (isDirectPath) {
                 createProgressFromState(
                     steps = createSteps(
@@ -339,8 +339,8 @@ class PairingProgressTracker @Inject constructor(
         } else {
             stepDurations[INDEX_COMPLETE] = duration
         }
-        
-        _progress.update { current ->
+
+        _progress.update { _ ->
             if (isDirectPath) {
                 createProgressFromState(
                     steps = createSteps(

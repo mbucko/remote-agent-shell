@@ -205,6 +205,7 @@ class MdnsDiscoveryService(
                 callback(null)
             }
 
+            @Suppress("DEPRECATION")
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                 val host = serviceInfo.host?.hostAddress
                 val port = serviceInfo.port
@@ -220,6 +221,7 @@ class MdnsDiscoveryService(
                 }
 
                 if (host != null && port > 0) {
+                    @Suppress("DEPRECATION")
                     val addresses = serviceInfo.host?.let { inetAddr ->
                         listOfNotNull(inetAddr.hostAddress)
                     } ?: emptyList()
@@ -238,6 +240,7 @@ class MdnsDiscoveryService(
         }
 
         try {
+            @Suppress("DEPRECATION")
             nsdManager.resolveService(serviceInfo, resolveListener)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to resolve service: ${e.message}")

@@ -6,13 +6,15 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 
@@ -22,12 +24,13 @@ class PairingProgressTrackerTest {
     private lateinit var tracker: PairingProgressTracker
     private val testClock = Clock { currentTime }
 
-    @Before
+    @BeforeEach
     fun setup() {
         currentTime = 0L
         tracker = PairingProgressTracker(clock = testClock)
     }
 
+    @Tag("unit")
     @Test
     fun `initial state has QR step in progress`() = runTest {
         tracker.start()
@@ -50,6 +53,7 @@ class PairingProgressTrackerTest {
         assertEquals(StepStatus.PENDING, progress.steps[5].status)
     }
 
+    @Tag("unit")
     @Test
     fun `onQrParsed completes QR step and starts creating connection`() = runTest {
         tracker.start()
@@ -68,6 +72,7 @@ class PairingProgressTrackerTest {
         assertEquals(StepStatus.IN_PROGRESS, progress.steps[1].status)
     }
 
+    @Tag("unit")
     @Test
     fun `onConnectionCreated transitions to reaching host step`() = runTest {
         tracker.start()
@@ -88,6 +93,7 @@ class PairingProgressTrackerTest {
         assertEquals("Reaching host", progress.steps[2].label)
     }
 
+    @Tag("unit")
     @Test
     fun `direct connection path completes all steps`() = runTest {
         tracker.start()
@@ -110,10 +116,11 @@ class PairingProgressTrackerTest {
         
         // All steps except "Complete" should have duration
         progress.steps.filter { it.label != "Complete" }.forEach { step ->
-            assertNotNull("Step '${step.label}' should have duration", step.durationMs)
+            assertNotNull(step.durationMs, "Step '${step.label}' should have duration")
         }
     }
 
+    @Tag("unit")
     @Test
     fun `direct failure shows gray dash and switches to relay path`() = runTest {
         tracker.start()
@@ -143,6 +150,7 @@ class PairingProgressTrackerTest {
         assertEquals("Relay connection", progress.steps[3].label)
     }
 
+    @Tag("unit")
     @Test
     fun `relay path completes successfully`() = runTest {
         tracker.start()
@@ -155,19 +163,20 @@ class PairingProgressTrackerTest {
         tracker.onAuthenticated()
         
         val progress = tracker.progress.first()
-        
-        assertTrue("Progress should be complete", progress.isComplete)
-        assertEquals("Should have 7 steps", 7, progress.steps.size)
-        
+
+        assertTrue(progress.isComplete, "Progress should be complete")
+        assertEquals(7, progress.steps.size, "Should have 7 steps")
+
         // All steps except "Direct connection" should be completed
         progress.steps.forEach { step ->
             when (step.label) {
-                "Direct connection" -> assertEquals("Direct connection should be UNAVAILABLE", StepStatus.UNAVAILABLE, step.status)
-                else -> assertEquals("${step.label} should be COMPLETED", StepStatus.COMPLETED, step.status)
+                "Direct connection" -> assertEquals(StepStatus.UNAVAILABLE, step.status, "Direct connection should be UNAVAILABLE")
+                else -> assertEquals(StepStatus.COMPLETED, step.status, "${step.label} should be COMPLETED")
             }
         }
     }
 
+    @Tag("unit")
     @Test
     fun `failure marks current step as unavailable`() = runTest {
         tracker.start()
@@ -187,6 +196,7 @@ class PairingProgressTrackerTest {
         assertEquals(StepStatus.PENDING, progress.steps[4].status)
     }
 
+    @Tag("unit")
     @Test
     fun `reset clears all state`() = runTest {
         tracker.start()
@@ -204,6 +214,7 @@ class PairingProgressTrackerTest {
         assertEquals(StepStatus.PENDING, progress.steps[1].status)
     }
 
+    @Tag("unit")
     @Test
     fun `step durations are tracked with injectable clock`() = runTest {
         tracker.start()
@@ -225,63 +236,86 @@ class PairingProgressTrackerTest {
     // Precondition Tests - Verify exceptions for out-of-order calls
     // ==========================================================================
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `onQrParsed without start throws exception`() {
-        tracker.onQrParsed()
+        assertThrows(IllegalArgumentException::class.java) {
+            tracker.onQrParsed()
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `onQrParsed called twice throws exception`() {
         tracker.start()
         tracker.onQrParsed()
-        tracker.onQrParsed() // Should throw - can only be called once
+        assertThrows(IllegalArgumentException::class.java) {
+            tracker.onQrParsed() // Should throw - can only be called once
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `onConnectionCreated before onQrParsed throws exception`() {
         tracker.start()
-        tracker.onConnectionCreated() // Should throw - onQrParsed not called yet
+        assertThrows(IllegalArgumentException::class.java) {
+            tracker.onConnectionCreated() // Should throw - onQrParsed not called yet
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `onSignalingComplete before connection created throws exception`() {
         tracker.start()
         tracker.onQrParsed()
-        tracker.onSignalingComplete(usedNtfy = false) // Should throw - not in reaching host phase
+        assertThrows(IllegalArgumentException::class.java) {
+            tracker.onSignalingComplete(usedNtfy = false) // Should throw - not in reaching host phase
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `onDataChannelOpen before signaling complete throws exception`() {
         tracker.start()
         tracker.onQrParsed()
         tracker.onCreatingConnection()
         tracker.onConnectionCreated()
-        tracker.onDataChannelOpen() // Should throw - signaling not complete
+        assertThrows(IllegalArgumentException::class.java) {
+            tracker.onDataChannelOpen() // Should throw - signaling not complete
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `onAuthenticated before data channel open throws exception`() {
         tracker.start()
         tracker.onQrParsed()
         tracker.onCreatingConnection()
         tracker.onConnectionCreated()
-        tracker.onAuthenticated() // Should throw - not in authenticating phase
+        assertThrows(IllegalArgumentException::class.java) {
+            tracker.onAuthenticated() // Should throw - not in authenticating phase
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `onFailed before start throws exception`() {
-        tracker.onFailed() // Should throw - pairing not started
+        assertThrows(IllegalArgumentException::class.java) {
+            tracker.onFailed() // Should throw - pairing not started
+        }
     }
 }
 
 class PairingStepTest {
 
+    @Tag("unit")
     @Test
     fun `format duration less than 1 second shows milliseconds`() {
         assertEquals("12ms", PairingStep.formatDuration(12))
         assertEquals("999ms", PairingStep.formatDuration(999))
     }
 
+    @Tag("unit")
     @Test
     fun `format duration 1-10 seconds shows one decimal`() {
         assertEquals("1.0s", PairingStep.formatDuration(1000))
@@ -289,18 +323,21 @@ class PairingStepTest {
         assertEquals("9.9s", PairingStep.formatDuration(9900))
     }
 
+    @Tag("unit")
     @Test
     fun `format duration over 10 seconds shows whole seconds`() {
         assertEquals("10s", PairingStep.formatDuration(10000))
         assertEquals("30s", PairingStep.formatDuration(30000))
     }
 
+    @Tag("unit")
     @Test
     fun `formattedDuration returns null when no duration`() {
         val step = PairingStep("Test", StepStatus.PENDING, null)
         assertNull(step.formattedDuration())
     }
 
+    @Tag("unit")
     @Test
     fun `formattedDuration returns formatted string when duration exists`() {
         val step = PairingStep("Test", StepStatus.COMPLETED, 1234)

@@ -5,10 +5,11 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Unit tests for AttemptReconnectionUseCaseImpl.
@@ -17,7 +18,7 @@ class AttemptReconnectionUseCaseTest {
 
     private lateinit var reconnectionService: ReconnectionService
 
-    @Before
+    @BeforeEach
     fun setup() {
         reconnectionService = mockk()
     }
@@ -26,6 +27,7 @@ class AttemptReconnectionUseCaseTest {
         reconnectionService = reconnectionService
     )
 
+    @Tag("unit")
     @Test
     fun `invoke calls reconnectionService`() = runTest {
         coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Success
@@ -36,6 +38,7 @@ class AttemptReconnectionUseCaseTest {
         coVerify { reconnectionService.reconnect(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns Success when reconnection succeeds`() = runTest {
         coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Success
@@ -46,6 +49,7 @@ class AttemptReconnectionUseCaseTest {
         assertEquals(ReconnectionResult.Success, result)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns NoCredentials when no stored credentials`() = runTest {
         coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.NoCredentials
@@ -56,6 +60,7 @@ class AttemptReconnectionUseCaseTest {
         assertTrue(result is ReconnectionResult.Failure.NoCredentials)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns DaemonUnreachable when daemon is unreachable`() = runTest {
         coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.DaemonUnreachable
@@ -66,6 +71,7 @@ class AttemptReconnectionUseCaseTest {
         assertTrue(result is ReconnectionResult.Failure.DaemonUnreachable)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns AuthenticationFailed when auth fails`() = runTest {
         coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.AuthenticationFailed
@@ -76,6 +82,7 @@ class AttemptReconnectionUseCaseTest {
         assertTrue(result is ReconnectionResult.Failure.AuthenticationFailed)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns NetworkError on network issues`() = runTest {
         coEvery { reconnectionService.reconnect(any()) } returns ReconnectionResult.Failure.NetworkError
@@ -86,6 +93,7 @@ class AttemptReconnectionUseCaseTest {
         assertTrue(result is ReconnectionResult.Failure.NetworkError)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns Unknown for other errors`() = runTest {
         val errorMessage = "Some unexpected error"

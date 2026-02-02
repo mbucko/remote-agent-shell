@@ -16,7 +16,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import org.junit.Assert.assertFalse
+import org.junit.jupiter.api.Assertions.assertFalse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -25,12 +25,13 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -43,7 +44,7 @@ class CreateSessionViewModelTest {
     private lateinit var eventsFlow: MutableSharedFlow<SessionEvent>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         sessionsFlow = MutableStateFlow(emptyList())
@@ -59,17 +60,19 @@ class CreateSessionViewModelTest {
         }
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
 
+    @Tag("unit")
     @Test
     fun `initial state is Idle`() = runTest {
         val viewModel = createViewModel()
         assertTrue(viewModel.createState.value is CreateSessionState.Idle)
     }
 
+    @Tag("unit")
     @Test
     fun `startDirectorySelection changes state to SelectingDirectory`() = runTest {
         val viewModel = createViewModel()
@@ -77,6 +80,7 @@ class CreateSessionViewModelTest {
         assertTrue(viewModel.createState.value is CreateSessionState.SelectingDirectory)
     }
 
+    @Tag("unit")
     @Test
     fun `selectDirectory changes state to DirectorySelected`() = runTest {
         val viewModel = createViewModel()
@@ -89,6 +93,7 @@ class CreateSessionViewModelTest {
         assertEquals("/home/user/project", viewModel.selectedDirectory.value)
     }
 
+    @Tag("unit")
     @Test
     fun `proceedToAgentSelection changes state to SelectingAgent`() = runTest {
         val viewModel = createViewModel()
@@ -99,6 +104,7 @@ class CreateSessionViewModelTest {
         assertTrue(viewModel.createState.value is CreateSessionState.SelectingAgent)
     }
 
+    @Tag("unit")
     @Test
     fun `selectAgent updates selectedAgent`() = runTest {
         // Pre-load agents for validation
@@ -115,6 +121,7 @@ class CreateSessionViewModelTest {
         assertEquals("claude", viewModel.selectedAgent.value)
     }
 
+    @Tag("unit")
     @Test
     fun `createSession calls repository and changes state to Creating`() = runTest {
         // Pre-load agents for validation
@@ -133,6 +140,7 @@ class CreateSessionViewModelTest {
         coVerify { repository.createSession("/home/user/project", "claude") }
     }
 
+    @Tag("unit")
     @Test
     fun `reset clears all state`() = runTest {
         // Pre-load agents for validation
@@ -153,6 +161,7 @@ class CreateSessionViewModelTest {
         assertNull(viewModel.selectedAgent.value)
     }
 
+    @Tag("unit")
     @Test
     fun `goBackStep from DirectorySelected goes to SelectingDirectory`() = runTest {
         val viewModel = createViewModel()
@@ -164,6 +173,7 @@ class CreateSessionViewModelTest {
         assertTrue(viewModel.createState.value is CreateSessionState.SelectingDirectory)
     }
 
+    @Tag("unit")
     @Test
     fun `goBackStep from SelectingAgent goes to DirectorySelected`() = runTest {
         val viewModel = createViewModel()
@@ -176,6 +186,7 @@ class CreateSessionViewModelTest {
         assertTrue(viewModel.createState.value is CreateSessionState.DirectorySelected)
     }
 
+    @Tag("unit")
     @Test
     fun `SessionCreated event changes state to Created`() = runTest {
         val viewModel = createViewModel()
@@ -190,6 +201,7 @@ class CreateSessionViewModelTest {
         assertEquals(session.id, (state as CreateSessionState.Created).session.id)
     }
 
+    @Tag("unit")
     @Test
     fun `SessionCreated event emits UI event`() = runTest {
         val viewModel = createViewModel()
@@ -205,6 +217,7 @@ class CreateSessionViewModelTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `SessionError event changes state to Failed when in Creating state`() = runTest {
         // Pre-load agents for validation
@@ -232,6 +245,7 @@ class CreateSessionViewModelTest {
         assertEquals("Directory not found", state.message)
     }
 
+    @Tag("unit")
     @Test
     fun `SessionError event emits UI event`() = runTest {
         val viewModel = createViewModel()
@@ -247,6 +261,7 @@ class CreateSessionViewModelTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `refreshAgents calls repository`() = runTest {
         val viewModel = createViewModel()
@@ -256,6 +271,7 @@ class CreateSessionViewModelTest {
         coVerify { repository.refreshAgents() }
     }
 
+    @Tag("unit")
     @Test
     fun `navigateToDirectory updates currentPath`() = runTest {
         val viewModel = createViewModel()
@@ -265,6 +281,7 @@ class CreateSessionViewModelTest {
         assertEquals("/home/user/repos", viewModel.currentPath.value)
     }
 
+    @Tag("unit")
     @Test
     fun `navigateBack returns to previous path`() = runTest {
         val viewModel = createViewModel()
@@ -278,6 +295,7 @@ class CreateSessionViewModelTest {
         assertEquals("/home/user", viewModel.currentPath.value)
     }
 
+    @Tag("unit")
     @Test
     fun `navigateBack at root returns false`() = runTest {
         val viewModel = createViewModel()
@@ -292,6 +310,7 @@ class CreateSessionViewModelTest {
     // Validation Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `selectDirectory with invalid path emits error`() = runTest {
         val viewModel = createViewModel()
@@ -310,6 +329,7 @@ class CreateSessionViewModelTest {
         assertNull(viewModel.selectedDirectory.value)
     }
 
+    @Tag("unit")
     @Test
     fun `selectDirectory with path traversal emits error`() = runTest {
         val viewModel = createViewModel()
@@ -326,6 +346,7 @@ class CreateSessionViewModelTest {
         assertNull(viewModel.selectedDirectory.value)
     }
 
+    @Tag("unit")
     @Test
     fun `selectRecentDirectory with invalid path emits error`() = runTest {
         val viewModel = createViewModel()
@@ -340,6 +361,7 @@ class CreateSessionViewModelTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `selectAgent with invalid name emits error`() = runTest {
         val viewModel = createViewModel()
@@ -357,6 +379,7 @@ class CreateSessionViewModelTest {
         assertNull(viewModel.selectedAgent.value)
     }
 
+    @Tag("unit")
     @Test
     fun `selectAgent with unavailable agent emits error`() = runTest {
         agentsFlow.value = listOf(
@@ -378,6 +401,7 @@ class CreateSessionViewModelTest {
         assertNull(viewModel.selectedAgent.value)
     }
 
+    @Tag("unit")
     @Test
     fun `selectAgent with non-existent agent emits error`() = runTest {
         agentsFlow.value = listOf(
@@ -396,6 +420,7 @@ class CreateSessionViewModelTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `selectAgent with valid available agent succeeds`() = runTest {
         agentsFlow.value = listOf(
@@ -414,6 +439,7 @@ class CreateSessionViewModelTest {
     // Concurrent Create Session Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `createSession while already creating does nothing`() = runTest {
         agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
@@ -440,6 +466,7 @@ class CreateSessionViewModelTest {
     // Event Flow Integration Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `DirectoriesLoaded event updates directory state`() = runTest {
         val viewModel = createViewModel()
@@ -463,6 +490,7 @@ class CreateSessionViewModelTest {
         assertEquals(2, loaded.recentDirectories.size)
     }
 
+    @Tag("unit")
     @Test
     fun `AgentsLoaded event updates agents state`() = runTest {
         val viewModel = createViewModel()
@@ -485,6 +513,7 @@ class CreateSessionViewModelTest {
         assertFalse(loaded.agents[1].available)
     }
 
+    @Tag("unit")
     @Test
     fun `recentDirectories flow updates when DirectoriesLoaded has recent`() = runTest {
         val viewModel = createViewModel()
@@ -501,6 +530,7 @@ class CreateSessionViewModelTest {
     // Loading Fix Tests (verifying fix for hanging/race condition)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `loadInitialData uses existing agents without calling getAgents`() = runTest {
         // Pre-populate agents before ViewModel creation
@@ -521,18 +551,20 @@ class CreateSessionViewModelTest {
         coVerify(exactly = 0) { repository.getAgents() }
     }
 
+    @Tag("unit")
     @Test
     fun `loadInitialData calls getAgents when no existing agents`() = runTest {
         // No pre-populated agents
         agentsFlow.value = emptyList()
 
-        val viewModel = createViewModel()
+        createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Should call getAgents
         coVerify { repository.getAgents() }
     }
 
+    @Tag("unit")
     @Test
     fun `SessionError only updates state when in Creating state`() = runTest {
         val viewModel = createViewModel()
@@ -550,6 +582,7 @@ class CreateSessionViewModelTest {
         assertTrue(viewModel.createState.value is CreateSessionState.SelectingDirectory)
     }
 
+    @Tag("unit")
     @Test
     fun `SessionError updates state when in Creating state`() = runTest {
         agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
@@ -579,6 +612,7 @@ class CreateSessionViewModelTest {
     // Channel Single Delivery Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `UI events are delivered exactly once via Channel`() = runTest {
         val viewModel = createViewModel()
@@ -606,6 +640,7 @@ class CreateSessionViewModelTest {
     // Atomic State Transition Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `concurrent createSession calls are prevented by atomic check`() = runTest {
         agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
@@ -627,6 +662,7 @@ class CreateSessionViewModelTest {
         coVerify(exactly = 1) { repository.createSession(any(), any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `goBackStep atomic transition from SelectingAgent preserves directory`() = runTest {
         val viewModel = createViewModel()
@@ -641,6 +677,7 @@ class CreateSessionViewModelTest {
         assertEquals("/home/user/my-project", (state as CreateSessionState.DirectorySelected).directory)
     }
 
+    @Tag("unit")
     @Test
     fun `reset atomically clears all state`() = runTest {
         agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
@@ -663,6 +700,7 @@ class CreateSessionViewModelTest {
         assertEquals("", viewModel.currentPath.value)
     }
 
+    @Tag("unit")
     @Test
     fun `directory state updates atomically on navigation`() = runTest {
         val viewModel = createViewModel()
@@ -681,6 +719,7 @@ class CreateSessionViewModelTest {
     // Error Handling Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `createSession error updates state and emits event`() = runTest {
         agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))
@@ -708,6 +747,7 @@ class CreateSessionViewModelTest {
         assertTrue(state is CreateSessionState.Failed)
     }
 
+    @Tag("unit")
     @Test
     fun `refreshAgents sets Loading state then updates on response`() = runTest {
         agentsFlow.value = listOf(AgentInfo("Claude", "claude", "/usr/bin/claude", true))

@@ -6,16 +6,18 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import androidx.test.core.app.ApplicationProvider
+import com.ras.TestApplication
 import com.ras.proto.NotificationType
 import com.ras.proto.TerminalNotification
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.extension.ExtendWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import tech.apter.junit.jupiter.robolectric.RobolectricExtension
 import org.robolectric.shadows.ShadowNotificationManager
 
 /**
@@ -29,15 +31,15 @@ import org.robolectric.shadows.ShadowNotificationManager
  * - NA06: Multiple notifications - 3 sessions notify separately
  * - NA07: Notification grouping - 5+ notifications grouped
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [Build.VERSION_CODES.TIRAMISU])
+@ExtendWith(RobolectricExtension::class)
+@Config(sdk = [Build.VERSION_CODES.TIRAMISU], application = TestApplication::class)
 class NotificationHandlerTest {
 
     private lateinit var context: Application
     private lateinit var handler: NotificationHandler
     private lateinit var shadowNotificationManager: ShadowNotificationManager
 
-    @Before
+    @BeforeEach
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
 
@@ -54,6 +56,7 @@ class NotificationHandlerTest {
     // NA01: Permission granted - notification shown
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `na01 notification shown when permission granted`() {
         // Given: permission granted (Robolectric grants by default on SDK < 33)
@@ -65,10 +68,10 @@ class NotificationHandlerTest {
         val result = handler.showNotification(notification)
 
         // Then: notification is shown
-        assertTrue("Notification should be shown", result)
+        assertTrue(result, "Notification should be shown")
         assertTrue(
-            "Should have at least 1 notification",
-            shadowNotificationManager.allNotifications.isNotEmpty()
+            shadowNotificationManager.allNotifications.isNotEmpty(),
+            "Should have at least 1 notification"
         )
     }
 
@@ -76,6 +79,7 @@ class NotificationHandlerTest {
     // NA02: Permission denied - silent fail (no crash)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `na02 permission denied returns false without crash`() {
         // Given: permission denied
@@ -87,13 +91,14 @@ class NotificationHandlerTest {
         val result = handler.showNotification(notification)
 
         // Then: returns false, no crash
-        assertFalse("Should return false when permission denied", result)
+        assertFalse(result, "Should return false when permission denied")
     }
 
     // ==========================================================================
     // NA06: Multiple notifications - 3 sessions notify separately
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `na06 multiple sessions have separate notifications`() {
         // Given: permission granted
@@ -109,8 +114,8 @@ class NotificationHandlerTest {
         // Then: 3 separate notifications shown
         val notificationCount = shadowNotificationManager.allNotifications.size
         assertTrue(
-            "Should have at least 3 notifications, got $notificationCount",
-            notificationCount >= 3
+            notificationCount >= 3,
+            "Should have at least 3 notifications, got $notificationCount"
         )
     }
 
@@ -118,6 +123,7 @@ class NotificationHandlerTest {
     // NA07: Notification grouping - 5+ notifications grouped
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `na07 five plus notifications are grouped`() {
         // Given: permission granted
@@ -132,8 +138,8 @@ class NotificationHandlerTest {
         // Then: summary notification is also shown (5 + 1 summary = 6 notifications)
         val notificationCount = shadowNotificationManager.allNotifications.size
         assertTrue(
-            "Should show group summary after 5 notifications (expected 6, got $notificationCount)",
-            notificationCount >= 6
+            notificationCount >= 6,
+            "Should show group summary after 5 notifications (expected 6, got $notificationCount)"
         )
     }
 
@@ -141,6 +147,7 @@ class NotificationHandlerTest {
     // Dismiss Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `dismiss notification cancels by session id hash`() {
         // Given: permission granted
@@ -151,16 +158,17 @@ class NotificationHandlerTest {
         handler.showNotification(notification)
 
         val initialCount = shadowNotificationManager.allNotifications.size
-        assertTrue("Should have at least 1 notification", initialCount >= 1)
+        assertTrue(initialCount >= 1, "Should have at least 1 notification")
 
         // When: dismissing notification
         handler.dismissNotification(sessionId)
 
         // Then: notification count decreased
         val finalCount = shadowNotificationManager.allNotifications.size
-        assertTrue("Should have fewer notifications after dismiss", finalCount < initialCount)
+        assertTrue(finalCount < initialCount, "Should have fewer notifications after dismiss")
     }
 
+    @Tag("unit")
     @Test
     fun `dismiss all cancels all notifications`() {
         // Given: permission granted and multiple notifications
@@ -170,15 +178,15 @@ class NotificationHandlerTest {
             handler.showNotification(createTestNotification(sessionId = "session-$i"))
         }
 
-        assertTrue("Should have notifications", shadowNotificationManager.allNotifications.isNotEmpty())
+        assertTrue(shadowNotificationManager.allNotifications.isNotEmpty(), "Should have notifications")
 
         // When: dismissing all
         handler.dismissAll()
 
         // Then: all notifications cleared
         assertTrue(
-            "Should have no notifications after dismissAll",
-            shadowNotificationManager.allNotifications.isEmpty()
+            shadowNotificationManager.allNotifications.isEmpty(),
+            "Should have no notifications after dismissAll"
         )
     }
 
@@ -186,6 +194,7 @@ class NotificationHandlerTest {
     // Notification Type Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `approval notification has correct content`() {
         // Given: permission granted
@@ -205,6 +214,7 @@ class NotificationHandlerTest {
         assertTrue(shadowNotificationManager.allNotifications.isNotEmpty())
     }
 
+    @Tag("unit")
     @Test
     fun `completion notification has correct content`() {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
@@ -221,6 +231,7 @@ class NotificationHandlerTest {
         assertTrue(shadowNotificationManager.allNotifications.isNotEmpty())
     }
 
+    @Tag("unit")
     @Test
     fun `error notification has correct content`() {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)

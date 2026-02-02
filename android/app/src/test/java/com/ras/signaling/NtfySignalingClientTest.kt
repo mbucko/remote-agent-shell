@@ -10,33 +10,34 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 /**
  * Tests for NtfySignalingClient.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
 class NtfySignalingClientTest {
 
     // ==================== Topic Computation Tests ====================
 
+    @Tag("unit")
     @Test
     fun `computes topic from master secret`() {
         val masterSecret = ByteArray(32)
         val topic = NtfySignalingClient.computeTopic(masterSecret)
 
-        assertTrue("Topic should start with 'ras-'", topic.startsWith("ras-"))
-        assertEquals("Topic should be 16 chars (ras- + 12 hex)", 16, topic.length)
+        assertTrue(topic.startsWith("ras-"), "Topic should start with 'ras-'")
+        assertEquals(16, topic.length, "Topic should be 16 chars (ras- + 12 hex)")
     }
 
+    @Tag("unit")
     @Test
     fun `different secrets produce different topics`() {
         val topic1 = NtfySignalingClient.computeTopic(ByteArray(32))
@@ -45,6 +46,7 @@ class NtfySignalingClientTest {
         assertNotEquals(topic1, topic2)
     }
 
+    @Tag("unit")
     @Test
     fun `topic matches test vector`() {
         // Test vector from KeyDerivationTest
@@ -56,13 +58,17 @@ class NtfySignalingClientTest {
         assertEquals(expected, topic)
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `topic rejects short master secret`() {
-        NtfySignalingClient.computeTopic(ByteArray(16))
+        assertThrows(IllegalArgumentException::class.java) {
+            NtfySignalingClient.computeTopic(ByteArray(16))
+        }
     }
 
     // ==================== URL Building Tests ====================
 
+    @Tag("unit")
     @Test
     fun `builds correct WebSocket URL`() {
         val topic = "ras-abc123def456"
@@ -71,6 +77,7 @@ class NtfySignalingClientTest {
         assertEquals("wss://ntfy.sh/ras-abc123def456/ws", url)
     }
 
+    @Tag("unit")
     @Test
     fun `builds correct WebSocket URL with custom server`() {
         val topic = "ras-abc123"
@@ -79,6 +86,7 @@ class NtfySignalingClientTest {
         assertEquals("wss://custom.server.com/ras-abc123/ws", url)
     }
 
+    @Tag("unit")
     @Test
     fun `builds correct publish URL`() {
         val topic = "ras-abc123def456"
@@ -89,6 +97,7 @@ class NtfySignalingClientTest {
 
     // ==================== MockNtfyClient Tests ====================
 
+    @Tag("unit")
     @Test
     fun `mock client tracks subscription state`() = runTest {
         val mockClient = MockNtfyClient()
@@ -105,6 +114,7 @@ class NtfySignalingClientTest {
         flow.first { it.event == "message" }
     }
 
+    @Tag("unit")
     @Test
     fun `mock client delivers messages`() = runTest {
         val mockClient = MockNtfyClient()
@@ -118,6 +128,7 @@ class NtfySignalingClientTest {
         assertEquals("test message", message.message)
     }
 
+    @Tag("unit")
     @Test
     fun `mock client tracks published messages`() = runTest {
         val mockClient = MockNtfyClient()
@@ -134,6 +145,7 @@ class NtfySignalingClientTest {
         assertEquals("message 2", published[1])
     }
 
+    @Tag("unit")
     @Test
     fun `mock client can clear published messages`() = runTest {
         val mockClient = MockNtfyClient()
@@ -146,6 +158,7 @@ class NtfySignalingClientTest {
         assertEquals(0, mockClient.getPublishedMessages().size)
     }
 
+    @Tag("unit")
     @Test
     fun `mock client unsubscribe clears subscription state`() = runTest {
         val mockClient = MockNtfyClient()
@@ -159,6 +172,7 @@ class NtfySignalingClientTest {
 
     // ==================== Message Parsing Tests ====================
 
+    @Tag("unit")
     @Test
     fun `parses ntfy message event`() {
         val json = """{"event":"message","message":"encrypted_data"}"""
@@ -169,6 +183,7 @@ class NtfySignalingClientTest {
         assertEquals("encrypted_data", result.message)
     }
 
+    @Tag("unit")
     @Test
     fun `ignores keepalive event`() {
         val json = """{"event":"keepalive"}"""
@@ -179,12 +194,14 @@ class NtfySignalingClientTest {
         assertEquals("keepalive", result!!.event)
     }
 
+    @Tag("unit")
     @Test
     fun `returns null for invalid JSON`() {
         val result = NtfySignalingClient.parseNtfyMessage("not json")
         assertEquals(null, result)
     }
 
+    @Tag("unit")
     @Test
     fun `returns null for empty string`() {
         val result = NtfySignalingClient.parseNtfyMessage("")
@@ -200,9 +217,9 @@ class NtfySignalingClientTest {
  * NetworkOnMainThreadException bug.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
 class NtfySignalingClientMainSafetyTest {
 
+    @Tag("unit")
     @Test
     fun `publish is main-safe with injected IO dispatcher`() = runTest {
         // Use MockWebServer to avoid real network calls
@@ -238,6 +255,7 @@ class NtfySignalingClientMainSafetyTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `publish handles HTTP errors correctly`() = runTest {
         val mockServer = MockWebServer()
@@ -259,10 +277,10 @@ class NtfySignalingClientMainSafetyTest {
                 advanceUntilIdle()
             } catch (e: Exception) {
                 exceptionThrown = true
-                assertTrue("Should be IOException", e.message?.contains("Failed to publish") == true)
+                assertTrue(e.message?.contains("Failed to publish") == true, "Should be IOException")
             }
 
-            assertTrue("Should throw exception on HTTP error", exceptionThrown)
+            assertTrue(exceptionThrown, "Should throw exception on HTTP error")
         } finally {
             mockServer.shutdown()
         }
@@ -273,9 +291,9 @@ class NtfySignalingClientMainSafetyTest {
  * Tests for reliability features (ping/pong, reconnection, retry).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
 class NtfySignalingClientReliabilityTest {
 
+    @Tag("unit")
     @Test
     fun `ping interval is configured for cellular keep-alive`() {
         // Verify OkHttpClient is configured with 15-second ping interval
@@ -288,17 +306,19 @@ class NtfySignalingClientReliabilityTest {
         val httpClient = field.get(client) as OkHttpClient
 
         assertEquals(
-            "Ping interval should be 15 seconds for cellular keep-alive",
             15_000,
-            httpClient.pingIntervalMillis
+            httpClient.pingIntervalMillis,
+            "Ping interval should be 15 seconds for cellular keep-alive"
         )
     }
 
+    @Tag("unit")
     @Test
     fun `max reconnect attempts defaults to 3`() {
         assertEquals(3, NtfySignalingClient.DEFAULT_MAX_RECONNECT_ATTEMPTS)
     }
 
+    @Tag("unit")
     @Test
     fun `max reconnect attempts can be configured`() {
         val client = NtfySignalingClient(maxReconnectAttempts = 5)
@@ -310,6 +330,7 @@ class NtfySignalingClientReliabilityTest {
         assertEquals(5, attempts)
     }
 
+    @Tag("unit")
     @Test
     fun `mock client handles disconnect gracefully`() = runTest {
         val mock = MockNtfyClient()
@@ -326,7 +347,7 @@ class NtfySignalingClientReliabilityTest {
         }
 
         advanceUntilIdle()
-        assertTrue("Should be subscribed", mock.isSubscribed)
+        assertTrue(mock.isSubscribed, "Should be subscribed")
 
         // Deliver a message
         mock.deliverMessage("test")
@@ -338,11 +359,12 @@ class NtfySignalingClientReliabilityTest {
         advanceUntilIdle()
 
         // After disconnect, subscription state is cleared
-        assertFalse("Should no longer be subscribed after disconnect", mock.isSubscribed)
+        assertFalse(mock.isSubscribed, "Should no longer be subscribed after disconnect")
 
         job.cancel()
     }
 
+    @Tag("unit")
     @Test
     fun `mock client can be reset for reuse`() = runTest {
         val mock = MockNtfyClient()
@@ -364,6 +386,7 @@ class NtfySignalingClientReliabilityTest {
 
     // ==================== Publish Retry Tests ====================
 
+    @Tag("unit")
     @Test
     fun `publishWithRetry succeeds on first attempt`() = runTest {
         val mock = MockNtfyClient()
@@ -375,6 +398,7 @@ class NtfySignalingClientReliabilityTest {
         assertEquals(listOf("message"), mock.getPublishedMessages())
     }
 
+    @Tag("unit")
     @Test
     fun `publishWithRetry retries on failure`() = runTest {
         val mock = MockNtfyClient()
@@ -387,6 +411,7 @@ class NtfySignalingClientReliabilityTest {
         assertEquals(listOf("message"), mock.getPublishedMessages())
     }
 
+    @Tag("unit")
     @Test
     fun `publishWithRetry throws after max retries`() = runTest {
         val mock = MockNtfyClient()
@@ -401,7 +426,7 @@ class NtfySignalingClientReliabilityTest {
             assertTrue(e.message?.contains("Failed") == true)
         }
 
-        assertTrue("Should throw PublishFailedException", exceptionThrown)
+        assertTrue(exceptionThrown, "Should throw PublishFailedException")
         assertEquals(3, mock.getPublishAttempts())
         assertEquals(0, mock.getPublishedMessages().size)
     }

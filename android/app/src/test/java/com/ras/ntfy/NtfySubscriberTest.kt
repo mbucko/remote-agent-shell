@@ -7,10 +7,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NtfySubscriberTest {
@@ -25,7 +26,7 @@ class NtfySubscriberTest {
 
     private lateinit var crypto: NtfyCrypto
 
-    @Before
+    @BeforeEach
     fun setup() {
         crypto = NtfyCrypto(ntfyKey)
     }
@@ -34,6 +35,7 @@ class NtfySubscriberTest {
     // URL Building Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `buildWsUrl converts https to wss`() {
         val subscriber = NtfySubscriber(
@@ -46,6 +48,7 @@ class NtfySubscriberTest {
         assertEquals("wss://ntfy.sh/test-topic/ws", subscriber.buildWsUrl())
     }
 
+    @Tag("unit")
     @Test
     fun `buildWsUrl converts http to ws`() {
         val subscriber = NtfySubscriber(
@@ -62,6 +65,7 @@ class NtfySubscriberTest {
     // Message Handling Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `handleMessage emits valid IP change`() = runTest(testDispatcher) {
         val subscriber = NtfySubscriber(
@@ -85,9 +89,10 @@ class NtfySubscriberTest {
         // The test vector has timestamp 1706384400 which is in the past
         // so it will be rejected by timestamp validation
         val data = result.await()
-        assertNull("Old timestamp should be rejected", data)
+        assertNull(data, "Old timestamp should be rejected")
     }
 
+    @Tag("unit")
     @Test
     fun `handleMessage ignores keepalive events`() = runTest(testDispatcher) {
         val subscriber = NtfySubscriber(
@@ -106,9 +111,10 @@ class NtfySubscriberTest {
         subscriber.handleMessage(keepalive)
 
         val data = result.await()
-        assertNull("Keepalive should not emit", data)
+        assertNull(data, "Keepalive should not emit")
     }
 
+    @Tag("unit")
     @Test
     fun `handleMessage ignores open events`() = runTest(testDispatcher) {
         val subscriber = NtfySubscriber(
@@ -127,9 +133,10 @@ class NtfySubscriberTest {
         subscriber.handleMessage(open)
 
         val data = result.await()
-        assertNull("Open event should not emit", data)
+        assertNull(data, "Open event should not emit")
     }
 
+    @Tag("unit")
     @Test
     fun `handleMessage ignores empty message field`() = runTest(testDispatcher) {
         val subscriber = NtfySubscriber(
@@ -148,9 +155,10 @@ class NtfySubscriberTest {
         subscriber.handleMessage(empty)
 
         val data = result.await()
-        assertNull("Empty message should not emit", data)
+        assertNull(data, "Empty message should not emit")
     }
 
+    @Tag("unit")
     @Test
     fun `handleMessage ignores invalid json`() = runTest(testDispatcher) {
         val subscriber = NtfySubscriber(
@@ -168,9 +176,10 @@ class NtfySubscriberTest {
         subscriber.handleMessage("not json at all")
 
         val data = result.await()
-        assertNull("Invalid JSON should not emit", data)
+        assertNull(data, "Invalid JSON should not emit")
     }
 
+    @Tag("unit")
     @Test
     fun `handleMessage ignores decryption failure`() = runTest(testDispatcher) {
         val subscriber = NtfySubscriber(
@@ -189,13 +198,14 @@ class NtfySubscriberTest {
         subscriber.handleMessage(badMessage)
 
         val data = result.await()
-        assertNull("Invalid encryption should not emit", data)
+        assertNull(data, "Invalid encryption should not emit")
     }
 
     // ============================================================================
     // Replay Protection Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `replay protection rejects duplicate nonce`() = runTest(testDispatcher) {
         val subscriber = NtfySubscriber(
@@ -218,9 +228,10 @@ class NtfySubscriberTest {
         subscriber.handleMessage(message)
 
         val data = result.await()
-        assertNull("Replay should be rejected", data)
+        assertNull(data, "Replay should be rejected")
     }
 
+    @Tag("unit")
     @Test
     fun `nonce cache has max size with FIFO eviction`() {
         val subscriber = NtfySubscriber(
@@ -237,13 +248,13 @@ class NtfySubscriberTest {
         // First 50 should have been evicted
         for (i in 0 until 50) {
             val nonce = String.format("%032x", i)
-            assertEquals("Nonce $i should be evicted", false, subscriber.hasNonce(nonce))
+            assertEquals(false, subscriber.hasNonce(nonce), "Nonce $i should be evicted")
         }
 
         // Last 100 should still be present
         for (i in 50 until 150) {
             val nonce = String.format("%032x", i)
-            assertEquals("Nonce $i should be present", true, subscriber.hasNonce(nonce))
+            assertEquals(true, subscriber.hasNonce(nonce), "Nonce $i should be present")
         }
     }
 
@@ -251,6 +262,7 @@ class NtfySubscriberTest {
     // Reconnect Counter Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `resetReconnectCounter resets counter`() {
         val subscriber = NtfySubscriber(

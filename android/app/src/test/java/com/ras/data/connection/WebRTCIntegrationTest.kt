@@ -20,12 +20,13 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import okhttp3.OkHttpClient
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 /**
  * End-to-end integration tests for WebRTC connection flow.
@@ -142,7 +143,7 @@ class WebRTCIntegrationTest {
         a=candidate:1 1 udp 2130706431 192.168.1.100 56000 typ host
     """.trimIndent()
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
 
@@ -153,6 +154,7 @@ class WebRTCIntegrationTest {
         mockWebRTCClientFactory = mockk()
         credentialRepository = mockk()
         connectionManager = mockk(relaxed = true)
+        every { connectionManager.isConnected } returns kotlinx.coroutines.flow.MutableStateFlow(false)
         httpClient = mockk()
         ntfyClient = mockk(relaxed = true)
 
@@ -176,7 +178,7 @@ class WebRTCIntegrationTest {
         coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
@@ -194,6 +196,7 @@ class WebRTCIntegrationTest {
     // SCENARIO 1: Happy Path - WebRTC Connection Succeeds
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `full flow - WebRTC connects successfully with SDP exchange`() = runTest {
         // Setup: WebRTC client creates offer
@@ -211,7 +214,7 @@ class WebRTCIntegrationTest {
         val transport = orchestrator.connect(createContext()) { progressUpdates.add(it) }
 
         // Verify: Transport returned
-        assertNotNull("Should return transport", transport)
+        assertNotNull(transport, "Should return transport")
         assertEquals(TransportType.WEBRTC, transport?.type)
 
         // Verify: WebRTC flow was executed
@@ -222,10 +225,11 @@ class WebRTCIntegrationTest {
 
         // Verify: Connected via WebRTC
         val connected = progressUpdates.filterIsInstance<ConnectionProgress.Connected>().firstOrNull()
-        assertNotNull("Should have Connected progress", connected)
+        assertNotNull(connected, "Should have Connected progress")
         assertEquals("WebRTC P2P", connected?.strategyName)
     }
 
+    @Tag("integration")
     @Test
     fun `WebRTC used when Tailscale unavailable`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
@@ -240,22 +244,23 @@ class WebRTCIntegrationTest {
         // Verify: Tailscale was unavailable
         val unavailable = progressUpdates.filterIsInstance<ConnectionProgress.StrategyUnavailable>()
             .find { it.strategyName == "Tailscale Direct" }
-        assertNotNull("Tailscale should be unavailable", unavailable)
+        assertNotNull(unavailable, "Tailscale should be unavailable")
 
         // Verify: WebRTC was available and used
         val available = progressUpdates.filterIsInstance<ConnectionProgress.StrategyAvailable>()
             .find { it.strategyName == "WebRTC P2P" }
-        assertNotNull("WebRTC should be available", available)
+        assertNotNull(available, "WebRTC should be available")
 
         val connected = progressUpdates.filterIsInstance<ConnectionProgress.Connected>()
             .find { it.strategyName == "WebRTC P2P" }
-        assertNotNull("Should connect via WebRTC", connected)
+        assertNotNull(connected, "Should connect via WebRTC")
     }
 
     // ============================================================================
     // SCENARIO 2: Same Network (LAN) Connection
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `same network - connects using host candidates only`() = runTest {
         // LAN scenario: only host candidates, no STUN reflexive candidates
@@ -268,18 +273,17 @@ class WebRTCIntegrationTest {
         val transport = orchestrator.connect(createContext()) {}
 
         // Verify: Connection succeeded with LAN-only candidates
-        assertNotNull("Should connect on same network", transport)
+        assertNotNull(transport, "Should connect on same network")
 
         // Verify: The offer sent had only host candidates
         val capturedOffer = slot<String>()
         coVerify { mockSignaling.sendOffer(capture(capturedOffer), any()) }
-        assertTrue("Offer should have host candidate",
-            capturedOffer.captured.contains("typ host"))
+        assertTrue(capturedOffer.captured.contains("typ host"), "Offer should have host candidate")
         // LAN-only offer shouldn't have srflx (STUN) candidates
-        assertTrue("LAN offer should not have srflx",
-            !capturedOffer.captured.contains("typ srflx"))
+        assertTrue(!capturedOffer.captured.contains("typ srflx"), "LAN offer should not have srflx")
     }
 
+    @Tag("integration")
     @Test
     fun `same network - progress reports correct steps`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns lanOnlyOffer
@@ -293,18 +297,19 @@ class WebRTCIntegrationTest {
 
         // Verify: Progress shows ICE negotiation steps
         val connecting = progressUpdates.filterIsInstance<ConnectionProgress.Connecting>()
-        assertTrue("Should have connecting steps", connecting.isNotEmpty())
+        assertTrue(connecting.isNotEmpty(), "Should have connecting steps")
 
         // Check for expected WebRTC steps
         val steps = connecting.map { it.step }
-        assertTrue("Should have 'Creating offer' step", steps.any { it.contains("offer") })
-        assertTrue("Should have 'Signaling' step", steps.any { it.contains("Signaling") })
+        assertTrue(steps.any { it.contains("offer") }, "Should have 'Creating offer' step")
+        assertTrue(steps.any { it.contains("Signaling") }, "Should have 'Signaling' step")
     }
 
     // ============================================================================
     // SCENARIO 3: NAT Traversal with STUN
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `NAT traversal - connects using reflexive candidates`() = runTest {
         // NAT scenario: includes srflx (STUN reflexive) candidates
@@ -316,19 +321,19 @@ class WebRTCIntegrationTest {
 
         val transport = orchestrator.connect(createContext()) {}
 
-        assertNotNull("Should connect through NAT", transport)
+        assertNotNull(transport, "Should connect through NAT")
 
         // Verify: Offer included srflx candidates
         val capturedOffer = slot<String>()
         coVerify { mockSignaling.sendOffer(capture(capturedOffer), any()) }
-        assertTrue("Should have srflx candidate for NAT",
-            capturedOffer.captured.contains("typ srflx"))
+        assertTrue(capturedOffer.captured.contains("typ srflx"), "Should have srflx candidate for NAT")
     }
 
     // ============================================================================
     // SCENARIO 4: Signaling Failures
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `signaling failure - no answer received`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
@@ -347,10 +352,11 @@ class WebRTCIntegrationTest {
         // Verify: Strategy failed
         val failed = progressUpdates.filterIsInstance<ConnectionProgress.StrategyFailed>()
             .find { it.strategyName == "WebRTC P2P" }
-        assertNotNull("WebRTC should have failed", failed)
-        assertTrue("Error should mention daemon", failed?.error?.contains("daemon") == true)
+        assertNotNull(failed, "WebRTC should have failed")
+        assertTrue(failed?.error?.contains("daemon") == true, "Error should mention daemon")
     }
 
+    @Tag("integration")
     @Test
     fun `signaling failure - exception during offer send`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
@@ -367,6 +373,7 @@ class WebRTCIntegrationTest {
     // SCENARIO 5: ICE Failures
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `ICE failure - data channel timeout`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
@@ -383,10 +390,11 @@ class WebRTCIntegrationTest {
 
         val failed = progressUpdates.filterIsInstance<ConnectionProgress.StrategyFailed>()
             .find { it.strategyName == "WebRTC P2P" }
-        assertNotNull("Should have failed", failed)
-        assertTrue("Error should mention ICE", failed?.error?.contains("ICE") == true)
+        assertNotNull(failed, "Should have failed")
+        assertTrue(failed?.error?.contains("ICE") == true, "Error should mention ICE")
     }
 
+    @Tag("integration")
     @Test
     fun `ICE failure - setRemoteDescription throws`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer
@@ -404,6 +412,7 @@ class WebRTCIntegrationTest {
     // SCENARIO 6: Offer Creation Failures
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `offer creation failure`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } throws Exception("Failed to gather candidates")
@@ -419,6 +428,7 @@ class WebRTCIntegrationTest {
     // SCENARIO 7: Full ReconnectionService Integration
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `ReconnectionServiceImpl performs auth after WebRTC connection`() = runTest {
         coEvery { credentialRepository.getCredentials() } returns testCredentials
@@ -454,13 +464,14 @@ class WebRTCIntegrationTest {
 
         // Verify: Authenticating progress WAS reported for WebRTC (unlike Tailscale)
         val authenticating = progressUpdates.filterIsInstance<ConnectionProgress.Authenticating>()
-        assertTrue("Should perform authentication for WebRTC", authenticating.isNotEmpty())
+        assertTrue(authenticating.isNotEmpty(), "Should perform authentication for WebRTC")
     }
 
     // ============================================================================
     // SCENARIO 8: Candidate Types Validation
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `validates offer contains valid candidates`() = runTest {
         // Offer with multiple candidate types
@@ -491,13 +502,14 @@ class WebRTCIntegrationTest {
         val capturedOffer = slot<String>()
         coVerify { mockSignaling.sendOffer(capture(capturedOffer), any()) }
         val candidates = capturedOffer.captured.lines().filter { it.contains("a=candidate:") }
-        assertEquals("Should have 4 candidates", 4, candidates.size)
+        assertEquals(4, candidates.size, "Should have 4 candidates")
     }
 
     // ============================================================================
     // SCENARIO 9: Empty or Invalid SDP
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `handles empty answer gracefully`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns sampleOffer

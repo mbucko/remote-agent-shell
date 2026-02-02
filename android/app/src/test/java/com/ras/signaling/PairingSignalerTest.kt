@@ -16,12 +16,13 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -44,7 +45,7 @@ class PairingSignalerTest {
     private val testDeviceId = "test-device-id"
     private val testDeviceName = "Test Device"
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockDirectClient = mockk()
         mockNtfyClient = MockNtfyClient()
@@ -57,6 +58,7 @@ class PairingSignalerTest {
 
     // ==================== Direct Signaling Tests ====================
 
+    @Tag("unit")
     @Test
     fun `uses direct signaling when successful`() = runTest {
         coEvery {
@@ -83,6 +85,7 @@ class PairingSignalerTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `does not use ntfy when direct succeeds`() = runTest {
         coEvery {
@@ -105,6 +108,7 @@ class PairingSignalerTest {
 
     // ==================== Ntfy Fallback Tests ====================
 
+    @Tag("unit")
     @Test
     fun `falls back to ntfy after direct timeout`() = runTest(testDispatcher) {
         // Direct signaling times out
@@ -141,6 +145,7 @@ class PairingSignalerTest {
         assertTrue(signalResult.usedNtfyPath)
     }
 
+    @Tag("unit")
     @Test
     fun `falls back to ntfy on connection refused`() = runTest {
         coEvery {
@@ -166,9 +171,10 @@ class PairingSignalerTest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Expected Success but got $signalResult", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Expected Success but got $signalResult")
     }
 
+    @Tag("unit")
     @Test
     fun `falls back to ntfy on direct signaling error`() = runTest {
         coEvery {
@@ -194,11 +200,12 @@ class PairingSignalerTest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Expected Success but got $signalResult", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Expected Success but got $signalResult")
     }
 
     // ==================== Ntfy Message Handling Tests ====================
 
+    @Tag("unit")
     @Test
     fun `ignores offer messages when expecting answer`() = runTest {
         coEvery {
@@ -230,9 +237,10 @@ class PairingSignalerTest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Expected Success but got $signalResult", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Expected Success but got $signalResult")
     }
 
+    @Tag("unit")
     @Test
     fun `ignores messages with wrong session id`() = runTest {
         coEvery {
@@ -264,11 +272,12 @@ class PairingSignalerTest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Expected Success but got $signalResult", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Expected Success but got $signalResult")
     }
 
     // ==================== Timeout Tests ====================
 
+    @Tag("unit")
     @Test
     fun `returns timeout error when ntfy times out`() = runTest(testDispatcher) {
         coEvery {
@@ -293,11 +302,12 @@ class PairingSignalerTest {
         advanceUntilIdle()
 
         val signalResult = result.await()
-        assertTrue("Expected NtfyTimeout but got $signalResult", signalResult is PairingSignalerResult.NtfyTimeout)
+        assertTrue(signalResult is PairingSignalerResult.NtfyTimeout, "Expected NtfyTimeout but got $signalResult")
     }
 
     // ==================== Cleanup Tests ====================
 
+    @Tag("unit")
     @Test
     fun `cleans up resources on success`() = runTest {
         coEvery {

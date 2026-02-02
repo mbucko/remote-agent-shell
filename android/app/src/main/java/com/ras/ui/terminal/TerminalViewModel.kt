@@ -82,7 +82,7 @@ class TerminalViewModel @Inject constructor(
     val terminalEmulator = RemoteTerminalEmulator(
         columns = 80,
         rows = 24,
-        onTitleChanged = { title ->
+        onTitleChanged = { _ ->
             // Could update session name if desired
         },
         onBell = {

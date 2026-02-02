@@ -206,29 +206,29 @@ class PairingManager @Inject constructor(
                 // Hand off WebRTC connection to ConnectionManager with encryption key
                 // IMPORTANT: This is a critical section - we must complete the handoff
                 // before returning, so ConnectionManager has a fully working connection
-                val client: WebRTCClient?
-                val key: ByteArray?
+                val clientToHandOff: WebRTCClient?
+                val keyToHandOff: ByteArray?
 
                 // Synchronize the ownership transfer and state change to prevent
                 // race condition with cleanup()
                 synchronized(connectionStateLock) {
-                    client = webRTCClient
-                    key = authKey
+                    clientToHandOff = webRTCClient
+                    keyToHandOff = authKey
 
-                    if (client != null && key != null) {
+                    if (clientToHandOff != null && keyToHandOff != null) {
                         // Transfer ownership BEFORE passing to ConnectionManager
                         // This ensures cleanup() won't close it even if called concurrently
-                        client.transferOwnership(ConnectionOwnership.ConnectionManager)
+                        clientToHandOff.transferOwnership(ConnectionOwnership.ConnectionManager)
                         connectionState = PairingConnectionState.HandedOff("ConnectionManager")
                         webRTCClient = null  // Clear reference BEFORE calling connect
                     }
                 }
 
-                if (client != null && key != null) {
+                if (clientToHandOff != null && keyToHandOff != null) {
                     try {
                         // AWAIT the connection setup - this sends ConnectionReady synchronously
                         // Note: This is outside the lock to avoid blocking cleanup() during connect
-                        connectionManager.connect(client, key)
+                        connectionManager.connect(clientToHandOff, keyToHandOff)
                         android.util.Log.i("PairingManager", "Handoff to ConnectionManager complete")
                     } catch (e: Exception) {
                         // Handoff failed - connection is broken

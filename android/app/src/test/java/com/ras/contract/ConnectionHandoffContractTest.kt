@@ -15,10 +15,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Contract tests for the connection handoff between PairingManager and ConnectionManager.
@@ -39,7 +40,7 @@ class ConnectionHandoffContractTest {
     private val authKey = ByteArray(32) { it.toByte() }
     private val sentMessages = mutableListOf<ByteArray>()
 
-    @Before
+    @BeforeEach
     fun setup() {
         webRTCClient = mockk(relaxed = true)
 
@@ -67,6 +68,7 @@ class ConnectionHandoffContractTest {
     // CONTRACT 1: ConnectionReady is sent synchronously during connect()
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `CONTRACT - ConnectionReady is sent BEFORE connect() returns`() = runTest {
         // This is the critical contract: connect() must send ConnectionReady
@@ -80,21 +82,19 @@ class ConnectionHandoffContractTest {
         // If this fails, it means ConnectionReady is being sent asynchronously
         // which can cause race conditions
         assertEquals(
-            "ConnectionReady must be sent synchronously during connect()",
             1,
-            sentMessages.size
+            sentMessages.size,
+            "ConnectionReady must be sent synchronously during connect()"
         )
 
         // Verify it's actually a ConnectionReady message
         val codec = BytesCodec(authKey.copyOf())
         val decrypted = codec.decode(sentMessages[0])
         val command = RasCommand.parseFrom(decrypted)
-        assertTrue(
-            "First message sent must be ConnectionReady",
-            command.hasConnectionReady()
-        )
+        assertTrue(command.hasConnectionReady(), "First message sent must be ConnectionReady")
     }
 
+    @Tag("unit")
     @Test
     fun `CONTRACT - connect() throws if ConnectionReady fails to send`() = runTest {
         // If sending ConnectionReady fails, connect() should throw
@@ -107,22 +107,17 @@ class ConnectionHandoffContractTest {
             connectionManager.connect(webRTCClient, authKey)
         } catch (e: IllegalStateException) {
             exceptionThrown = true
-            assertTrue(
-                "Exception should mention ConnectionReady",
-                e.message?.contains("ConnectionReady") == true
-            )
+            assertTrue(e.message?.contains("ConnectionReady") == true, "Exception should mention ConnectionReady")
         }
 
-        assertTrue(
-            "connect() must throw if ConnectionReady fails",
-            exceptionThrown
-        )
+        assertTrue(exceptionThrown, "connect() must throw if ConnectionReady fails")
     }
 
     // ============================================================================
     // CONTRACT 2: Ownership transfer prevents accidental close
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `CONTRACT - closeByOwner respects ownership`() {
         // WebRTCClient should only be closeable by its current owner
@@ -135,7 +130,7 @@ class ConnectionHandoffContractTest {
         webRTCClient.transferOwnership(ConnectionOwnership.ConnectionManager)
 
         // PairingManager trying to close should fail
-        val closed = webRTCClient.closeByOwner(ConnectionOwnership.PairingManager)
+        webRTCClient.closeByOwner(ConnectionOwnership.PairingManager)
 
         // The close should be rejected
         verify { webRTCClient.closeByOwner(ConnectionOwnership.PairingManager) }
@@ -145,25 +140,21 @@ class ConnectionHandoffContractTest {
     // CONTRACT 3: Connection state after handoff
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `CONTRACT - connection remains connected after successful handoff`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
 
         // Connection should be marked as connected
-        assertTrue(
-            "Connection should be marked as connected after handoff",
-            connectionManager.isConnected.value
-        )
+        assertTrue(connectionManager.isConnected.value, "Connection should be marked as connected after handoff")
     }
 
+    @Tag("unit")
     @Test
     fun `CONTRACT - connection is healthy after successful handoff`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
 
         // Connection should be marked as healthy
-        assertTrue(
-            "Connection should be marked as healthy after handoff",
-            connectionManager.isHealthy.value
-        )
+        assertTrue(connectionManager.isHealthy.value, "Connection should be marked as healthy after handoff")
     }
 }

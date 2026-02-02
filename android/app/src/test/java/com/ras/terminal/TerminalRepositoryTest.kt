@@ -38,15 +38,18 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
+import kotlin.test.assertFailsWith
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 /**
  * Comprehensive tests for TerminalRepository.
@@ -62,7 +65,7 @@ class TerminalRepositoryTest {
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
     private lateinit var repository: TerminalRepository
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
 
@@ -81,7 +84,7 @@ class TerminalRepositoryTest {
         repository = TerminalRepository(connectionManager, notificationHandler, testDispatcher, attachTimeoutMs = 100L)
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         repository.close()  // Cancel background coroutines
         Dispatchers.resetMain()
@@ -91,6 +94,7 @@ class TerminalRepositoryTest {
     // Initial State Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `initial state is not attached`() {
         val state = repository.state.value
@@ -100,11 +104,13 @@ class TerminalRepositoryTest {
         assertEquals(0L, state.lastSequence)
     }
 
+    @Tag("unit")
     @Test
     fun `initial state is not raw mode`() {
         assertFalse(repository.state.value.isRawMode)
     }
 
+    @Tag("unit")
     @Test
     fun `initial state has default dimensions`() {
         val state = repository.state.value
@@ -116,6 +122,7 @@ class TerminalRepositoryTest {
     // Attach Command Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `attach sends correct command`() = runTest(testDispatcher, timeout = 1.seconds) {
         val commandSlot = slot<TerminalCommand>()
@@ -144,6 +151,7 @@ class TerminalRepositoryTest {
         repository.close()
     }
 
+    @Tag("unit")
     @Test
     fun `attach with fromSequence sends correct command`() = runTest(testDispatcher, timeout = 1.seconds) {
         val commandSlot = slot<TerminalCommand>()
@@ -165,6 +173,7 @@ class TerminalRepositoryTest {
         job.join()
     }
 
+    @Tag("unit")
     @Test
     fun `attach updates state to attaching`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
@@ -188,25 +197,35 @@ class TerminalRepositoryTest {
         job.join()
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `attach throws for invalid session ID - too short`() = runTest(testDispatcher, timeout = 1.seconds) {
-        repository.attach("abc123")
+        assertFailsWith<IllegalArgumentException> {
+            repository.attach("abc123")
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `attach throws for invalid session ID - contains special chars`() = runTest(testDispatcher, timeout = 1.seconds) {
-        repository.attach("abc-123-def!")
+        assertFailsWith<IllegalArgumentException> {
+            repository.attach("abc-123-def!")
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `attach throws for invalid session ID - path traversal`() = runTest(testDispatcher, timeout = 1.seconds) {
-        repository.attach("../../../etc")
+        assertFailsWith<IllegalArgumentException> {
+            repository.attach("../../../etc")
+        }
     }
 
     // ==========================================================================
     // Attach Request-Response Correlation Tests (CompletableDeferred pattern)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `attach completes when daemon responds with TerminalAttached`() = runTest(testDispatcher, timeout = 1.seconds) {
         val commandSlot = slot<TerminalCommand>()
@@ -242,6 +261,7 @@ class TerminalRepositoryTest {
         assertEquals("abc123def456", state.sessionId)
     }
 
+    @Tag("unit")
     @Test
     fun `attach throws TerminalAttachException when daemon responds with error`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
@@ -281,6 +301,7 @@ class TerminalRepositoryTest {
         assertNotNull(state.error)
     }
 
+    @Tag("unit")
     @Test
     fun `attach throws TimeoutCancellationException when daemon does not respond`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
@@ -310,6 +331,7 @@ class TerminalRepositoryTest {
         assertEquals("ATTACH_TIMEOUT", state.error?.code)
     }
 
+    @Tag("unit")
     @Test
     fun `attach resets state when sendTerminalCommand throws unexpected exception`() = runTest(testDispatcher, timeout = 1.seconds) {
         // Simulate connection lost - sendTerminalCommand throws
@@ -331,6 +353,7 @@ class TerminalRepositoryTest {
         assertEquals("ATTACH_FAILED", state.error?.code)
     }
 
+    @Tag("unit")
     @Test
     fun `attach allows retry after sendTerminalCommand throws`() = runTest(testDispatcher, timeout = 1.seconds) {
         // First attempt - connection lost
@@ -369,6 +392,7 @@ class TerminalRepositoryTest {
         assertTrue(repository.state.value.isAttached)
     }
 
+    @Tag("unit")
     @Test
     fun `concurrent attach calls to same session are no-op`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
@@ -410,6 +434,7 @@ class TerminalRepositoryTest {
     // Detach Command Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `detach sends correct command when attached`() = runTest(testDispatcher, timeout = 1.seconds) {
         // First attach - use launch so we can emit response
@@ -437,6 +462,7 @@ class TerminalRepositoryTest {
         assertEquals("abc123def456", commandSlot.captured.detach.sessionId)
     }
 
+    @Tag("unit")
     @Test
     fun `detach does nothing when not attached`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.detach()
@@ -449,6 +475,7 @@ class TerminalRepositoryTest {
     // Send Input Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `sendInput sends data command when attached`() = runTest(testDispatcher, timeout = 1.seconds) {
         // Attach first
@@ -465,6 +492,7 @@ class TerminalRepositoryTest {
         assertEquals("hello", commandSlot.captured.input.data.toStringUtf8())
     }
 
+    @Tag("unit")
     @Test
     fun `sendInput string sends UTF-8 encoded bytes`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -478,6 +506,7 @@ class TerminalRepositoryTest {
         assertEquals("hello", commandSlot.captured.input.data.toStringUtf8())
     }
 
+    @Tag("unit")
     @Test
     fun `sendLine appends carriage return`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -491,21 +520,28 @@ class TerminalRepositoryTest {
         assertEquals("ls -la\r", commandSlot.captured.input.data.toStringUtf8())
     }
 
-    @Test(expected = IllegalStateException::class)
+    @Tag("unit")
+    @Test
     fun `sendInput throws when not attached`() = runTest(testDispatcher, timeout = 1.seconds) {
-        repository.sendInput("hello".toByteArray())
+        assertFailsWith<IllegalStateException> {
+            repository.sendInput("hello".toByteArray())
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `sendInput throws for data too large`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
-        repository.sendInput(ByteArray(100_000)) // > 64KB
+        assertFailsWith<IllegalArgumentException> {
+            repository.sendInput(ByteArray(100_000)) // > 64KB
+        }
     }
 
     // ==========================================================================
     // Send Special Key Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `sendSpecialKey sends correct command`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -521,6 +557,7 @@ class TerminalRepositoryTest {
         assertEquals(0, commandSlot.captured.input.special.modifiers)
     }
 
+    @Tag("unit")
     @Test
     fun `sendSpecialKey with modifiers sends correct command`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -534,15 +571,19 @@ class TerminalRepositoryTest {
         assertEquals(5, commandSlot.captured.input.special.modifiers)
     }
 
-    @Test(expected = IllegalStateException::class)
+    @Tag("unit")
+    @Test
     fun `sendSpecialKey throws when not attached`() = runTest(testDispatcher, timeout = 1.seconds) {
-        repository.sendSpecialKey(KeyType.KEY_CTRL_C)
+        assertFailsWith<IllegalStateException> {
+            repository.sendSpecialKey(KeyType.KEY_CTRL_C)
+        }
     }
 
     // ==========================================================================
     // Event Handling - Attached
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `handleAttached updates state correctly`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
@@ -577,6 +618,7 @@ class TerminalRepositoryTest {
         assertNull(state.error)
     }
 
+    @Tag("unit")
     @Test
     fun `handleAttached emits Attached event`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
@@ -612,6 +654,7 @@ class TerminalRepositoryTest {
     // Event Handling - Detached
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `handleDetached updates state correctly`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -631,6 +674,7 @@ class TerminalRepositoryTest {
         assertNull(state.error) // user_request doesn't set error
     }
 
+    @Tag("unit")
     @Test
     fun `handleDetached with non-user reason sets error`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -649,6 +693,7 @@ class TerminalRepositoryTest {
         assertEquals("session_killed", repository.state.value.error?.message)
     }
 
+    @Tag("unit")
     @Test
     fun `handleDetached emits Detached event`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -674,6 +719,7 @@ class TerminalRepositoryTest {
     // Event Handling - Output
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `handleOutput emits to output flow`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -696,6 +742,7 @@ class TerminalRepositoryTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `handleOutput updates lastSequence`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -714,6 +761,7 @@ class TerminalRepositoryTest {
         assertEquals(42L, repository.state.value.lastSequence)
     }
 
+    @Tag("unit")
     @Test
     fun `handleOutput emits Output event`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -743,6 +791,7 @@ class TerminalRepositoryTest {
     // Event Handling - Error
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `handleError updates state correctly`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
@@ -775,6 +824,7 @@ class TerminalRepositoryTest {
         assertEquals("Session not found", state.error?.message)
     }
 
+    @Tag("unit")
     @Test
     fun `handleError emits Error event`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
@@ -800,6 +850,7 @@ class TerminalRepositoryTest {
     // Event Handling - Output Skipped
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `handleSkipped updates state correctly`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -823,6 +874,7 @@ class TerminalRepositoryTest {
         assertEquals(40000, skipped?.bytesSkipped)
     }
 
+    @Tag("unit")
     @Test
     fun `handleSkipped emits OutputSkipped event`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -852,6 +904,7 @@ class TerminalRepositoryTest {
     // State Management Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `setRawMode updates state`() {
         repository.setRawMode(true)
@@ -861,6 +914,7 @@ class TerminalRepositoryTest {
         assertFalse(repository.state.value.isRawMode)
     }
 
+    @Tag("unit")
     @Test
     fun `toggleRawMode toggles state`() {
         assertFalse(repository.state.value.isRawMode)
@@ -872,6 +926,7 @@ class TerminalRepositoryTest {
         assertFalse(repository.state.value.isRawMode)
     }
 
+    @Tag("unit")
     @Test
     fun `clearError clears error state`() = runTest(testDispatcher, timeout = 1.seconds) {
         coEvery { connectionManager.sendTerminalCommand(any()) } returns Unit
@@ -902,6 +957,7 @@ class TerminalRepositoryTest {
         assertNull(repository.state.value.error)
     }
 
+    @Tag("unit")
     @Test
     fun `clearOutputSkipped clears skipped state`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -922,6 +978,7 @@ class TerminalRepositoryTest {
         assertNull(repository.state.value.outputSkipped)
     }
 
+    @Tag("unit")
     @Test
     fun `reset clears all state`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -941,17 +998,20 @@ class TerminalRepositoryTest {
     // canSendInput Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `canSendInput returns false when not attached`() {
         assertFalse(repository.state.value.canSendInput)
     }
 
+    @Tag("unit")
     @Test
     fun `canSendInput returns true when attached without error`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
         assertTrue(repository.state.value.canSendInput)
     }
 
+    @Tag("unit")
     @Test
     fun `canSendInput returns false when has error`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttachedState()
@@ -972,6 +1032,7 @@ class TerminalRepositoryTest {
     // OutputSkippedInfo.displayText Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `OutputSkippedInfo displayText shows bytes for small values`() {
         val info = com.ras.data.terminal.OutputSkippedInfo(
@@ -982,6 +1043,7 @@ class TerminalRepositoryTest {
         assertEquals("~500 bytes output skipped", info.displayText)
     }
 
+    @Tag("unit")
     @Test
     fun `OutputSkippedInfo displayText shows KB for medium values`() {
         val info = com.ras.data.terminal.OutputSkippedInfo(
@@ -992,6 +1054,7 @@ class TerminalRepositoryTest {
         assertEquals("~5KB output skipped", info.displayText)
     }
 
+    @Tag("unit")
     @Test
     fun `OutputSkippedInfo displayText shows MB for large values`() {
         val info = com.ras.data.terminal.OutputSkippedInfo(
@@ -1002,6 +1065,7 @@ class TerminalRepositoryTest {
         assertEquals("~2MB output skipped", info.displayText)
     }
 
+    @Tag("unit")
     @Test
     fun `OutputSkippedInfo displayText boundary at 1024 bytes`() {
         // At exactly 1024, should show KB
@@ -1013,6 +1077,7 @@ class TerminalRepositoryTest {
         assertEquals("~1KB output skipped", info.displayText)
     }
 
+    @Tag("unit")
     @Test
     fun `OutputSkippedInfo displayText boundary below 1024 bytes`() {
         val info = com.ras.data.terminal.OutputSkippedInfo(
@@ -1027,6 +1092,7 @@ class TerminalRepositoryTest {
     // TerminalErrorCodes Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `TerminalErrorCodes getDisplayMessage returns correct messages`() {
         assertEquals("Session not found",
@@ -1051,6 +1117,7 @@ class TerminalRepositoryTest {
             com.ras.data.terminal.TerminalErrorCodes.getDisplayMessage("INVALID_SESSION_ID", "default"))
     }
 
+    @Tag("unit")
     @Test
     fun `TerminalErrorCodes getDisplayMessage returns default for unknown code`() {
         assertEquals("Custom error message",
@@ -1061,34 +1128,44 @@ class TerminalRepositoryTest {
     // QuickButton Validation Tests
     // ==========================================================================
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `QuickButton requires keyType or character`() {
-        com.ras.data.terminal.QuickButton(
-            id = "test",
-            label = "Test",
-            keyType = null,
-            character = null
-        )
+        assertThrows(IllegalArgumentException::class.java) {
+            com.ras.data.terminal.QuickButton(
+                id = "test",
+                label = "Test",
+                keyType = null,
+                character = null
+            )
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `QuickButton requires non-empty id`() {
-        com.ras.data.terminal.QuickButton(
-            id = "",
-            label = "Test",
-            character = "x"
-        )
+        assertThrows(IllegalArgumentException::class.java) {
+            com.ras.data.terminal.QuickButton(
+                id = "",
+                label = "Test",
+                character = "x"
+            )
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `QuickButton requires non-empty label`() {
-        com.ras.data.terminal.QuickButton(
-            id = "test",
-            label = "",
-            character = "x"
-        )
+        assertThrows(IllegalArgumentException::class.java) {
+            com.ras.data.terminal.QuickButton(
+                id = "test",
+                label = "",
+                character = "x"
+            )
+        }
     }
 
+    @Tag("unit")
     @Test
     fun `QuickButton accepts keyType only`() {
         val button = com.ras.data.terminal.QuickButton(
@@ -1100,6 +1177,7 @@ class TerminalRepositoryTest {
         assertNull(button.character)
     }
 
+    @Tag("unit")
     @Test
     fun `QuickButton accepts character only`() {
         val button = com.ras.data.terminal.QuickButton(
@@ -1115,6 +1193,7 @@ class TerminalRepositoryTest {
     // TerminalState.canSendInput Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `canSendInput is false when sessionId is null`() {
         val state = com.ras.data.terminal.TerminalState(
@@ -1125,6 +1204,7 @@ class TerminalRepositoryTest {
         assertFalse(state.canSendInput)
     }
 
+    @Tag("unit")
     @Test
     fun `canSendInput is false when not attached`() {
         val state = com.ras.data.terminal.TerminalState(
@@ -1135,6 +1215,7 @@ class TerminalRepositoryTest {
         assertFalse(state.canSendInput)
     }
 
+    @Tag("unit")
     @Test
     fun `canSendInput is false when error present`() {
         val state = com.ras.data.terminal.TerminalState(
@@ -1145,6 +1226,7 @@ class TerminalRepositoryTest {
         assertFalse(state.canSendInput)
     }
 
+    @Tag("unit")
     @Test
     fun `canSendInput is true when attached with sessionId and no error`() {
         val state = com.ras.data.terminal.TerminalState(
@@ -1159,18 +1241,21 @@ class TerminalRepositoryTest {
     // TerminalInputValidator Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `TerminalInputValidator accepts valid input size`() {
         val data = ByteArray(65536) // Exactly 64KB
         assertTrue(com.ras.data.terminal.TerminalInputValidator.isValidInputSize(data))
     }
 
+    @Tag("unit")
     @Test
     fun `TerminalInputValidator rejects oversized input`() {
         val data = ByteArray(65537) // 64KB + 1
         assertFalse(com.ras.data.terminal.TerminalInputValidator.isValidInputSize(data))
     }
 
+    @Tag("unit")
     @Test
     fun `TerminalInputValidator accepts empty input`() {
         val data = ByteArray(0)
@@ -1181,6 +1266,7 @@ class TerminalRepositoryTest {
     // Error Event with Empty Session ID Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `error event with empty sessionId converts to null`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
@@ -1199,6 +1285,7 @@ class TerminalRepositoryTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `error state with empty sessionId stores null`() = runTest(testDispatcher, timeout = 1.seconds) {
         val errorEvent = ProtoTerminalEvent.newBuilder()

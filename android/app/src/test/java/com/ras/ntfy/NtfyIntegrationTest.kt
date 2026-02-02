@@ -8,12 +8,13 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -43,7 +44,7 @@ class NtfyIntegrationTest {
     private lateinit var crypto: NtfyCrypto
     private lateinit var subscriber: NtfySubscriber
 
-    @Before
+    @BeforeEach
     fun setup() {
         crypto = NtfyCrypto(ntfyKey)
         subscriber = NtfySubscriber(
@@ -57,6 +58,7 @@ class NtfyIntegrationTest {
     // Complete Flow Tests - Happy Path
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `complete flow - valid message triggers reconnection`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -80,21 +82,11 @@ class NtfyIntegrationTest {
         handler.start()
         advanceUntilIdle()
 
-        // Simulate receiving a message with current timestamp
-        val currentTimestamp = System.currentTimeMillis() / 1000
-
         // We need to create a fresh encrypted message with current timestamp
         // Since we can't encrypt (daemon-only), we'll test the decryption path directly
         // and verify the handler receives correct data
 
         // For this test, we directly emit to subscriber's flow to test handler
-        val testData = IpChangeData(
-            ip = "192.168.1.100",
-            port = 8821,
-            timestamp = currentTimestamp,
-            nonce = ByteArray(16) { it.toByte() }
-        )
-
         // Emit directly to test the handler integration
         subscriber.clearNonceCache()  // Clear any previous state
 
@@ -114,7 +106,7 @@ class NtfyIntegrationTest {
         advanceUntilIdle()
 
         val data = result.await()
-        assertNull("Old timestamp should be rejected in complete flow", data)
+        assertNull(data, "Old timestamp should be rejected in complete flow")
 
         handler.stop()
     }
@@ -123,6 +115,7 @@ class NtfyIntegrationTest {
     // Crypto Integration Tests
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `crypto correctly decrypts IPv4 from test vector`() {
         val result = crypto.decryptIpNotification(validIpv4Encrypted)
@@ -133,6 +126,7 @@ class NtfyIntegrationTest {
         assertEquals(16, result.nonce.size)
     }
 
+    @Tag("integration")
     @Test
     fun `crypto correctly decrypts IPv6 from test vector`() {
         val result = crypto.decryptIpNotification(validIpv6Encrypted)
@@ -147,6 +141,7 @@ class NtfyIntegrationTest {
     // Subscriber -> Handler Integration
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `subscriber filters non-message events before handler`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -173,11 +168,12 @@ class NtfyIntegrationTest {
         subscriber.handleMessage("""{"event":"open","time":1234567890}""")
         advanceUntilIdle()
 
-        assertTrue("Handler should not receive non-message events", !reconnectCalled.get())
+        assertTrue(!reconnectCalled.get(), "Handler should not receive non-message events")
 
         handler.stop()
     }
 
+    @Tag("integration")
     @Test
     fun `subscriber validates nonce before emitting to handler`() = runTest(testDispatcher) {
         val reconnectCount = AtomicInteger(0)
@@ -204,7 +200,7 @@ class NtfyIntegrationTest {
         advanceUntilIdle()
 
         // Both are rejected due to old timestamp, but second would also be rejected as replay
-        assertEquals("Replay should be rejected", 0, reconnectCount.get())
+        assertEquals(0, reconnectCount.get(), "Replay should be rejected")
 
         handler.stop()
     }
@@ -213,6 +209,7 @@ class NtfyIntegrationTest {
     // Error Propagation Tests
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `invalid base64 does not crash the system`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -235,11 +232,12 @@ class NtfyIntegrationTest {
         subscriber.handleMessage(createNtfyMessage("!!!not-valid-base64!!!"))
         advanceUntilIdle()
 
-        assertTrue("Invalid base64 should not trigger reconnect", !reconnectCalled.get())
+        assertTrue(!reconnectCalled.get(), "Invalid base64 should not trigger reconnect")
 
         handler.stop()
     }
 
+    @Tag("integration")
     @Test
     fun `tampered message does not crash the system`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -263,11 +261,12 @@ class NtfyIntegrationTest {
         subscriber.handleMessage(createNtfyMessage(tampered))
         advanceUntilIdle()
 
-        assertTrue("Tampered message should not trigger reconnect", !reconnectCalled.get())
+        assertTrue(!reconnectCalled.get(), "Tampered message should not trigger reconnect")
 
         handler.stop()
     }
 
+    @Tag("integration")
     @Test
     fun `wrong key does not crash the system`() = runTest(testDispatcher) {
         val wrongCrypto = NtfyCrypto(ByteArray(32) { 0xFF.toByte() })
@@ -297,11 +296,12 @@ class NtfyIntegrationTest {
         wrongSubscriber.handleMessage(createNtfyMessage(validIpv4Encrypted))
         advanceUntilIdle()
 
-        assertTrue("Wrong key should not trigger reconnect", !reconnectCalled.get())
+        assertTrue(!reconnectCalled.get(), "Wrong key should not trigger reconnect")
 
         handler.stop()
     }
 
+    @Tag("integration")
     @Test
     fun `empty message does not crash the system`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -323,11 +323,12 @@ class NtfyIntegrationTest {
         subscriber.handleMessage("""{"event":"message","time":1234567890,"message":""}""")
         advanceUntilIdle()
 
-        assertTrue("Empty message should not trigger reconnect", !reconnectCalled.get())
+        assertTrue(!reconnectCalled.get(), "Empty message should not trigger reconnect")
 
         handler.stop()
     }
 
+    @Tag("integration")
     @Test
     fun `malformed JSON does not crash the system`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -349,7 +350,7 @@ class NtfyIntegrationTest {
         subscriber.handleMessage("this is not json at all {{{")
         advanceUntilIdle()
 
-        assertTrue("Malformed JSON should not trigger reconnect", !reconnectCalled.get())
+        assertTrue(!reconnectCalled.get(), "Malformed JSON should not trigger reconnect")
 
         handler.stop()
     }
@@ -358,6 +359,7 @@ class NtfyIntegrationTest {
     // Security Tests
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `timestamp in future is rejected`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -381,11 +383,12 @@ class NtfyIntegrationTest {
         subscriber.handleMessage(createNtfyMessage(validIpv4Encrypted))
         advanceUntilIdle()
 
-        assertTrue("Old timestamp should be rejected", !reconnectCalled.get())
+        assertTrue(!reconnectCalled.get(), "Old timestamp should be rejected")
 
         handler.stop()
     }
 
+    @Tag("integration")
     @Test
     fun `nonce cache prevents replay attacks`() = runTest(testDispatcher) {
         subscriber.clearNonceCache()
@@ -394,12 +397,13 @@ class NtfyIntegrationTest {
         val testNonce = "00112233445566778899aabbccddeeff"
         subscriber.addNonce(testNonce)
 
-        assertTrue("Nonce should be in cache", subscriber.hasNonce(testNonce))
+        assertTrue(subscriber.hasNonce(testNonce), "Nonce should be in cache")
 
         // Trying to process a message with same nonce should be rejected
         // (This is tested via the duplicate message test)
     }
 
+    @Tag("integration")
     @Test
     fun `nonce cache evicts old entries correctly`() {
         subscriber.clearNonceCache()
@@ -411,12 +415,12 @@ class NtfyIntegrationTest {
 
         // First 50 should be evicted
         for (i in 0 until 50) {
-            assertTrue("Old nonce $i should be evicted", !subscriber.hasNonce(String.format("%032x", i)))
+            assertTrue(!subscriber.hasNonce(String.format("%032x", i)), "Old nonce $i should be evicted")
         }
 
         // Last 100 should still be present
         for (i in 50 until 150) {
-            assertTrue("Recent nonce $i should be present", subscriber.hasNonce(String.format("%032x", i)))
+            assertTrue(subscriber.hasNonce(String.format("%032x", i)), "Recent nonce $i should be present")
         }
     }
 
@@ -424,10 +428,9 @@ class NtfyIntegrationTest {
     // Reconnection Callback Tests
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `reconnection failure is handled gracefully`() = runTest(testDispatcher) {
-        val errorLogged = AtomicBoolean(false)
-
         val handler = IpChangeHandler(
             ntfySubscriber = subscriber,
             onReconnect = { _, _ ->
@@ -453,6 +456,7 @@ class NtfyIntegrationTest {
     // URL Building Tests
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `WebSocket URL is built correctly for https server`() {
         val sub = NtfySubscriber(
@@ -465,6 +469,7 @@ class NtfyIntegrationTest {
         assertEquals("wss://ntfy.sh/my-test-topic/ws", sub.buildWsUrl())
     }
 
+    @Tag("integration")
     @Test
     fun `WebSocket URL is built correctly for http server`() {
         val sub = NtfySubscriber(
@@ -477,6 +482,7 @@ class NtfyIntegrationTest {
         assertEquals("ws://localhost:8080/local-topic/ws", sub.buildWsUrl())
     }
 
+    @Tag("integration")
     @Test
     fun `WebSocket URL handles custom server with path`() {
         val sub = NtfySubscriber(

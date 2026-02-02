@@ -2,10 +2,11 @@ package com.ras.lifecycle
 
 import androidx.lifecycle.LifecycleOwner
 import io.mockk.mockk
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Tests for AppLifecycleObserver.
@@ -21,22 +22,25 @@ class AppLifecycleObserverTest {
     private lateinit var observer: AppLifecycleObserver
     private val mockOwner = mockk<LifecycleOwner>()
 
-    @Before
+    @BeforeEach
     fun setup() {
         observer = AppLifecycleObserver()
     }
 
+    @Tag("unit")
     @Test
     fun `initially app is in foreground`() {
         assertTrue(observer.appInForeground.value)
     }
 
+    @Tag("unit")
     @Test
     fun `onStop sets appInForeground to false`() {
         observer.onStop(mockOwner)
         assertFalse(observer.appInForeground.value)
     }
 
+    @Tag("unit")
     @Test
     fun `onStart sets appInForeground to true`() {
         observer.onStop(mockOwner)
@@ -46,6 +50,7 @@ class AppLifecycleObserverTest {
         assertTrue(observer.appInForeground.value)
     }
 
+    @Tag("unit")
     @Test
     fun `multiple onStop calls are idempotent`() {
         observer.onStop(mockOwner)
@@ -54,6 +59,7 @@ class AppLifecycleObserverTest {
         assertFalse(observer.appInForeground.value)
     }
 
+    @Tag("unit")
     @Test
     fun `multiple onStart calls are idempotent`() {
         observer.onStart(mockOwner)
@@ -62,6 +68,7 @@ class AppLifecycleObserverTest {
         assertTrue(observer.appInForeground.value)
     }
 
+    @Tag("unit")
     @Test
     fun `rapid foreground background transitions work correctly`() {
         // Simulate rapid transitions

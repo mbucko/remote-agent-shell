@@ -22,14 +22,15 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertArrayEquals
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.security.SecureRandom
 import java.time.Instant
 
@@ -50,12 +51,12 @@ class OpenSourcePatternsCoverageTest {
 
     private val testDispatcher = StandardTestDispatcher()
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
@@ -64,6 +65,7 @@ class OpenSourcePatternsCoverageTest {
     // SECTION 1: Cryptographic Operations (WireGuard patterns)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `key derivation produces correct length`() {
         /**
@@ -73,9 +75,10 @@ class OpenSourcePatternsCoverageTest {
         val secret = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val key = KeyDerivation.deriveKey(secret, "auth")
 
-        assertEquals("Key should be 32 bytes", 32, key.size)
+        assertEquals(32, key.size, "Key should be 32 bytes")
     }
 
+    @Tag("unit")
     @Test
     fun `different contexts produce different keys`() {
         /**
@@ -88,14 +91,12 @@ class OpenSourcePatternsCoverageTest {
         val signalingKey = KeyDerivation.deriveKey(secret, "signaling")
         val encryptionKey = KeyDerivation.deriveKey(secret, "encryption")
 
-        assertFalse("Auth and signaling keys should differ",
-            authKey.contentEquals(signalingKey))
-        assertFalse("Signaling and encryption keys should differ",
-            signalingKey.contentEquals(encryptionKey))
-        assertFalse("Auth and encryption keys should differ",
-            authKey.contentEquals(encryptionKey))
+        assertFalse(authKey.contentEquals(signalingKey), "Auth and signaling keys should differ")
+        assertFalse(signalingKey.contentEquals(encryptionKey), "Signaling and encryption keys should differ")
+        assertFalse(authKey.contentEquals(encryptionKey), "Auth and encryption keys should differ")
     }
 
+    @Tag("unit")
     @Test
     fun `key derivation is deterministic`() {
         /**
@@ -107,9 +108,10 @@ class OpenSourcePatternsCoverageTest {
         val key1 = KeyDerivation.deriveKey(secret, "auth")
         val key2 = KeyDerivation.deriveKey(secret, "auth")
 
-        assertArrayEquals("Same inputs should produce same key", key1, key2)
+        assertArrayEquals(key1, key2, "Same inputs should produce same key")
     }
 
+    @Tag("unit")
     @Test
     fun `HMAC verification succeeds with correct key`() {
         /**
@@ -120,10 +122,10 @@ class OpenSourcePatternsCoverageTest {
         val message = "test message".toByteArray()
 
         val mac = HmacUtils.computeHmac(key, message)
-        assertTrue("HMAC should verify with correct key",
-            HmacUtils.verifyHmac(key, message, mac))
+        assertTrue(HmacUtils.verifyHmac(key, message, mac), "HMAC should verify with correct key")
     }
 
+    @Tag("unit")
     @Test
     fun `HMAC verification fails with wrong key`() {
         /**
@@ -135,10 +137,10 @@ class OpenSourcePatternsCoverageTest {
         val message = "test message".toByteArray()
 
         val mac = HmacUtils.computeHmac(key1, message)
-        assertFalse("HMAC should not verify with wrong key",
-            HmacUtils.verifyHmac(key2, message, mac))
+        assertFalse(HmacUtils.verifyHmac(key2, message, mac), "HMAC should not verify with wrong key")
     }
 
+    @Tag("unit")
     @Test
     fun `nonces are unique`() {
         /**
@@ -150,11 +152,12 @@ class OpenSourcePatternsCoverageTest {
         repeat(1000) {
             val nonce = ByteArray(32).also { SecureRandom().nextBytes(it) }
             val hex = nonce.joinToString("") { "%02x".format(it) }
-            assertFalse("Nonce should be unique", nonces.contains(hex))
+            assertFalse(nonces.contains(hex), "Nonce should be unique")
             nonces.add(hex)
         }
     }
 
+    @Tag("unit")
     @Test
     fun `HMAC is consistent across computations`() {
         /**
@@ -167,13 +170,14 @@ class OpenSourcePatternsCoverageTest {
         val mac1 = HmacUtils.computeHmac(key, message)
         val mac2 = HmacUtils.computeHmac(key, message)
 
-        assertArrayEquals("Same inputs should produce same HMAC", mac1, mac2)
+        assertArrayEquals(mac1, mac2, "Same inputs should produce same HMAC")
     }
 
     // ==========================================================================
     // SECTION 2: Connection State Transitions (aiortc patterns)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `pairing state machine has valid states`() {
         /**
@@ -186,12 +190,13 @@ class OpenSourcePatternsCoverageTest {
         val connecting = PairingState.Connecting
         val authenticating = PairingState.Authenticating
 
-        assertNotNull("Idle state should exist", idle)
-        assertNotNull("Scanning state should exist", scanning)
-        assertNotNull("Connecting state should exist", connecting)
-        assertNotNull("Authenticating state should exist", authenticating)
+        assertNotNull(idle, "Idle state should exist")
+        assertNotNull(scanning, "Scanning state should exist")
+        assertNotNull(connecting, "Connecting state should exist")
+        assertNotNull(authenticating, "Authenticating state should exist")
     }
 
+    @Tag("unit")
     @Test
     fun `pairing state supports failure reasons`() {
         /**
@@ -200,16 +205,13 @@ class OpenSourcePatternsCoverageTest {
          */
         val failureReasons = PairingState.FailureReason.values()
 
-        assertTrue("Should have QR_PARSE_ERROR",
-            failureReasons.contains(PairingState.FailureReason.QR_PARSE_ERROR))
-        assertTrue("Should have CONNECTION_FAILED",
-            failureReasons.contains(PairingState.FailureReason.CONNECTION_FAILED))
-        assertTrue("Should have AUTH_FAILED",
-            failureReasons.contains(PairingState.FailureReason.AUTH_FAILED))
-        assertTrue("Should have TIMEOUT",
-            failureReasons.contains(PairingState.FailureReason.TIMEOUT))
+        assertTrue(failureReasons.contains(PairingState.FailureReason.QR_PARSE_ERROR), "Should have QR_PARSE_ERROR")
+        assertTrue(failureReasons.contains(PairingState.FailureReason.CONNECTION_FAILED), "Should have CONNECTION_FAILED")
+        assertTrue(failureReasons.contains(PairingState.FailureReason.AUTH_FAILED), "Should have AUTH_FAILED")
+        assertTrue(failureReasons.contains(PairingState.FailureReason.TIMEOUT), "Should have TIMEOUT")
     }
 
+    @Tag("unit")
     @Test
     fun `connection state reflects actual connection`() = runTest {
         /**
@@ -222,23 +224,24 @@ class OpenSourcePatternsCoverageTest {
         }
 
         // Initially disconnected
-        assertFalse("Should start disconnected", mockRepository.isConnected.value)
+        assertFalse(mockRepository.isConnected.value, "Should start disconnected")
 
         // Connect
         isConnectedFlow.value = true
         advanceUntilIdle()
-        assertTrue("Should be connected", mockRepository.isConnected.value)
+        assertTrue(mockRepository.isConnected.value, "Should be connected")
 
         // Disconnect
         isConnectedFlow.value = false
         advanceUntilIdle()
-        assertFalse("Should be disconnected", mockRepository.isConnected.value)
+        assertFalse(mockRepository.isConnected.value, "Should be disconnected")
     }
 
     // ==========================================================================
     // SECTION 3: Network Recovery (mosh patterns)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `connection survives brief network blip`() = runTest {
         /**
@@ -250,7 +253,7 @@ class OpenSourcePatternsCoverageTest {
             every { isConnected } returns isConnectedFlow
         }
 
-        assertTrue("Should start connected", mockRepository.isConnected.value)
+        assertTrue(mockRepository.isConnected.value, "Should start connected")
 
         // Brief disconnection
         isConnectedFlow.value = false
@@ -260,9 +263,10 @@ class OpenSourcePatternsCoverageTest {
         isConnectedFlow.value = true
         advanceUntilIdle()
 
-        assertTrue("Should be reconnected", mockRepository.isConnected.value)
+        assertTrue(mockRepository.isConnected.value, "Should be reconnected")
     }
 
+    @Tag("unit")
     @Test
     fun `session state is preserved across reconnection`() = runTest {
         /**
@@ -278,20 +282,20 @@ class OpenSourcePatternsCoverageTest {
         sessionsFlow.value = listOf(session)
         advanceUntilIdle()
 
-        assertEquals("Session should exist", 1, mockRepository.sessions.value.size)
+        assertEquals(1, mockRepository.sessions.value.size, "Session should exist")
 
         // Simulate reconnection (sessions preserved)
         advanceUntilIdle()
 
-        assertEquals("Session should still exist", 1, mockRepository.sessions.value.size)
-        assertEquals("Session ID should match", "session1abc",
-            mockRepository.sessions.value[0].id)
+        assertEquals(1, mockRepository.sessions.value.size, "Session should still exist")
+        assertEquals("session1abc", mockRepository.sessions.value[0].id, "Session ID should match")
     }
 
     // ==========================================================================
     // SECTION 4: Terminal Emulation (mosh patterns)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `terminal handles ANSI escape sequences`() {
         /**
@@ -308,10 +312,11 @@ class OpenSourcePatternsCoverageTest {
         )
 
         for ((name, sequence) in ansiSequences) {
-            assertTrue("$name should start with ESC", sequence.startsWith("\u001B"))
+            assertTrue(sequence.startsWith("\u001B"), "$name should start with ESC")
         }
     }
 
+    @Tag("unit")
     @Test
     fun `terminal handles control characters`() {
         /**
@@ -328,10 +333,11 @@ class OpenSourcePatternsCoverageTest {
         )
 
         for ((name, char) in controlChars) {
-            assertTrue("$name should be control character", char.code < 32)
+            assertTrue(char.code < 32, "$name should be control character")
         }
     }
 
+    @Tag("unit")
     @Test
     fun `terminal dimensions are validated`() {
         /**
@@ -353,16 +359,15 @@ class OpenSourcePatternsCoverageTest {
         )
 
         for ((cols, rows) in validDimensions) {
-            assertTrue("$cols x $rows should be valid",
-                cols in 10..500 && rows in 5..200)
+            assertTrue(cols in 10..500 && rows in 5..200, "$cols x $rows should be valid")
         }
 
         for ((cols, rows) in invalidDimensions) {
-            assertFalse("$cols x $rows should be invalid",
-                cols in 10..500 && rows in 5..200)
+            assertFalse(cols in 10..500 && rows in 5..200, "$cols x $rows should be invalid")
         }
     }
 
+    @Tag("unit")
     @Test
     fun `terminal handles Unicode correctly`() {
         /**
@@ -379,7 +384,7 @@ class OpenSourcePatternsCoverageTest {
         for (str in unicodeStrings) {
             val bytes = str.toByteArray(Charsets.UTF_8)
             val decoded = String(bytes, Charsets.UTF_8)
-            assertEquals("Unicode should round-trip", str, decoded)
+            assertEquals(str, decoded, "Unicode should round-trip")
         }
     }
 
@@ -387,6 +392,7 @@ class OpenSourcePatternsCoverageTest {
     // SECTION 5: Data Channel (aiortc patterns)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `data channel handles binary messages`() {
         /**
@@ -400,10 +406,11 @@ class OpenSourcePatternsCoverageTest {
         )
 
         for (msg in testMessages) {
-            assertTrue("Message should have content", msg.isNotEmpty())
+            assertTrue(msg.isNotEmpty(), "Message should have content")
         }
     }
 
+    @Tag("unit")
     @Test
     fun `message size limits are enforced`() {
         /**
@@ -416,15 +423,16 @@ class OpenSourcePatternsCoverageTest {
         val mediumMsg = ByteArray(10000)
         val largeMsg = ByteArray(65535)
 
-        assertTrue("Small message should be valid", smallMsg.size <= maxMessageSize)
-        assertTrue("Medium message should be valid", mediumMsg.size <= maxMessageSize)
-        assertTrue("Large message should be valid", largeMsg.size <= maxMessageSize)
+        assertTrue(smallMsg.size <= maxMessageSize, "Small message should be valid")
+        assertTrue(mediumMsg.size <= maxMessageSize, "Medium message should be valid")
+        assertTrue(largeMsg.size <= maxMessageSize, "Large message should be valid")
     }
 
     // ==========================================================================
     // SECTION 6: Codec Operations
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `codec encodes and decodes correctly`() {
         /**
@@ -437,9 +445,10 @@ class OpenSourcePatternsCoverageTest {
         val encoded = codec.encode(original)
         val decoded = codec.decode(encoded)
 
-        assertArrayEquals("Data should roundtrip correctly", original, decoded)
+        assertArrayEquals(original, decoded, "Data should roundtrip correctly")
     }
 
+    @Tag("unit")
     @Test
     fun `codec produces different ciphertext each time`() {
         /**
@@ -452,10 +461,10 @@ class OpenSourcePatternsCoverageTest {
         val encoded1 = codec.encode(plaintext)
         val encoded2 = codec.encode(plaintext)
 
-        assertFalse("Ciphertext should differ due to random nonce",
-            encoded1.contentEquals(encoded2))
+        assertFalse(encoded1.contentEquals(encoded2), "Ciphertext should differ due to random nonce")
     }
 
+    @Tag("unit")
     @Test
     fun `codec handles empty messages`() {
         /**
@@ -468,9 +477,10 @@ class OpenSourcePatternsCoverageTest {
         val encoded = codec.encode(empty)
         val decoded = codec.decode(encoded)
 
-        assertArrayEquals("Empty message should roundtrip", empty, decoded)
+        assertArrayEquals(empty, decoded, "Empty message should roundtrip")
     }
 
+    @Tag("unit")
     @Test
     fun `codec handles large messages`() {
         /**
@@ -483,13 +493,14 @@ class OpenSourcePatternsCoverageTest {
         val encoded = codec.encode(large)
         val decoded = codec.decode(encoded)
 
-        assertArrayEquals("Large message should roundtrip", large, decoded)
+        assertArrayEquals(large, decoded, "Large message should roundtrip")
     }
 
     // ==========================================================================
     // SECTION 7: Concurrent Operations (simple-peer patterns)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `multiple sessions can be tracked`() = runTest {
         /**
@@ -507,9 +518,10 @@ class OpenSourcePatternsCoverageTest {
         sessionsFlow.value = sessions
         advanceUntilIdle()
 
-        assertEquals("Should have 5 sessions", 5, mockRepository.sessions.value.size)
+        assertEquals(5, mockRepository.sessions.value.size, "Should have 5 sessions")
     }
 
+    @Tag("unit")
     @Test
     fun `session events are properly dispatched`() = runTest {
         /**
@@ -528,13 +540,14 @@ class OpenSourcePatternsCoverageTest {
         advanceUntilIdle()
 
         // Event flow should be available through repository
-        assertNotNull("Repository events should be available", mockRepository.events)
+        assertNotNull(mockRepository.events, "Repository events should be available")
     }
 
     // ==========================================================================
     // SECTION 8: Rate Limiting and DoS Protection
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `rapid operations are handled`() = runTest {
         /**
@@ -552,13 +565,14 @@ class OpenSourcePatternsCoverageTest {
         }
 
         // Should not crash, final state should be valid
-        assertEquals("Should have one session", 1, mockRepository.sessions.value.size)
+        assertEquals(1, mockRepository.sessions.value.size, "Should have one session")
     }
 
     // ==========================================================================
     // SECTION 9: Error Handling and Validation
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `valid session ID is accepted`() {
         /**
@@ -572,10 +586,11 @@ class OpenSourcePatternsCoverageTest {
         )
 
         for (id in validIds) {
-            assertTrue("$id should be valid", SessionIdValidator.isValid(id))
+            assertTrue(SessionIdValidator.isValid(id), "$id should be valid")
         }
     }
 
+    @Tag("unit")
     @Test
     fun `invalid session ID is rejected`() {
         /**
@@ -592,10 +607,11 @@ class OpenSourcePatternsCoverageTest {
         )
 
         for (id in invalidIds) {
-            assertFalse("$id should be invalid", SessionIdValidator.isValid(id))
+            assertFalse(SessionIdValidator.isValid(id), "$id should be invalid")
         }
     }
 
+    @Tag("unit")
     @Test
     fun `empty messages are handled`() {
         /**
@@ -603,16 +619,17 @@ class OpenSourcePatternsCoverageTest {
          * (Edge case pattern)
          */
         val empty = byteArrayOf()
-        assertEquals("Empty byte array should have size 0", 0, empty.size)
+        assertEquals(0, empty.size, "Empty byte array should have size 0")
 
         val emptyString = ""
-        assertEquals("Empty string should have length 0", 0, emptyString.length)
+        assertEquals(0, emptyString.length, "Empty string should have length 0")
     }
 
     // ==========================================================================
     // SECTION 10: Session Management
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `sessions can be created`() = runTest {
         /**
@@ -626,6 +643,7 @@ class OpenSourcePatternsCoverageTest {
         coVerify { mockRepository.createSession("/path/to/dir", "claude") }
     }
 
+    @Tag("unit")
     @Test
     fun `sessions can be killed`() = runTest {
         /**
@@ -639,6 +657,7 @@ class OpenSourcePatternsCoverageTest {
         coVerify { mockRepository.killSession("session1abc") }
     }
 
+    @Tag("unit")
     @Test
     fun `session status changes are tracked`() = runTest {
         /**
@@ -652,17 +671,16 @@ class OpenSourcePatternsCoverageTest {
         sessionsFlow.value = listOf(createSession("session1abc", "Test", SessionStatus.ACTIVE))
         advanceUntilIdle()
 
-        assertEquals("Session should be ACTIVE",
-            SessionStatus.ACTIVE, mockRepository.sessions.value[0].status)
+        assertEquals(SessionStatus.ACTIVE, mockRepository.sessions.value[0].status, "Session should be ACTIVE")
 
         // Update to killing
         sessionsFlow.value = listOf(createSession("session1abc", "Test", SessionStatus.KILLING))
         advanceUntilIdle()
 
-        assertEquals("Session should be KILLING",
-            SessionStatus.KILLING, mockRepository.sessions.value[0].status)
+        assertEquals(SessionStatus.KILLING, mockRepository.sessions.value[0].status, "Session should be KILLING")
     }
 
+    @Tag("unit")
     @Test
     fun `all session statuses are defined`() {
         /**
@@ -670,16 +688,17 @@ class OpenSourcePatternsCoverageTest {
          */
         val statuses = SessionStatus.values()
 
-        assertTrue("Should have UNKNOWN", statuses.contains(SessionStatus.UNKNOWN))
-        assertTrue("Should have ACTIVE", statuses.contains(SessionStatus.ACTIVE))
-        assertTrue("Should have CREATING", statuses.contains(SessionStatus.CREATING))
-        assertTrue("Should have KILLING", statuses.contains(SessionStatus.KILLING))
+        assertTrue(statuses.contains(SessionStatus.UNKNOWN), "Should have UNKNOWN")
+        assertTrue(statuses.contains(SessionStatus.ACTIVE), "Should have ACTIVE")
+        assertTrue(statuses.contains(SessionStatus.CREATING), "Should have CREATING")
+        assertTrue(statuses.contains(SessionStatus.KILLING), "Should have KILLING")
     }
 
     // ==========================================================================
     // SECTION 11: Protobuf Message Handling
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `terminal input messages have required fields`() {
         /**
@@ -702,13 +721,14 @@ class OpenSourcePatternsCoverageTest {
             specialKey = 0x03  // Ctrl+C
         )
 
-        assertTrue("Data input should have session ID", dataInput.sessionId.isNotEmpty())
-        assertNotNull("Data input should have data", dataInput.data)
+        assertTrue(dataInput.sessionId.isNotEmpty(), "Data input should have session ID")
+        assertNotNull(dataInput.data, "Data input should have data")
 
-        assertTrue("Key input should have session ID", keyInput.sessionId.isNotEmpty())
-        assertNotNull("Key input should have special key", keyInput.specialKey)
+        assertTrue(keyInput.sessionId.isNotEmpty(), "Key input should have session ID")
+        assertNotNull(keyInput.specialKey, "Key input should have special key")
     }
 
+    @Tag("unit")
     @Test
     fun `terminal output messages have required fields`() {
         /**
@@ -726,15 +746,16 @@ class OpenSourcePatternsCoverageTest {
             sequence = 42
         )
 
-        assertTrue("Output should have session ID", output.sessionId.isNotEmpty())
-        assertTrue("Output should have data", output.data.isNotEmpty())
-        assertTrue("Output should have sequence", output.sequence >= 0)
+        assertTrue(output.sessionId.isNotEmpty(), "Output should have session ID")
+        assertTrue(output.data.isNotEmpty(), "Output should have data")
+        assertTrue(output.sequence >= 0, "Output should have sequence")
     }
 
     // ==========================================================================
     // SECTION 12: Integration Patterns
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `session to terminal flow works`() = runTest {
         /**
@@ -751,17 +772,17 @@ class OpenSourcePatternsCoverageTest {
         sessionsFlow.value = listOf(createSession("session1abc", "Test Session"))
         advanceUntilIdle()
 
-        assertEquals("Should have one session", 1, mockRepository.sessions.value.size)
+        assertEquals(1, mockRepository.sessions.value.size, "Should have one session")
 
         // 2. Select session for terminal
         val session = mockRepository.sessions.value[0]
-        assertEquals("Session ID should match", "session1abc", session.id)
+        assertEquals("session1abc", session.id, "Session ID should match")
 
         // 3. Verify connection is active for terminal
-        assertTrue("Connection should be active for terminal",
-            mockRepository.isConnected.value)
+        assertTrue(mockRepository.isConnected.value, "Connection should be active for terminal")
     }
 
+    @Tag("unit")
     @Test
     fun `event flow delivers to observers`() = runTest {
         /**
@@ -775,7 +796,7 @@ class OpenSourcePatternsCoverageTest {
         }
 
         // Initial state
-        assertEquals("Should start with no sessions", 0, mockRepository.sessions.value.size)
+        assertEquals(0, mockRepository.sessions.value.size, "Should start with no sessions")
 
         // Add session via event
         val newSession = createSession("newSession1a", "New Session")
@@ -783,9 +804,10 @@ class OpenSourcePatternsCoverageTest {
         eventsFlow.emit(SessionEvent.SessionCreated(newSession))
         advanceUntilIdle()
 
-        assertEquals("Should have one session", 1, mockRepository.sessions.value.size)
+        assertEquals(1, mockRepository.sessions.value.size, "Should have one session")
     }
 
+    @Tag("unit")
     @Test
     fun `key derivation integrates with codec`() {
         /**
@@ -801,7 +823,7 @@ class OpenSourcePatternsCoverageTest {
         val encoded = codec.encode(testData)
         val decoded = codec.decode(encoded)
 
-        assertArrayEquals("Derived key should work with codec", testData, decoded)
+        assertArrayEquals(testData, decoded, "Derived key should work with codec")
     }
 
     // ==========================================================================

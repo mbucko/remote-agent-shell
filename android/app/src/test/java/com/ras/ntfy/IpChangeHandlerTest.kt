@@ -9,10 +9,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -25,7 +26,7 @@ class IpChangeHandlerTest {
     private lateinit var mockIpChanges: MutableSharedFlow<IpChangeData>
     private lateinit var mockSubscriber: NtfySubscriber
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockIpChanges = MutableSharedFlow()
         mockSubscriber = mockk(relaxed = true) {
@@ -37,6 +38,7 @@ class IpChangeHandlerTest {
     // Successful Reconnection Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `successful reconnection triggers onReconnectSuccess callback`() = runTest(testDispatcher) {
         val successCalled = AtomicBoolean(false)
@@ -63,13 +65,14 @@ class IpChangeHandlerTest {
         mockIpChanges.emit(testData)
         advanceUntilIdle()
 
-        assertTrue("onReconnect should be called", reconnectCalled.get())
-        assertTrue("onReconnectSuccess should be called", successCalled.get())
+        assertTrue(reconnectCalled.get(), "onReconnect should be called")
+        assertTrue(successCalled.get(), "onReconnectSuccess should be called")
         verify { mockSubscriber.resetReconnectCounter() }
 
         handler.stop()
     }
 
+    @Tag("unit")
     @Test
     fun `reconnection receives correct IP and port`() = runTest(testDispatcher) {
         var receivedIp: String? = null
@@ -109,6 +112,7 @@ class IpChangeHandlerTest {
     // Failed Reconnection Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `failed reconnection does not trigger onReconnectSuccess`() = runTest(testDispatcher) {
         val successCalled = AtomicBoolean(false)
@@ -127,12 +131,13 @@ class IpChangeHandlerTest {
         mockIpChanges.emit(createTestIpChangeData())
         advanceUntilIdle()
 
-        assertTrue("onReconnectSuccess should NOT be called", !successCalled.get())
+        assertTrue(!successCalled.get(), "onReconnectSuccess should NOT be called")
         verify(exactly = 0) { mockSubscriber.resetReconnectCounter() }
 
         handler.stop()
     }
 
+    @Tag("unit")
     @Test
     fun `reconnection exception does not crash handler`() = runTest(testDispatcher) {
         var exceptionThrown = false
@@ -155,7 +160,7 @@ class IpChangeHandlerTest {
         mockIpChanges.emit(createTestIpChangeData())
         advanceUntilIdle()
 
-        assertTrue("Exception should have been thrown in callback", exceptionThrown)
+        assertTrue(exceptionThrown, "Exception should have been thrown in callback")
         verify(exactly = 0) { mockSubscriber.resetReconnectCounter() }
 
         handler.stop()
@@ -165,6 +170,7 @@ class IpChangeHandlerTest {
     // Multiple IP Change Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `handles multiple IP changes sequentially`() = runTest(testDispatcher) {
         val reconnectCount = AtomicInteger(0)
@@ -196,8 +202,8 @@ class IpChangeHandlerTest {
             advanceUntilIdle()
         }
 
-        assertEquals("Should handle 5 reconnects", 5, reconnectCount.get())
-        assertEquals("Should call success 5 times", 5, successCount.get())
+        assertEquals(5, reconnectCount.get(), "Should handle 5 reconnects")
+        assertEquals(5, successCount.get(), "Should call success 5 times")
 
         handler.stop()
     }
@@ -206,6 +212,7 @@ class IpChangeHandlerTest {
     // Start/Stop Lifecycle Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `stop cancels collection`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -231,9 +238,10 @@ class IpChangeHandlerTest {
         mockIpChanges.emit(createTestIpChangeData())
         advanceUntilIdle()
 
-        assertTrue("onReconnect should NOT be called after stop", !reconnectCalled.get())
+        assertTrue(!reconnectCalled.get(), "onReconnect should NOT be called after stop")
     }
 
+    @Tag("unit")
     @Test
     fun `can restart after stop`() = runTest(testDispatcher) {
         val reconnectCalled = AtomicBoolean(false)
@@ -261,7 +269,7 @@ class IpChangeHandlerTest {
         mockIpChanges.emit(createTestIpChangeData())
         advanceUntilIdle()
 
-        assertTrue("onReconnect should be called after restart", reconnectCalled.get())
+        assertTrue(reconnectCalled.get(), "onReconnect should be called after restart")
 
         handler.stop()
     }
@@ -270,6 +278,7 @@ class IpChangeHandlerTest {
     // IPv6 Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `handles IPv6 addresses correctly`() = runTest(testDispatcher) {
         var receivedIp: String? = null
@@ -302,6 +311,7 @@ class IpChangeHandlerTest {
         handler.stop()
     }
 
+    @Tag("unit")
     @Test
     fun `handles full IPv6 addresses`() = runTest(testDispatcher) {
         var receivedIp: String? = null
@@ -338,6 +348,7 @@ class IpChangeHandlerTest {
     // Edge Case Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `handles port 0`() = runTest(testDispatcher) {
         var receivedPort: Int? = null
@@ -370,6 +381,7 @@ class IpChangeHandlerTest {
         handler.stop()
     }
 
+    @Tag("unit")
     @Test
     fun `handles max port number`() = runTest(testDispatcher) {
         var receivedPort: Int? = null
@@ -402,6 +414,7 @@ class IpChangeHandlerTest {
         handler.stop()
     }
 
+    @Tag("unit")
     @Test
     fun `handles localhost address`() = runTest(testDispatcher) {
         var receivedIp: String? = null
@@ -434,6 +447,7 @@ class IpChangeHandlerTest {
         handler.stop()
     }
 
+    @Tag("unit")
     @Test
     fun `handles private network address`() = runTest(testDispatcher) {
         var receivedIp: String? = null

@@ -33,10 +33,11 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.time.Duration.Companion.seconds
-import org.junit.After
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 /**
  * End-to-end tests for terminal I/O flow.
@@ -74,7 +75,7 @@ class TerminalE2ETest {
     // Capture sent commands for verification
     private val sentCommands = mutableListOf<TerminalCommand>()
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
 
@@ -99,7 +100,7 @@ class TerminalE2ETest {
 
     private fun slot() = slot<TerminalCommand>()
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
@@ -108,6 +109,7 @@ class TerminalE2ETest {
     // Scenario 1: Basic Attach and Input Flow
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - basic attach and input flow`() = runTest(testDispatcher, timeout = 1.seconds) {
         // 1. User initiates attach (launch in background so test can emit response)
@@ -115,10 +117,10 @@ class TerminalE2ETest {
         testDispatcher.scheduler.runCurrent()  // Only run scheduled tasks, don't advance time
 
         // Verify attach command sent
-        assertTrue("Expected command to be sent", sentCommands.isNotEmpty())
+        assertTrue(sentCommands.isNotEmpty(), "Expected command to be sent")
         assertTrue(sentCommands.last().hasAttach())
         assertEquals("abc123def456", sentCommands.last().attach.sessionId)
-        assertTrue("Expected isAttaching=true but was ${repository.state.value}", repository.state.value.isAttaching)
+        assertTrue(repository.state.value.isAttaching, "Expected isAttaching=true but was ${repository.state.value}")
 
         // 2. Daemon responds with attached event
         val attachedEvent = createAttachedEvent("abc123def456", cols = 80, rows = 24, currentSeq = 0)
@@ -151,6 +153,7 @@ class TerminalE2ETest {
     // Scenario 2: Special Key Interrupt (Ctrl+C)
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - special key interrupt`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -176,6 +179,7 @@ class TerminalE2ETest {
     // Scenario 3: Reconnection with Sequence Resumption
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - reconnection with sequence resumption`() = runTest(testDispatcher, timeout = 1.seconds) {
         // Initial attach
@@ -193,7 +197,7 @@ class TerminalE2ETest {
 
         // Reconnect with last sequence
         sentCommands.clear()
-        val reattachJob = launch { repository.attach("abc123def456", fromSequence = 100) }
+        launch { repository.attach("abc123def456", fromSequence = 100) }
         testDispatcher.scheduler.runCurrent()
 
         // Verify fromSequence sent
@@ -209,11 +213,12 @@ class TerminalE2ETest {
     // Scenario 4: Error Handling - Session Not Found
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error handling session not found`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
             // Try to attach to non-existent session - will throw TerminalAttachException
-            val attachJob = launch {
+            launch {
                 try {
                     repository.attach("notfound1234")
                 } catch (e: com.ras.data.terminal.TerminalAttachException) {
@@ -242,6 +247,7 @@ class TerminalE2ETest {
     // Scenario 5: Error Handling - Not Attached
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error handling not attached`() = runTest(testDispatcher, timeout = 1.seconds) {
         // Try to send input without attaching
@@ -257,6 +263,7 @@ class TerminalE2ETest {
     // Scenario 6: Error Handling - Rate Limited
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error handling rate limited`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -283,6 +290,7 @@ class TerminalE2ETest {
     // Scenario 7: Error Handling - Input Too Large
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error handling input too large`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -301,6 +309,7 @@ class TerminalE2ETest {
     // Scenario 8: Detach Flow
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - detach flow`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -333,6 +342,7 @@ class TerminalE2ETest {
     // Scenario 9: Output Streaming
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - output streaming`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -359,6 +369,7 @@ class TerminalE2ETest {
     // Scenario 10: Output Skipped Handling
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - output skipped handling`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -390,6 +401,7 @@ class TerminalE2ETest {
     // Scenario 11: Raw Mode Toggle and Input
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - raw mode toggle and input`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -419,6 +431,7 @@ class TerminalE2ETest {
     // Scenario 12: Multiple Output Chunks
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - multiple output chunks in sequence`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -440,6 +453,7 @@ class TerminalE2ETest {
     // Scenario 13: Partial Output Handling
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - partial output handling`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -466,6 +480,7 @@ class TerminalE2ETest {
     // Scenario 14: Connection Loss Recovery
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - connection loss recovery`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -499,6 +514,7 @@ class TerminalE2ETest {
     // Scenario 15: Invalid Session ID Rejection
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - invalid session ID rejection`() = runTest(testDispatcher, timeout = 1.seconds) {
         val invalidIds = listOf(
@@ -523,6 +539,7 @@ class TerminalE2ETest {
     // Scenario 16: All Key Types Mapping
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - all special keys send correctly`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -548,8 +565,8 @@ class TerminalE2ETest {
             repository.sendSpecialKey(keyType)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            assertTrue("Key $keyType should send special", sentCommands.last().input.hasSpecial())
-            assertEquals("Key $keyType mismatch", keyType, sentCommands.last().input.special.key)
+            assertTrue(sentCommands.last().input.hasSpecial(), "Key $keyType should send special")
+            assertEquals(keyType, sentCommands.last().input.special.key, "Key $keyType mismatch")
         }
     }
 
@@ -557,6 +574,7 @@ class TerminalE2ETest {
     // Scenario 17: State Reset
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - state reset clears everything`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -587,6 +605,7 @@ class TerminalE2ETest {
     // Scenario 18: Unicode Input/Output
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - unicode input and output`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -612,6 +631,7 @@ class TerminalE2ETest {
     // Scenario 19: Rapid Input Sequence
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - rapid input sequence maintains order`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -635,6 +655,7 @@ class TerminalE2ETest {
     // Scenario 20: Error Recovery Flow
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error recovery flow`() = runTest(testDispatcher, timeout = 1.seconds) {
         // Initial attach - will fail with error
@@ -677,6 +698,7 @@ class TerminalE2ETest {
     // Scenario 21: Error - Session Being Killed
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error session killing`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
@@ -706,6 +728,7 @@ class TerminalE2ETest {
     // Scenario 22: Error - Already Attached (Informational)
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error already attached`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -731,6 +754,7 @@ class TerminalE2ETest {
     // Scenario 23: Error - Invalid Sequence (Buffer Rolled)
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error invalid sequence`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
@@ -759,6 +783,7 @@ class TerminalE2ETest {
     // Scenario 24: Error - Pipe Setup Failed
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - error pipe setup failed`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
@@ -786,6 +811,7 @@ class TerminalE2ETest {
     // Scenario 25: Concurrent Attach Attempts
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - concurrent attach attempts`() = runTest(testDispatcher, timeout = 1.seconds) {
         // Start first attach
@@ -811,6 +837,7 @@ class TerminalE2ETest {
     // Scenario 26: Send While Attaching
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - send while attaching fails`() = runTest(testDispatcher, timeout = 1.seconds) {
         launch { repository.attach("abc123def456") }
@@ -831,10 +858,10 @@ class TerminalE2ETest {
     // Scenario 27: Session ID Mismatch (Ignored)
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - session ID mismatch ignored`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
-        val originalState = repository.state.value
 
         // Receive event for different session
         val mismatchEvent = createOutputEvent("different123", "should be ignored", sequence = 999)
@@ -850,6 +877,7 @@ class TerminalE2ETest {
     // Scenario 28: Zero-Length Output
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - zero length output`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -875,6 +903,7 @@ class TerminalE2ETest {
     // Scenario 29: Special Keys with Modifiers
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - special keys with modifiers`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -894,6 +923,7 @@ class TerminalE2ETest {
     // Scenario 30: All Function Keys F1-F12
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - all function keys F1 through F12`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -909,7 +939,7 @@ class TerminalE2ETest {
             repository.sendSpecialKey(key)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            assertTrue("Key $key should send", sentCommands.isNotEmpty())
+            assertTrue(sentCommands.isNotEmpty(), "Key $key should send")
             assertEquals(key, sentCommands.last().input.special.key)
         }
     }
@@ -918,6 +948,7 @@ class TerminalE2ETest {
     // Scenario 31: Binary Data Input
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - binary data input`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -935,6 +966,7 @@ class TerminalE2ETest {
     // Scenario 32: Double Detach
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - double detach is safe`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -960,6 +992,7 @@ class TerminalE2ETest {
     // Scenario 33: Detach Without Attach
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - detach without prior attach is safe`() = runTest(testDispatcher, timeout = 1.seconds) {
         // Never attached
@@ -977,6 +1010,7 @@ class TerminalE2ETest {
     // Scenario 34: Large Paste (Within Limit)
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - large paste within limit`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -993,6 +1027,7 @@ class TerminalE2ETest {
     // Scenario 35: Out-of-Order Sequence (Regression)
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - out of order sequence uses maxOf to prevent regression`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1019,6 +1054,7 @@ class TerminalE2ETest {
     // Scenario 36: Attach While Already Attached (Session Switching)
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - attach to different session while attached switches sessions`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1029,17 +1065,17 @@ class TerminalE2ETest {
         sentCommands.clear()
 
         // Attach to different session - should detach from old and attach to new
-        val switchJob = launch { repository.attach("xyz789uvw012") }
+        launch { repository.attach("xyz789uvw012") }
         testDispatcher.scheduler.runCurrent()
 
         // Verify detach command was sent for old session
         val detachCmd = sentCommands.find { it.hasDetach() }
-        assertNotNull("Should send detach command", detachCmd)
+        assertNotNull(detachCmd, "Should send detach command")
         assertEquals("abc123def456", detachCmd?.detach?.sessionId)
 
         // Verify attach command was sent for new session
         val attachCmd = sentCommands.find { it.hasAttach() }
-        assertNotNull("Should send attach command", attachCmd)
+        assertNotNull(attachCmd, "Should send attach command")
         assertEquals("xyz789uvw012", attachCmd?.attach?.sessionId)
 
         // Simulate successful attach to new session
@@ -1051,6 +1087,7 @@ class TerminalE2ETest {
         assertEquals("xyz789uvw012", repository.state.value.sessionId)
     }
 
+    @Tag("e2e")
     @Test
     fun `E2E - re-attach to same session while attached is no-op`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1071,6 +1108,7 @@ class TerminalE2ETest {
     // Scenario 37: Empty Error Message
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - empty error message handled`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
@@ -1096,6 +1134,7 @@ class TerminalE2ETest {
     // Scenario 38: Empty Session ID in Error
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - empty session ID in error handled`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
@@ -1119,6 +1158,7 @@ class TerminalE2ETest {
     // Scenario 39: Navigation Keys
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - all navigation keys`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1137,7 +1177,7 @@ class TerminalE2ETest {
             repository.sendSpecialKey(key)
             testDispatcher.scheduler.advanceUntilIdle()
 
-            assertEquals("Key $key", key, sentCommands.last().input.special.key)
+            assertEquals(key, sentCommands.last().input.special.key, "Key $key")
         }
     }
 
@@ -1145,6 +1185,7 @@ class TerminalE2ETest {
     // Scenario 40: Rapid Toggle Raw Mode
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - rapid raw mode toggle thread safe`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1162,6 +1203,7 @@ class TerminalE2ETest {
     // Scenario 41: KEY_UNKNOWN Handling
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - KEY_UNKNOWN sends correctly`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1180,6 +1222,7 @@ class TerminalE2ETest {
     // Scenario 42: All Modifier Combinations
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - all modifier combinations`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1199,6 +1242,7 @@ class TerminalE2ETest {
     // Scenario 43: Empty ProtoTerminalEvent (No Fields Set)
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - empty event is handled gracefully`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1217,6 +1261,7 @@ class TerminalE2ETest {
     // Scenario 44: Very Large Output
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - very large output handled`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1243,6 +1288,7 @@ class TerminalE2ETest {
     // Scenario 45: High-Frequency Output Streaming
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - high frequency output streaming`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1267,6 +1313,7 @@ class TerminalE2ETest {
     // Scenario 46: Emoji and Special Unicode
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - emoji and special unicode`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1292,6 +1339,7 @@ class TerminalE2ETest {
     // Scenario 47: Control Characters in Output
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - control characters in output`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1310,6 +1358,7 @@ class TerminalE2ETest {
     // Scenario 48: Maximum Valid Sequence Number
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - maximum sequence number`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1325,6 +1374,7 @@ class TerminalE2ETest {
     // Scenario 49: Output With All Fields Set
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - output with all fields set`() = runTest(testDispatcher, timeout = 1.seconds) {
         simulateAttached()
@@ -1353,6 +1403,7 @@ class TerminalE2ETest {
     // Scenario 50: Attached Event With All Fields
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E - attached event with all fields verified`() = runTest(testDispatcher, timeout = 1.seconds) {
         repository.events.test {
@@ -1394,7 +1445,7 @@ class TerminalE2ETest {
     // ==========================================================================
 
     private fun TestScope.simulateAttached() {
-        val attachJob = launch { repository.attach("abc123def456") }
+        launch { repository.attach("abc123def456") }
         testDispatcher.scheduler.runCurrent()
 
         launch { terminalEventsFlow.emit(createAttachedEvent("abc123def456")) }

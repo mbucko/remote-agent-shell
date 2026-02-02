@@ -1,8 +1,9 @@
 package com.ras.data.connection
 
 import com.ras.data.webrtc.SdpValidator
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Tests for VPN/NAT scenario detection.
@@ -22,6 +23,7 @@ class VpnScenarioTest {
 
     // ==================== Same Public IP Detection Tests ====================
 
+    @Tag("unit")
     @Test
     fun `extractSrflxIp extracts server reflexive IP from candidate`() {
         /**
@@ -36,6 +38,7 @@ class VpnScenarioTest {
         assertEquals("203.0.113.50", ip)
     }
 
+    @Tag("unit")
     @Test
     fun `extractSrflxIp returns null for non-srflx candidate`() {
         val hostCandidate = "a=candidate:0 1 UDP 2122252543 192.168.1.100 12345 typ host"
@@ -45,6 +48,7 @@ class VpnScenarioTest {
         assertNull(ip)
     }
 
+    @Tag("unit")
     @Test
     fun `detectSamePublicIp returns true when offer and answer have same srflx IP`() {
         /**
@@ -70,11 +74,12 @@ class VpnScenarioTest {
 
         val result = detectSamePublicIp(offerSdp, answerSdp)
 
-        assertTrue("Should detect same public IP", result.samePublicIp)
+        assertTrue(result.samePublicIp, "Should detect same public IP")
         assertEquals("203.0.113.50", result.offerPublicIp)
         assertEquals("203.0.113.50", result.answerPublicIp)
     }
 
+    @Tag("unit")
     @Test
     fun `detectSamePublicIp returns false when offer and answer have different srflx IPs`() {
         /**
@@ -96,11 +101,12 @@ class VpnScenarioTest {
 
         val result = detectSamePublicIp(offerSdp, answerSdp)
 
-        assertFalse("Should not detect same public IP", result.samePublicIp)
+        assertFalse(result.samePublicIp, "Should not detect same public IP")
         assertEquals("203.0.113.50", result.offerPublicIp)
         assertEquals("198.51.100.75", result.answerPublicIp)
     }
 
+    @Tag("unit")
     @Test
     fun `detectSamePublicIp handles missing srflx candidates`() {
         /**
@@ -123,13 +129,14 @@ class VpnScenarioTest {
 
         val result = detectSamePublicIp(offerSdp, answerSdp)
 
-        assertFalse("Should not detect same public IP when no srflx", result.samePublicIp)
+        assertFalse(result.samePublicIp, "Should not detect same public IP when no srflx")
         assertNull(result.offerPublicIp)
         assertNull(result.answerPublicIp)
     }
 
     // ==================== SdpValidator Tests ====================
 
+    @Tag("unit")
     @Test
     fun `SdpValidator detects host candidates`() {
         val sdp = """
@@ -142,6 +149,7 @@ class VpnScenarioTest {
         assertFalse(SdpValidator.hasRelayCandidate(sdp))
     }
 
+    @Tag("unit")
     @Test
     fun `SdpValidator detects srflx candidates`() {
         val sdp = """
@@ -154,6 +162,7 @@ class VpnScenarioTest {
         assertFalse(SdpValidator.hasRelayCandidate(sdp))
     }
 
+    @Tag("unit")
     @Test
     fun `SdpValidator detects relay candidates`() {
         val sdp = """
@@ -166,6 +175,7 @@ class VpnScenarioTest {
         assertTrue(SdpValidator.hasRelayCandidate(sdp))
     }
 
+    @Tag("unit")
     @Test
     fun `SdpValidator counts all candidate types`() {
         val sdp = """
@@ -183,6 +193,7 @@ class VpnScenarioTest {
 
     // ==================== VPN Detection Scenario Tests ====================
 
+    @Tag("unit")
     @Test
     fun `both devices on same VPN server scenario`() {
         /**
@@ -209,7 +220,7 @@ class VpnScenarioTest {
 
         val result = detectSamePublicIp(phoneSdp, laptopSdp)
 
-        assertTrue("Both on same VPN should have same public IP", result.samePublicIp)
+        assertTrue(result.samePublicIp, "Both on same VPN should have same public IP")
         assertEquals("185.199.110.100", result.offerPublicIp)
 
         // Both have host candidates on VPN subnet - might be able to connect directly
@@ -217,6 +228,7 @@ class VpnScenarioTest {
         assertTrue(SdpValidator.hasHostCandidate(laptopSdp))
     }
 
+    @Tag("unit")
     @Test
     fun `devices on different VPN servers scenario`() {
         /**
@@ -242,11 +254,12 @@ class VpnScenarioTest {
 
         val result = detectSamePublicIp(phoneSdp, laptopSdp)
 
-        assertFalse("Different VPN servers should have different IPs", result.samePublicIp)
+        assertFalse(result.samePublicIp, "Different VPN servers should have different IPs")
         assertEquals("185.199.110.100", result.offerPublicIp)
         assertEquals("151.101.1.100", result.answerPublicIp)
     }
 
+    @Tag("unit")
     @Test
     fun `no relay candidates means TURN not available`() {
         /**
@@ -259,7 +272,7 @@ class VpnScenarioTest {
             a=candidate:1 1 UDP 1694498815 203.0.113.50 54321 typ srflx raddr 192.168.1.100 rport 12345
         """.trimIndent()
 
-        assertFalse("No TURN server configured", SdpValidator.hasRelayCandidate(sdp))
+        assertFalse(SdpValidator.hasRelayCandidate(sdp), "No TURN server configured")
 
         // This is a potential connectivity issue
         val candidates = SdpValidator.extractCandidates(sdp)

@@ -3,12 +3,13 @@ package com.ras.data.connection
 import android.content.Context
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
-import org.junit.After
-import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertArrayEquals
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.nio.ByteBuffer
 
 /**
@@ -27,7 +28,7 @@ class TailscaleStrategyTest {
     private lateinit var mockTransport: TailscaleTransport
     private lateinit var mockContext: Context
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockContext = mockk(relaxed = true)
         strategy = TailscaleStrategy(mockContext)
@@ -37,7 +38,7 @@ class TailscaleStrategyTest {
         mockkObject(TailscaleTransport.Companion)
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         unmockkObject(TailscaleDetector)
         unmockkObject(TailscaleTransport.Companion)
@@ -59,11 +60,13 @@ class TailscaleStrategyTest {
 
     // ==================== Priority Tests ====================
 
+    @Tag("unit")
     @Test
     fun `priority is 10 - lower than WebRTC`() {
         assertEquals(10, strategy.priority)
     }
 
+    @Tag("unit")
     @Test
     fun `name is Tailscale Direct`() {
         assertEquals("Tailscale Direct", strategy.name)
@@ -71,6 +74,7 @@ class TailscaleStrategyTest {
 
     // ==================== Detection Tests ====================
 
+    @Tag("unit")
     @Test
     fun `detect returns Available when Tailscale is running`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo(
@@ -84,6 +88,7 @@ class TailscaleStrategyTest {
         assertEquals("100.64.0.1", (result as DetectionResult.Available).info)
     }
 
+    @Tag("unit")
     @Test
     fun `detect returns Unavailable when Tailscale not running`() = runTest {
         every { TailscaleDetector.detect(any()) } returns null
@@ -96,6 +101,7 @@ class TailscaleStrategyTest {
 
     // ==================== Connection Tests ====================
 
+    @Tag("unit")
     @Test
     fun `connect fails when detect was not called first`() = runTest {
         // Don't call detect() first
@@ -107,6 +113,7 @@ class TailscaleStrategyTest {
         assertEquals("Tailscale not detected", (result as ConnectionResult.Failed).error)
     }
 
+    @Tag("unit")
     @Test
     fun `connect fails when daemon Tailscale IP not in credentials`() = runTest {
         // Detect succeeds
@@ -120,6 +127,7 @@ class TailscaleStrategyTest {
         assertEquals("Daemon Tailscale IP unknown", (result as ConnectionResult.Failed).error)
     }
 
+    @Tag("unit")
     @Test
     fun `connect uses daemon Tailscale IP from context`() = runTest {
         // Detect succeeds
@@ -143,6 +151,7 @@ class TailscaleStrategyTest {
         assertTrue(result is ConnectionResult.Success)
     }
 
+    @Tag("unit")
     @Test
     fun `connect uses default port when not specified`() = runTest {
         // Detect succeeds
@@ -164,6 +173,7 @@ class TailscaleStrategyTest {
         coVerify { TailscaleTransport.connect(any(), any(), 9876, any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `connect reports correct progress steps`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
@@ -179,6 +189,7 @@ class TailscaleStrategyTest {
     // ==================== Auth Message Format Tests ====================
     // Bug 2 regression: Verify auth message format [4-byte len][device_id][32-byte auth]
 
+    @Tag("unit")
     @Test
     fun `auth message format is correct`() = runTest {
         // Detect succeeds
@@ -228,6 +239,7 @@ class TailscaleStrategyTest {
         assertEquals(4 + deviceId.length + 32, message.size)
     }
 
+    @Tag("unit")
     @Test
     fun `device id is UTF-8 encoded`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
@@ -263,6 +275,7 @@ class TailscaleStrategyTest {
         assertEquals(deviceId, String(deviceIdBytes, Charsets.UTF_8))
     }
 
+    @Tag("unit")
     @Test
     fun `length prefix is big-endian`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
@@ -299,6 +312,7 @@ class TailscaleStrategyTest {
 
     // ==================== Auth Response Tests ====================
 
+    @Tag("unit")
     @Test
     fun `success response returns connected transport`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
@@ -315,6 +329,7 @@ class TailscaleStrategyTest {
         assertTrue(result is ConnectionResult.Success)
     }
 
+    @Tag("unit")
     @Test
     fun `failure response returns failed result`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
@@ -333,6 +348,7 @@ class TailscaleStrategyTest {
         assertEquals("Authentication failed", (result as ConnectionResult.Failed).error)
     }
 
+    @Tag("unit")
     @Test
     fun `empty response returns failed result`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")

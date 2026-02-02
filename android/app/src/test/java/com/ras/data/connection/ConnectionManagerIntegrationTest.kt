@@ -36,15 +36,17 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
-import org.junit.Before
-import org.junit.Test
+import kotlin.test.assertFailsWith
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 /**
  * Comprehensive integration tests for ConnectionManager.
@@ -72,7 +74,7 @@ class ConnectionManagerIntegrationTest {
     // Channel for simulating incoming messages from daemon
     private lateinit var incomingMessages: Channel<ByteArray>
 
-    @Before
+    @BeforeEach
     fun setup() {
         webRTCClientFactory = mockk()
         webRTCClient = mockk(relaxed = true)
@@ -108,7 +110,7 @@ class ConnectionManagerIntegrationTest {
         )
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         connectionManager.disconnect()
         incomingMessages.close()
@@ -118,6 +120,7 @@ class ConnectionManagerIntegrationTest {
     // SECTION 1: Transport Connection Tests
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `connectWithTransport establishes connection and sends ConnectionReady`() = runTest {
         val mockTransport = createMockTransport(TransportType.WEBRTC)
@@ -129,58 +132,70 @@ class ConnectionManagerIntegrationTest {
 
         connectionManager.connectWithTransport(mockTransport, authKey)
 
-        assertTrue("Should be connected", connectionManager.isConnected.value)
-        assertTrue("Should send ConnectionReady", transportSentMessages.isNotEmpty())
+        assertTrue(connectionManager.isConnected.value, "Should be connected")
+        assertTrue(transportSentMessages.isNotEmpty(), "Should send ConnectionReady")
 
         val decrypted = codec.decode(transportSentMessages[0])
         val command = RasCommand.parseFrom(decrypted)
-        assertTrue("Should be ConnectionReady", command.hasConnectionReady())
+        assertTrue(command.hasConnectionReady(), "Should be ConnectionReady")
     }
 
+    @Tag("integration")
     @Test
     fun `connectWithTransport works with WebRTCTransport`() = runTest {
         val transport = WebRTCTransport(webRTCClient)
 
         connectionManager.connectWithTransport(transport, authKey)
 
-        assertTrue("Should be connected", connectionManager.isConnected.value)
-        assertTrue("Should send ConnectionReady", sentMessages.isNotEmpty())
+        assertTrue(connectionManager.isConnected.value, "Should be connected")
+        assertTrue(sentMessages.isNotEmpty(), "Should send ConnectionReady")
     }
 
+    @Tag("integration")
     @Test
     fun `connectWithTransport works with TailscaleTransport type`() = runTest {
         val mockTransport = createMockTransport(TransportType.TAILSCALE)
 
         connectionManager.connectWithTransport(mockTransport, authKey)
 
-        assertTrue("Should be connected", connectionManager.isConnected.value)
-        assertTrue("Should be healthy", connectionManager.isHealthy.value)
+        assertTrue(connectionManager.isConnected.value, "Should be connected")
+        assertTrue(connectionManager.isHealthy.value, "Should be healthy")
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("integration")
+    @Test
     fun `connect rejects invalid auth key size - too short`() = runTest {
         val shortKey = ByteArray(16) { it.toByte() }
-        connectionManager.connect(webRTCClient, shortKey)
+        assertFailsWith<IllegalArgumentException> {
+            connectionManager.connect(webRTCClient, shortKey)
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("integration")
+    @Test
     fun `connect rejects invalid auth key size - too long`() = runTest {
         val longKey = ByteArray(64) { it.toByte() }
-        connectionManager.connect(webRTCClient, longKey)
+        assertFailsWith<IllegalArgumentException> {
+            connectionManager.connect(webRTCClient, longKey)
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("integration")
+    @Test
     fun `connectWithTransport rejects invalid auth key size`() = runTest {
         val mockTransport = createMockTransport(TransportType.WEBRTC)
         val shortKey = ByteArray(16)
-        connectionManager.connectWithTransport(mockTransport, shortKey)
+        assertFailsWith<IllegalArgumentException> {
+            connectionManager.connectWithTransport(mockTransport, shortKey)
+        }
     }
 
+    @Tag("integration")
     @Test
     fun `connect when already connected disconnects first`() = runTest {
         // First connection
         connectionManager.connect(webRTCClient, authKey)
-        assertTrue("Should be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should be connected")
 
         // Create new client for second connection
         val newClient = mockk<WebRTCClient>(relaxed = true)
@@ -197,11 +212,12 @@ class ConnectionManagerIntegrationTest {
         // Second connection should work (disconnects first internally)
         connectionManager.connect(newClient, authKey)
 
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
         // Old client should be closed
         verify { webRTCClient.close() }
     }
 
+    @Tag("integration")
     @Test
     fun `ConnectionReady timeout throws exception`() = runTest {
         val slowTransport = mockk<Transport>(relaxed = true)
@@ -228,13 +244,14 @@ class ConnectionManagerIntegrationTest {
             manager.connectWithTransport(slowTransport, authKey)
             fail("Should throw exception on timeout")
         } catch (e: IllegalStateException) {
-            assertTrue("Should mention timeout", e.message?.contains("timeout") == true)
+            assertTrue(e.message?.contains("timeout") == true, "Should mention timeout")
         }
 
-        assertFalse("Should not be connected after timeout", manager.isConnected.value)
+        assertFalse(manager.isConnected.value, "Should not be connected after timeout")
         manager.disconnect()
     }
 
+    @Tag("integration")
     @Test
     fun `connect fails when send throws during ConnectionReady`() = runTest {
         val failingTransport = mockk<Transport>(relaxed = true)
@@ -250,16 +267,17 @@ class ConnectionManagerIntegrationTest {
             connectionManager.connectWithTransport(failingTransport, authKey)
             fail("Should throw exception")
         } catch (e: IllegalStateException) {
-            assertTrue("Should mention failed", e.message?.contains("Failed") == true)
+            assertTrue(e.message?.contains("Failed") == true, "Should mention failed")
         }
 
-        assertFalse("Should not be connected", connectionManager.isConnected.value)
+        assertFalse(connectionManager.isConnected.value, "Should not be connected")
     }
 
     // ============================================================================
     // SECTION 2: Event Routing Tests - All Event Types
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `routes SessionEvent LIST from daemon`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -293,10 +311,11 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         val event = receivedEvent.await()
-        assertTrue("Should have list", event.hasList())
+        assertTrue(event.hasList(), "Should have list")
         assertEquals("session-1", event.list.sessionsList[0].id)
     }
 
+    @Tag("integration")
     @Test
     fun `routes SessionEvent CREATED from daemon`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -325,9 +344,10 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         val event = receivedEvent.await()
-        assertTrue("Should have created", event.hasCreated())
+        assertTrue(event.hasCreated(), "Should have created")
     }
 
+    @Tag("integration")
     @Test
     fun `routes SessionEvent KILLED from daemon`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -356,10 +376,11 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         val event = receivedEvent.await()
-        assertTrue("Should have killed", event.hasKilled())
+        assertTrue(event.hasKilled(), "Should have killed")
         assertEquals("killed-session", event.killed.sessionId)
     }
 
+    @Tag("integration")
     @Test
     fun `routes TerminalEvent OUTPUT from daemon`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -388,10 +409,11 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         val event = receivedEvent.await()
-        assertTrue("Should have output", event.hasOutput())
+        assertTrue(event.hasOutput(), "Should have output")
         assertEquals("session-1", event.output.sessionId)
     }
 
+    @Tag("integration")
     @Test
     fun `routes TerminalEvent ATTACHED from daemon`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -421,10 +443,11 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         val event = receivedEvent.await()
-        assertTrue("Should have attached", event.hasAttached())
+        assertTrue(event.hasAttached(), "Should have attached")
         assertEquals("attached-session", event.attached.sessionId)
     }
 
+    @Tag("integration")
     @Test
     fun `routes TerminalEvent DETACHED from daemon`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -452,9 +475,10 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         val event = receivedEvent.await()
-        assertTrue("Should have detached", event.hasDetached())
+        assertTrue(event.hasDetached(), "Should have detached")
     }
 
+    @Tag("integration")
     @Test
     fun `routes InitialState from daemon to initialState flow`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -488,6 +512,7 @@ class ConnectionManagerIntegrationTest {
         assertEquals("existing-session", state.sessionsList[0].id)
     }
 
+    @Tag("integration")
     @Test
     fun `routes Pong event and calculates latency`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -513,9 +538,10 @@ class ConnectionManagerIntegrationTest {
 
         // Should process without error (latency is logged)
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
+    @Tag("integration")
     @Test
     fun `routes Error event from daemon`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -535,9 +561,10 @@ class ConnectionManagerIntegrationTest {
 
         // Should process without crashing
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
+    @Tag("integration")
     @Test
     fun `empty SessionEvent wrapper is not emitted`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -561,9 +588,10 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         val result = receivedEvent.await()
-        assertNull("Should not emit empty SessionEvent", result)
+        assertNull(result, "Should not emit empty SessionEvent")
     }
 
+    @Tag("integration")
     @Test
     fun `empty TerminalEvent wrapper is not emitted`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -586,9 +614,10 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         val result = receivedEvent.await()
-        assertNull("Should not emit empty TerminalEvent", result)
+        assertNull(result, "Should not emit empty TerminalEvent")
     }
 
+    @Tag("integration")
     @Test
     fun `EVENT_NOT_SET is handled gracefully`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -602,9 +631,10 @@ class ConnectionManagerIntegrationTest {
 
         // Should not crash, should remain connected
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
+    @Tag("integration")
     @Test
     fun `multiple events in rapid succession are all processed`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -635,13 +665,14 @@ class ConnectionManagerIntegrationTest {
             collectJob.join()
         }
 
-        assertEquals("Should receive all 5 events", 5, events.size)
+        assertEquals(5, events.size, "Should receive all 5 events")
     }
 
     // ============================================================================
     // SECTION 3: Encryption/Decryption Edge Cases
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `handles malformed encrypted data gracefully`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -654,9 +685,10 @@ class ConnectionManagerIntegrationTest {
 
         // Should still be connected (malformed messages are logged and ignored)
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
+    @Tag("integration")
     @Test
     fun `handles tampered encrypted message gracefully`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -675,9 +707,10 @@ class ConnectionManagerIntegrationTest {
 
         // Should still be connected (decryption failure is logged and ignored)
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
+    @Tag("integration")
     @Test
     fun `handles wrong encryption key gracefully`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -696,9 +729,10 @@ class ConnectionManagerIntegrationTest {
 
         // Should still be connected
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
+    @Tag("integration")
     @Test
     fun `handles valid encryption but invalid protobuf gracefully`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -712,9 +746,10 @@ class ConnectionManagerIntegrationTest {
 
         // Should still be connected (parse failure is logged and ignored)
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
+    @Tag("integration")
     @Test
     fun `handles empty encrypted message gracefully`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -725,9 +760,10 @@ class ConnectionManagerIntegrationTest {
         incomingMessages.send(encrypted)
 
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
+    @Tag("integration")
     @Test
     fun `drops oversized incoming message`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -740,24 +776,26 @@ class ConnectionManagerIntegrationTest {
 
         // Should still be connected (oversized is logged and dropped)
         delay(50)
-        assertTrue("Should still be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should still be connected")
     }
 
     // ============================================================================
     // SECTION 4: Disconnect and Health Monitoring
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `disconnect updates connection state`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
-        assertTrue("Should be connected", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should be connected")
 
         connectionManager.disconnect()
 
-        assertFalse("Should be disconnected", connectionManager.isConnected.value)
-        assertFalse("Should not be healthy after disconnect", connectionManager.isHealthy.value)
+        assertFalse(connectionManager.isConnected.value, "Should be disconnected")
+        assertFalse(connectionManager.isHealthy.value, "Should not be healthy after disconnect")
     }
 
+    @Tag("integration")
     @Test
     fun `disconnect called multiple times is safe`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -766,10 +804,11 @@ class ConnectionManagerIntegrationTest {
         connectionManager.disconnect()
         connectionManager.disconnect()
 
-        assertFalse("Should be disconnected", connectionManager.isConnected.value)
+        assertFalse(connectionManager.isConnected.value, "Should be disconnected")
         // Should not throw
     }
 
+    @Tag("integration")
     @Test
     fun `reconnecting after disconnect works`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -780,10 +819,11 @@ class ConnectionManagerIntegrationTest {
 
         connectionManager.connect(webRTCClient, authKey)
 
-        assertTrue("Should be connected again", connectionManager.isConnected.value)
-        assertTrue("Should send ConnectionReady", sentMessages.isNotEmpty())
+        assertTrue(connectionManager.isConnected.value, "Should be connected again")
+        assertTrue(sentMessages.isNotEmpty(), "Should send ConnectionReady")
     }
 
+    @Tag("integration")
     @Test
     fun `health status updates when connection becomes unhealthy`() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
@@ -800,7 +840,7 @@ class ConnectionManagerIntegrationTest {
 
         manager.connect(webRTCClient, authKey)
 
-        assertTrue("Should be healthy initially", manager.isHealthy.value)
+        assertTrue(manager.isHealthy.value, "Should be healthy initially")
 
         // Simulate unhealthy connection
         every { webRTCClient.isHealthy(any()) } returns false
@@ -808,11 +848,12 @@ class ConnectionManagerIntegrationTest {
         // Advance virtual time past heartbeat check interval
         advanceTimeBy(150L)
 
-        assertFalse("Should become unhealthy", manager.isHealthy.value)
+        assertFalse(manager.isHealthy.value, "Should become unhealthy")
 
         manager.disconnect()
     }
 
+    @Tag("integration")
     @Test
     fun `health recovers when connection becomes healthy again`() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
@@ -832,16 +873,17 @@ class ConnectionManagerIntegrationTest {
         // Make unhealthy
         every { webRTCClient.isHealthy(any()) } returns false
         advanceTimeBy(150L)
-        assertFalse("Should be unhealthy", manager.isHealthy.value)
+        assertFalse(manager.isHealthy.value, "Should be unhealthy")
 
         // Recover
         every { webRTCClient.isHealthy(any()) } returns true
         advanceTimeBy(150L)
-        assertTrue("Should recover to healthy", manager.isHealthy.value)
+        assertTrue(manager.isHealthy.value, "Should recover to healthy")
 
         manager.disconnect()
     }
 
+    @Tag("integration")
     @Test
     fun `transport disconnects mid-session updates state`() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
@@ -867,12 +909,12 @@ class ConnectionManagerIntegrationTest {
         }
 
         manager.connectWithTransport(mockTransport, authKey)
-        assertTrue("Should be connected", manager.isConnected.value)
+        assertTrue(manager.isConnected.value, "Should be connected")
 
         // Advance virtual time to trigger the event listener loop iterations
         advanceTimeBy(500L)
 
-        assertFalse("Should be disconnected after error", manager.isConnected.value)
+        assertFalse(manager.isConnected.value, "Should be disconnected after error")
         manager.disconnect()
     }
 
@@ -880,35 +922,48 @@ class ConnectionManagerIntegrationTest {
     // SECTION 5: Command Sending Tests
     // ============================================================================
 
-    @Test(expected = IllegalStateException::class)
+    @Tag("integration")
+    @Test
     fun `send throws when not connected`() = runTest {
         // Don't connect
-        connectionManager.send(ByteArray(10))
+        assertFailsWith<IllegalStateException> {
+            connectionManager.send(ByteArray(10))
+        }
     }
 
-    @Test(expected = IllegalStateException::class)
+    @Tag("integration")
+    @Test
     fun `sendSessionCommand throws when not connected`() = runTest {
         val command = com.ras.proto.SessionCommand.newBuilder()
             .setList(com.ras.proto.ListSessionsCommand.getDefaultInstance())
             .build()
-        connectionManager.sendSessionCommand(command)
+        assertFailsWith<IllegalStateException> {
+            connectionManager.sendSessionCommand(command)
+        }
     }
 
-    @Test(expected = IllegalStateException::class)
+    @Tag("integration")
+    @Test
     fun `sendTerminalCommand throws when not connected`() = runTest {
         val command = com.ras.proto.TerminalCommand.newBuilder()
             .setAttach(com.ras.proto.AttachTerminal.newBuilder().setSessionId("s1"))
             .build()
-        connectionManager.sendTerminalCommand(command)
+        assertFailsWith<IllegalStateException> {
+            connectionManager.sendTerminalCommand(command)
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("integration")
+    @Test
     fun `rejects oversized outgoing messages`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
         val oversizedData = ByteArray(17 * 1024 * 1024)
-        connectionManager.send(oversizedData)
+        assertFailsWith<IllegalArgumentException> {
+            connectionManager.send(oversizedData)
+        }
     }
 
+    @Tag("integration")
     @Test
     fun `sendSessionCommand wraps in RasCommand`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -919,12 +974,13 @@ class ConnectionManagerIntegrationTest {
             .build()
         connectionManager.sendSessionCommand(command)
 
-        assertTrue("Should send message", sentMessages.isNotEmpty())
+        assertTrue(sentMessages.isNotEmpty(), "Should send message")
         val decrypted = codec.decode(sentMessages[0])
         val rasCommand = RasCommand.parseFrom(decrypted)
-        assertTrue("Should have session command", rasCommand.hasSession())
+        assertTrue(rasCommand.hasSession(), "Should have session command")
     }
 
+    @Tag("integration")
     @Test
     fun `sendTerminalCommand wraps in RasCommand`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -935,12 +991,13 @@ class ConnectionManagerIntegrationTest {
             .build()
         connectionManager.sendTerminalCommand(command)
 
-        assertTrue("Should send message", sentMessages.isNotEmpty())
+        assertTrue(sentMessages.isNotEmpty(), "Should send message")
         val decrypted = codec.decode(sentMessages[0])
         val rasCommand = RasCommand.parseFrom(decrypted)
-        assertTrue("Should have terminal command", rasCommand.hasTerminal())
+        assertTrue(rasCommand.hasTerminal(), "Should have terminal command")
     }
 
+    @Tag("integration")
     @Test
     fun `sendPing wraps in RasCommand with timestamp`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -950,18 +1007,20 @@ class ConnectionManagerIntegrationTest {
         connectionManager.sendPing()
         val afterPing = System.currentTimeMillis()
 
-        assertTrue("Should send message", sentMessages.isNotEmpty())
+        assertTrue(sentMessages.isNotEmpty(), "Should send message")
         val decrypted = codec.decode(sentMessages[0])
         val rasCommand = RasCommand.parseFrom(decrypted)
-        assertTrue("Should have ping", rasCommand.hasPing())
-        assertTrue("Timestamp should be in range",
-            rasCommand.ping.timestamp in beforePing..afterPing)
+        assertTrue(rasCommand.hasPing(), "Should have ping")
+        assertTrue(
+            rasCommand.ping.timestamp in beforePing..afterPing,
+            "Timestamp should be in range")
     }
 
     // ============================================================================
     // SECTION 6: Fallback and Recovery Tests
     // ============================================================================
 
+    @Tag("integration")
     @Test
     fun `connectWithTransport after failed WebRTC works`() = runTest {
         val failingClient = mockk<WebRTCClient>(relaxed = true)
@@ -976,7 +1035,7 @@ class ConnectionManagerIntegrationTest {
         val workingTransport = createMockTransport(TransportType.TAILSCALE)
         connectionManager.connectWithTransport(workingTransport, authKey)
 
-        assertTrue("Should be connected via fallback", connectionManager.isConnected.value)
+        assertTrue(connectionManager.isConnected.value, "Should be connected via fallback")
     }
 
     // ============================================================================

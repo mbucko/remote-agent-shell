@@ -1,7 +1,8 @@
 package com.ras.crypto
 
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.security.SecureRandom
 
 class BytesCodecTest {
@@ -12,6 +13,7 @@ class BytesCodecTest {
         return key
     }
 
+    @Tag("unit")
     @Test
     fun `encode then decode returns original data`() {
         val key = generateKey()
@@ -24,6 +26,7 @@ class BytesCodecTest {
         assertArrayEquals(original, decrypted)
     }
 
+    @Tag("unit")
     @Test
     fun `encode produces different ciphertext each time`() {
         val key = generateKey()
@@ -41,6 +44,7 @@ class BytesCodecTest {
         assertArrayEquals(plaintext, codec.decode(encrypted2))
     }
 
+    @Tag("unit")
     @Test
     fun `encrypted data has correct format`() {
         val key = generateKey()
@@ -56,6 +60,7 @@ class BytesCodecTest {
         assertEquals(32, encrypted.size)
     }
 
+    @Tag("unit")
     @Test
     fun `empty plaintext encrypts and decrypts correctly`() {
         val key = generateKey()
@@ -70,6 +75,7 @@ class BytesCodecTest {
         assertEquals(28, encrypted.size)
     }
 
+    @Tag("unit")
     @Test
     fun `large data encrypts and decrypts correctly`() {
         val key = generateKey()
@@ -83,6 +89,7 @@ class BytesCodecTest {
         assertArrayEquals(large, decrypted)
     }
 
+    @Tag("unit")
     @Test
     fun `wrong key fails to decrypt`() {
         val key1 = generateKey()
@@ -98,6 +105,7 @@ class BytesCodecTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `tampered ciphertext fails to decrypt`() {
         val key = generateKey()
@@ -115,6 +123,7 @@ class BytesCodecTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `tampered nonce fails to decrypt`() {
         val key = generateKey()
@@ -132,6 +141,7 @@ class BytesCodecTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `tampered tag fails to decrypt`() {
         val key = generateKey()
@@ -149,26 +159,33 @@ class BytesCodecTest {
         }
     }
 
-    @Test(expected = CryptoException::class)
+    @Test
     fun `data too short throws CryptoException`() {
         val key = generateKey()
         val codec = BytesCodec(key)
 
         // Less than minimum 28 bytes
         val tooShort = ByteArray(20)
-        codec.decode(tooShort)
+        assertThrows(CryptoException::class.java) {
+            codec.decode(tooShort)
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `key too short throws exception`() {
-        BytesCodec(ByteArray(16)) // 16 bytes instead of 32
+        assertThrows(IllegalArgumentException::class.java) {
+            BytesCodec(ByteArray(16)) // 16 bytes instead of 32
+        }
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Test
     fun `key too long throws exception`() {
-        BytesCodec(ByteArray(64)) // 64 bytes instead of 32
+        assertThrows(IllegalArgumentException::class.java) {
+            BytesCodec(ByteArray(64)) // 64 bytes instead of 32
+        }
     }
 
+    @Tag("unit")
     @Test
     fun `zeroKey clears key material`() {
         val key = generateKey()
@@ -186,6 +203,7 @@ class BytesCodecTest {
         assertTrue(key.all { it == 0.toByte() })
     }
 
+    @Tag("unit")
     @Test
     fun `binary data with all byte values`() {
         val key = generateKey()

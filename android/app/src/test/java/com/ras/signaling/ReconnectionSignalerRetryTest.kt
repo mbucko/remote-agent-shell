@@ -7,9 +7,10 @@ import com.ras.proto.NtfySignalMessage
 import io.mockk.*
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.io.IOException
 import java.security.SecureRandom
 
@@ -44,7 +45,7 @@ class ReconnectionSignalerRetryTest {
         .setTailscalePort(9876)
         .build()
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockDirectClient = mockk(relaxed = true)
         mockNtfyClient = mockk(relaxed = true)
@@ -62,6 +63,7 @@ class ReconnectionSignalerRetryTest {
 
     // ==================== SDP Exchange Retry Tests ====================
 
+    @Tag("unit")
     @Test
     fun `ntfy signaling retries on transient WebSocket failure`() = runTest {
         /**
@@ -98,7 +100,7 @@ class ReconnectionSignalerRetryTest {
         coEvery { mockNtfyClient.publishWithRetry(any(), any()) } returns Unit
         coEvery { mockNtfyClient.unsubscribe() } returns Unit
 
-        val result = signaler.exchangeSdp(
+        signaler.exchangeSdp(
             host = "192.168.1.100",
             port = 8765,
             masterSecret = testMasterSecret,
@@ -109,15 +111,13 @@ class ReconnectionSignalerRetryTest {
         )
 
         // Verify at least 2 retry attempts were made (due to transient failures)
-        assertTrue(
-            "Should have at least 2 subscribe attempts, but had $subscribeAttempts: $subscribeResults",
-            subscribeAttempts >= 2
-        )
+        assertTrue(subscribeAttempts >= 2, "Should have at least 2 subscribe attempts, but had $subscribeAttempts: $subscribeResults")
 
         // The result depends on timing - either Success or Error
         // The key assertion is that retries happened
     }
 
+    @Tag("unit")
     @Test
     fun `ntfy signaling gives up after max retries`() = runTest {
         /**
@@ -150,14 +150,12 @@ class ReconnectionSignalerRetryTest {
         )
 
         // Should have tried the max number of times
-        assertTrue(
-            "Should have 3 subscribe attempts, but had $subscribeAttempts",
-            subscribeAttempts == 3
-        )
+        assertTrue(subscribeAttempts == 3, "Should have 3 subscribe attempts, but had $subscribeAttempts")
         // Result should be Error (all retries exhausted)
-        assertTrue("Should fail after max retries", result is ReconnectionSignalerResult.Error)
+        assertTrue(result is ReconnectionSignalerResult.Error, "Should fail after max retries")
     }
 
+    @Tag("unit")
     @Test
     fun `ntfy signaling does not retry on non-retriable errors`() = runTest {
         /**
@@ -192,10 +190,11 @@ class ReconnectionSignalerRetryTest {
             ntfyTimeoutMs = 10000
         )
 
-        assertTrue("Should fail immediately", result is ReconnectionSignalerResult.Error)
-        assertEquals("Should only try once", 1, subscribeAttempts)
+        assertTrue(result is ReconnectionSignalerResult.Error, "Should fail immediately")
+        assertEquals(1, subscribeAttempts, "Should only try once")
     }
 
+    @Tag("unit")
     @Test
     fun `progress callback reports retry attempts`() = runTest {
         /**
@@ -237,11 +236,12 @@ class ReconnectionSignalerRetryTest {
 
         // Should have received NtfyRetrying events
         val retryEvents = progressEvents.filterIsInstance<ConnectionProgress.NtfyRetrying>()
-        assertEquals("Should have 2 retry events", 2, retryEvents.size)
-        assertEquals("First retry should be attempt 1", 1, retryEvents[0].attempt)
-        assertEquals("Second retry should be attempt 2", 2, retryEvents[1].attempt)
+        assertEquals(2, retryEvents.size, "Should have 2 retry events")
+        assertEquals(1, retryEvents[0].attempt, "First retry should be attempt 1")
+        assertEquals(2, retryEvents[1].attempt, "Second retry should be attempt 2")
     }
 
+    @Tag("unit")
     @Test
     fun `ntfy signaling retries on various transient errors`() = runTest {
         /**
@@ -285,13 +285,11 @@ class ReconnectionSignalerRetryTest {
             )
 
             // The key assertion is that retry happened for this error type
-            assertTrue(
-                "Should retry for error containing '$errorMsg', but had $attempts attempts",
-                attempts >= 2
-            )
+            assertTrue(attempts >= 2, "Should retry for error containing '$errorMsg', but had $attempts attempts")
         }
     }
 
+    @Tag("unit")
     @Test
     fun `ntfy signaling retries IOException without message`() = runTest {
         /**
@@ -325,11 +323,12 @@ class ReconnectionSignalerRetryTest {
         )
 
         // IOException without message should now retry (bug fixed)
-        assertEquals("IOException without message should retry", 2, attempts)
+        assertEquals(2, attempts, "IOException without message should retry")
     }
 
     // ==================== Capability Exchange Retry Tests ====================
 
+    @Tag("unit")
     @Test
     fun `capability exchange retries on WebSocket failure`() = runTest {
         /**
@@ -361,7 +360,7 @@ class ReconnectionSignalerRetryTest {
         coEvery { mockNtfyClient.publishWithRetry(any(), any()) } returns Unit
         coEvery { mockNtfyClient.unsubscribe() } returns Unit
 
-        val result = signaler.exchangeCapabilities(
+        signaler.exchangeCapabilities(
             host = "192.168.1.100",
             port = 8765,
             masterSecret = testMasterSecret,

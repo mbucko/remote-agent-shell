@@ -6,14 +6,15 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Test
-import org.junit.runner.RunWith
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.extension.ExtendWith
 import org.robolectric.Robolectric
-import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import tech.apter.junit.jupiter.robolectric.RobolectricExtension
 
 /**
  * Tests for MainActivity deep link navigation.
@@ -24,7 +25,7 @@ import org.robolectric.annotation.Config
  * 3. Deep links are handled correctly from notifications
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
+@ExtendWith(RobolectricExtension::class)
 @Config(manifest = Config.NONE, sdk = [33])
 class MainActivityNavigationTest {
 
@@ -37,6 +38,7 @@ class MainActivityNavigationTest {
      *
      * After the fix: MainActivity just navigates and lets TerminalViewModel handle errors.
      */
+    @Tag("unit")
     @Test
     fun `notification tap navigates to terminal without session validation`() = runTest {
         // This test verifies the architectural change:
@@ -64,6 +66,7 @@ class MainActivityNavigationTest {
     /**
      * Test that group summary notification navigates to sessions list.
      */
+    @Tag("unit")
     @Test
     fun `group summary notification navigates to sessions list`() = runTest {
         val intent = Intent().apply {
@@ -80,6 +83,7 @@ class MainActivityNavigationTest {
     /**
      * Test that intent extras are properly read.
      */
+    @Tag("unit")
     @Test
     fun `intent extras are correctly parsed`() {
         val intent = Intent().apply {
@@ -97,6 +101,7 @@ class MainActivityNavigationTest {
     /**
      * Test that non-notification intents are ignored.
      */
+    @Tag("unit")
     @Test
     fun `non-notification intent is ignored`() {
         val intent = Intent()
@@ -110,6 +115,7 @@ class MainActivityNavigationTest {
     /**
      * Test that NAVIGATE_TO_SESSIONS constant is empty string.
      */
+    @Tag("unit")
     @Test
     fun `NAVIGATE_TO_SESSIONS is empty string`() {
         assertEquals("", MainActivity.NAVIGATE_TO_SESSIONS)

@@ -26,11 +26,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Tests for ConnectionManager's RasEvent/RasCommand protocol handling.
@@ -49,7 +50,7 @@ class ConnectionManagerTest {
 
     private lateinit var sentMessages: MutableList<ByteArray>
 
-    @Before
+    @BeforeEach
     fun setup() {
         webRTCClientFactory = mockk()
         webRTCClient = mockk(relaxed = true)
@@ -77,7 +78,7 @@ class ConnectionManagerTest {
         )
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         connectionManager.disconnect()
     }
@@ -86,6 +87,7 @@ class ConnectionManagerTest {
     // ConnectionReady Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `connect sends ConnectionReady synchronously before returning`() = runTest {
         // connect() is now a suspend function that sends ConnectionReady synchronously
@@ -93,20 +95,21 @@ class ConnectionManagerTest {
 
         // ConnectionReady should be sent IMMEDIATELY - no waiting needed
         // Because connect() is a suspend function that sends before returning
-        assertTrue("Should have sent ConnectionReady", sentMessages.isNotEmpty())
+        assertTrue(sentMessages.isNotEmpty(), "Should have sent ConnectionReady")
 
         // Decrypt and parse the message
         val codec = BytesCodec(authKey.copyOf())
         val decrypted = codec.decode(sentMessages[0])
         val command = RasCommand.parseFrom(decrypted)
 
-        assertTrue("Should be ConnectionReady", command.hasConnectionReady())
+        assertTrue(command.hasConnectionReady(), "Should be ConnectionReady")
     }
 
     // ============================================================================
     // RasCommand Wrapping Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `sendSessionCommand wraps in RasCommand`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -120,17 +123,18 @@ class ConnectionManagerTest {
         connectionManager.sendSessionCommand(sessionCommand)
 
         // Should send a message
-        assertTrue("Should send a message", sentMessages.isNotEmpty())
+        assertTrue(sentMessages.isNotEmpty(), "Should send a message")
 
         // Decrypt and parse
         val codec = BytesCodec(authKey.copyOf())
         val decrypted = codec.decode(sentMessages[0])
         val rasCommand = RasCommand.parseFrom(decrypted)
 
-        assertTrue("Should be wrapped in RasCommand", rasCommand.hasSession())
-        assertTrue("Should have list command", rasCommand.session.hasList())
+        assertTrue(rasCommand.hasSession(), "Should be wrapped in RasCommand")
+        assertTrue(rasCommand.session.hasList(), "Should have list command")
     }
 
+    @Tag("unit")
     @Test
     fun `sendTerminalCommand wraps in RasCommand`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -145,17 +149,18 @@ class ConnectionManagerTest {
         connectionManager.sendTerminalCommand(terminalCommand)
 
         // Should send a message
-        assertTrue("Should send a message", sentMessages.isNotEmpty())
+        assertTrue(sentMessages.isNotEmpty(), "Should send a message")
 
         // Decrypt and parse
         val codec = BytesCodec(authKey.copyOf())
         val decrypted = codec.decode(sentMessages[0])
         val rasCommand = RasCommand.parseFrom(decrypted)
 
-        assertTrue("Should be wrapped in RasCommand", rasCommand.hasTerminal())
-        assertTrue("Should have attach command", rasCommand.terminal.hasAttach())
+        assertTrue(rasCommand.hasTerminal(), "Should be wrapped in RasCommand")
+        assertTrue(rasCommand.terminal.hasAttach(), "Should have attach command")
     }
 
+    @Tag("unit")
     @Test
     fun `sendPing wraps in RasCommand`() = runTest {
         connectionManager.connect(webRTCClient, authKey)
@@ -167,20 +172,21 @@ class ConnectionManagerTest {
         connectionManager.sendPing()
 
         // Should send a message
-        assertTrue("Should send a message", sentMessages.isNotEmpty())
+        assertTrue(sentMessages.isNotEmpty(), "Should send a message")
 
         // Decrypt and parse
         val codec = BytesCodec(authKey.copyOf())
         val decrypted = codec.decode(sentMessages[0])
         val rasCommand = RasCommand.parseFrom(decrypted)
 
-        assertTrue("Should be wrapped in RasCommand", rasCommand.hasPing())
+        assertTrue(rasCommand.hasPing(), "Should be wrapped in RasCommand")
     }
 
     // ============================================================================
     // Keepalive Ping Tests
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `ping loop sends pings periodically to keep connection alive`() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
@@ -202,18 +208,19 @@ class ConnectionManagerTest {
         advanceTimeBy(100L)
 
         // Should have sent at least one ping
-        assertTrue("Should send ping after interval", sentMessages.isNotEmpty())
+        assertTrue(sentMessages.isNotEmpty(), "Should send ping after interval")
 
         // Verify it's a ping
         val codec = BytesCodec(authKey.copyOf())
         val decrypted = codec.decode(sentMessages.last())
         val rasCommand = RasCommand.parseFrom(decrypted)
 
-        assertTrue("Should be a Ping command", rasCommand.hasPing())
+        assertTrue(rasCommand.hasPing(), "Should be a Ping command")
 
         fastPingManager.disconnect()
     }
 
+    @Tag("unit")
     @Test
     fun `ping loop stops when disconnected`() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
@@ -236,9 +243,10 @@ class ConnectionManagerTest {
         advanceTimeBy(100L)
 
         // Should NOT have sent any pings after disconnect
-        assertTrue("Should not send pings after disconnect", sentMessages.isEmpty())
+        assertTrue(sentMessages.isEmpty(), "Should not send pings after disconnect")
     }
 
+    @Tag("unit")
     @Test
     fun `ping loop disabled when pingIntervalMs is 0`() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
@@ -258,7 +266,7 @@ class ConnectionManagerTest {
         advanceTimeBy(100L)
 
         // Should NOT have sent any pings
-        assertTrue("Should not send pings when disabled", sentMessages.isEmpty())
+        assertTrue(sentMessages.isEmpty(), "Should not send pings when disabled")
 
         noPingManager.disconnect()
     }

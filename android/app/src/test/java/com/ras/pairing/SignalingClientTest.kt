@@ -12,11 +12,12 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
@@ -32,7 +33,7 @@ class SignalingClientTest {
     private val deviceName = "Test Device"
     private val sdpOffer = "v=0\r\no=- 123 1 IN IP4 127.0.0.1\r\n..."
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockServer = MockWebServer()
         mockServer.start()
@@ -50,7 +51,7 @@ class SignalingClientTest {
         shortTimeoutClient = SignalingClient(shortTimeoutHttpClient)
     }
 
-    @After
+    @AfterEach
     fun teardown() {
         mockServer.shutdown()
     }
@@ -59,6 +60,7 @@ class SignalingClientTest {
     // Success Scenarios
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `successful signaling returns SDP answer`() = runBlocking {
         val expectedAnswer = "v=0\r\no=- 456 1 IN IP4 192.168.1.1\r\n..."
@@ -95,6 +97,7 @@ class SignalingClientTest {
         assertTrue(request.getHeader("X-RAS-Timestamp")?.isNotEmpty() == true)
     }
 
+    @Tag("unit")
     @Test
     fun `request includes correct HMAC signature`() = runBlocking {
         val response = SignalResponse.newBuilder()
@@ -137,6 +140,7 @@ class SignalingClientTest {
     // Error Response Scenarios
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `INVALID_REQUEST error code from server`() = runBlocking {
         val error = SignalError.newBuilder()
@@ -164,6 +168,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.INVALID_REQUEST, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `INVALID_SESSION error code from server`() = runBlocking {
         val error = SignalError.newBuilder()
@@ -190,6 +195,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.INVALID_SESSION, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `AUTHENTICATION_FAILED error code from server`() = runBlocking {
         val error = SignalError.newBuilder()
@@ -216,6 +222,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.AUTHENTICATION_FAILED, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `RATE_LIMITED error code from server`() = runBlocking {
         val error = SignalError.newBuilder()
@@ -242,6 +249,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.RATE_LIMITED, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `INTERNAL_ERROR error code from server`() = runBlocking {
         val error = SignalError.newBuilder()
@@ -272,6 +280,7 @@ class SignalingClientTest {
     // Network Error Scenarios
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `connection timeout returns UNKNOWN error`() = runBlocking {
         mockServer.enqueue(
@@ -293,6 +302,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.UNKNOWN, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `connection refused returns UNKNOWN error`() = runBlocking {
         mockServer.shutdown() // Shut down to simulate connection refused
@@ -311,6 +321,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.UNKNOWN, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `disconnect during response returns UNKNOWN error`() = runBlocking {
         mockServer.enqueue(
@@ -337,6 +348,7 @@ class SignalingClientTest {
     // Malformed Response Scenarios
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `empty response body on success returns UNKNOWN error`() = runBlocking {
         mockServer.enqueue(
@@ -359,6 +371,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.UNKNOWN, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `invalid protobuf in success response returns UNKNOWN error`() = runBlocking {
         mockServer.enqueue(
@@ -381,6 +394,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.UNKNOWN, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `invalid protobuf in error response returns UNKNOWN error`() = runBlocking {
         mockServer.enqueue(
@@ -403,6 +417,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.UNKNOWN, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `empty error response body returns UNKNOWN error`() = runBlocking {
         mockServer.enqueue(
@@ -425,6 +440,7 @@ class SignalingClientTest {
         assertEquals(SignalError.ErrorCode.UNKNOWN, (result as SignalingResult.Error).code)
     }
 
+    @Tag("unit")
     @Test
     fun `HTTP 500 without body returns UNKNOWN error`() = runBlocking {
         mockServer.enqueue(
@@ -450,6 +466,7 @@ class SignalingClientTest {
     // Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `handles IPv6 address`() = runBlocking {
         val response = SignalResponse.newBuilder()
@@ -476,6 +493,7 @@ class SignalingClientTest {
         assertTrue(result is SignalingResult.Success)
     }
 
+    @Tag("unit")
     @Test
     fun `handles long SDP offer`() = runBlocking {
         val longSdp = "v=0\r\n" + "a=candidate:".repeat(1000) // Simulate many ICE candidates
@@ -507,6 +525,7 @@ class SignalingClientTest {
         assertEquals(longSdp, signalRequest.sdpOffer)
     }
 
+    @Tag("unit")
     @Test
     fun `handles unicode device name`() = runBlocking {
         val unicodeDeviceName = "Pixel 9 Pro 📱"
@@ -538,6 +557,7 @@ class SignalingClientTest {
         assertEquals(unicodeDeviceName, signalRequest.deviceName)
     }
 
+    @Tag("unit")
     @Test
     fun `handles special characters in session ID`() = runBlocking {
         val specialSessionId = "abc-123_def.456"

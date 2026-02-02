@@ -16,12 +16,13 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.net.ConnectException
 import java.security.SecureRandom
 
@@ -56,7 +57,7 @@ class NtfySignalingE2ETest {
     private val testIp = "192.168.1.100"
     private val testPort = 8080
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockDirectClient = mockk()
         mockNtfyClient = MockNtfyClient()
@@ -69,6 +70,7 @@ class NtfySignalingE2ETest {
 
     // ==================== E2E-NTFY-01: Happy Path - ntfy Fallback ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-01 phone sends offer via ntfy and receives answer`() = runTest {
         // Direct connection fails (simulating NAT)
@@ -93,11 +95,11 @@ class NtfySignalingE2ETest {
 
         // Verify offer was published
         val publishedMessages = mockNtfyClient.getPublishedMessages()
-        assertEquals("Offer should be published", 1, publishedMessages.size)
+        assertEquals(1, publishedMessages.size, "Offer should be published")
 
         // Verify published message is encrypted and valid
         val encryptedOffer = publishedMessages[0]
-        assertTrue("Published message should be base64", encryptedOffer.isNotEmpty())
+        assertTrue(encryptedOffer.isNotEmpty(), "Published message should be base64")
 
         // Daemon decrypts and validates offer, then sends answer
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
@@ -105,15 +107,16 @@ class NtfySignalingE2ETest {
         val signalResult = result.await()
 
         // Verify success via ntfy path
-        assertTrue("Expected Success", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Expected Success")
         val success = signalResult as PairingSignalerResult.Success
-        assertFalse("Should not use direct path", success.usedDirectPath)
-        assertTrue("Should use ntfy path", success.usedNtfyPath)
+        assertFalse(success.usedDirectPath, "Should not use direct path")
+        assertTrue(success.usedNtfyPath, "Should use ntfy path")
         assertEquals(testAnswer, success.sdpAnswer)
     }
 
     // ==================== E2E-NTFY-02: Direct Success (No Fallback) ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-02 direct connection succeeds without ntfy fallback`() = runTest {
         coEvery {
@@ -133,16 +136,17 @@ class NtfySignalingE2ETest {
         // Verify success via direct path
         assertTrue(result is PairingSignalerResult.Success)
         val success = result as PairingSignalerResult.Success
-        assertTrue("Should use direct path", success.usedDirectPath)
-        assertFalse("Should not use ntfy path", success.usedNtfyPath)
+        assertTrue(success.usedDirectPath, "Should use direct path")
+        assertFalse(success.usedNtfyPath, "Should not use ntfy path")
 
         // Verify ntfy was never used
-        assertEquals("No messages should be published to ntfy", 0, mockNtfyClient.getPublishedMessages().size)
-        assertFalse("Should not be subscribed to ntfy", mockNtfyClient.isSubscribed)
+        assertEquals(0, mockNtfyClient.getPublishedMessages().size, "No messages should be published to ntfy")
+        assertFalse(mockNtfyClient.isSubscribed, "Should not be subscribed to ntfy")
     }
 
     // ==================== E2E-NTFY-03: Replay Attack Rejected ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-03 phone rejects replayed answer message`() = runTest {
         coEvery {
@@ -170,7 +174,7 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(legitimateAnswer)
 
         val firstResult = result1.await()
-        assertTrue("First exchange should succeed", firstResult is PairingSignalerResult.Success)
+        assertTrue(firstResult is PairingSignalerResult.Success, "First exchange should succeed")
 
         // Reset for second exchange
         mockNtfyClient.reset()
@@ -202,11 +206,12 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(freshAnswer)
 
         val secondResult = result2.await()
-        assertTrue("Second exchange should succeed with fresh nonce", secondResult is PairingSignalerResult.Success)
+        assertTrue(secondResult is PairingSignalerResult.Success, "Second exchange should succeed with fresh nonce")
     }
 
     // ==================== E2E-NTFY-04: Wrong Session ID Rejected ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-04 phone rejects answer with wrong session ID`() = runTest {
         coEvery {
@@ -237,11 +242,12 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Should succeed with correct session", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed with correct session")
     }
 
     // ==================== E2E-NTFY-05: Timestamp Expiry ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-05 phone rejects answer with expired timestamp`() = runTest {
         coEvery {
@@ -272,11 +278,12 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Should succeed with valid timestamp", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed with valid timestamp")
     }
 
     // ==================== E2E-NTFY-09: Clock Skew Boundary ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-09 clock skew at boundary 30s accepted`() = runTest {
         coEvery {
@@ -301,9 +308,10 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer(timestamp = currentTimestamp() - 30))
 
         val signalResult = result.await()
-        assertTrue("30s clock skew should be accepted", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "30s clock skew should be accepted")
     }
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-09 clock skew at boundary 30s future accepted`() = runTest {
         coEvery {
@@ -328,9 +336,10 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer(timestamp = currentTimestamp() + 30))
 
         val signalResult = result.await()
-        assertTrue("30s future clock skew should be accepted", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "30s future clock skew should be accepted")
     }
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-09 clock skew outside boundary 31s rejected`() = runTest {
         coEvery {
@@ -361,11 +370,12 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Should succeed with valid timestamp", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed with valid timestamp")
     }
 
     // ==================== E2E-NTFY-10: Large SDP ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-10 handles large SDP with many ICE candidates`() = runTest {
         coEvery {
@@ -386,8 +396,8 @@ class NtfySignalingE2ETest {
         }
 
         // Verify SDP is substantial (but under 64KB limit)
-        assertTrue("Large SDP should be significant size", largeSdp.length > 5000)
-        assertTrue("Large SDP should be under 64KB", largeSdp.length < 65536)
+        assertTrue(largeSdp.length > 5000, "Large SDP should be significant size")
+        assertTrue(largeSdp.length < 65536, "Large SDP should be under 64KB")
 
         val result = async {
             signaler.exchangeSdp(
@@ -407,12 +417,13 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer(sdp = largeSdp))
 
         val signalResult = result.await()
-        assertTrue("Should handle large SDP", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should handle large SDP")
         assertEquals(largeSdp, (signalResult as PairingSignalerResult.Success).sdpAnswer)
     }
 
     // ==================== E2E-NTFY-11: Unicode Device Name ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-11 handles unicode device name`() = runTest {
         coEvery {
@@ -451,11 +462,12 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Should succeed with unicode", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed with unicode")
     }
 
     // ==================== E2E-NTFY-12: Daemon Receives ANSWER (Wrong Type) ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-12 validator rejects wrong message type (daemon expecting OFFER)`() {
         val validator = NtfySignalMessageValidator(
@@ -473,12 +485,13 @@ class NtfySignalingE2ETest {
             .build()
 
         val result = validator.validate(wrongTypeMsg)
-        assertFalse("Should reject wrong message type", result.isValid)
+        assertFalse(result.isValid, "Should reject wrong message type")
         assertEquals(ValidationError.WRONG_MESSAGE_TYPE, result.error)
     }
 
     // ==================== E2E-NTFY-13: Phone Receives OFFER (Wrong Type) ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-13 phone ignores offer message when expecting answer`() = runTest {
         coEvery {
@@ -509,11 +522,12 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Should succeed ignoring wrong type", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed ignoring wrong type")
     }
 
     // ==================== E2E-NTFY-17: Race Between Direct and ntfy ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-17 direct success cancels ntfy path`() = runTest {
         // Direct succeeds (so ntfy should never be used)
@@ -541,6 +555,7 @@ class NtfySignalingE2ETest {
 
     // ==================== E2E-NTFY-21: Duplicate Message Delivery ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-21 handles duplicate messages via nonce cache`() = runTest {
         coEvery {
@@ -571,11 +586,12 @@ class NtfySignalingE2ETest {
 
         // Should succeed with first message, ignore duplicates
         val signalResult = result.await()
-        assertTrue("Should succeed with first message", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed with first message")
     }
 
     // ==================== E2E-NTFY-23: User Cancellation Cleanup ====================
 
+    @Tag("e2e")
     @Test
     fun `E2E-NTFY-23 cancellation cleans up resources`() = runTest {
         coEvery {
@@ -596,7 +612,7 @@ class NtfySignalingE2ETest {
 
         // Wait for subscription to be active
         waitForSubscription()
-        assertTrue("Should be subscribed", mockNtfyClient.isSubscribed)
+        assertTrue(mockNtfyClient.isSubscribed, "Should be subscribed")
 
         // Cancel (simulates user pressing cancel)
         job.cancel()
@@ -605,11 +621,12 @@ class NtfySignalingE2ETest {
         delay(100)
 
         // Verify subscription is cleaned up
-        assertFalse("Should be unsubscribed after cancel", mockNtfyClient.isSubscribed)
+        assertFalse(mockNtfyClient.isSubscribed, "Should be unsubscribed after cancel")
     }
 
     // ==================== Decryption Error Scenarios ====================
 
+    @Tag("e2e")
     @Test
     fun `rejects message encrypted with wrong key`() = runTest {
         coEvery {
@@ -652,9 +669,10 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Should succeed after valid message", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed after valid message")
     }
 
+    @Tag("e2e")
     @Test
     fun `rejects invalid base64 message`() = runTest {
         coEvery {
@@ -685,9 +703,10 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Should succeed after valid message", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed after valid message")
     }
 
+    @Tag("e2e")
     @Test
     fun `rejects tampered ciphertext`() = runTest {
         coEvery {
@@ -724,11 +743,12 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer())
 
         val signalResult = result.await()
-        assertTrue("Should succeed after valid message", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should succeed after valid message")
     }
 
     // ==================== Timeout Scenarios ====================
 
+    @Tag("e2e")
     @Test
     fun `returns timeout when ntfy has no response`() = runTest(testDispatcher) {
         coEvery {
@@ -753,11 +773,12 @@ class NtfySignalingE2ETest {
         advanceUntilIdle()
 
         val signalResult = result.await()
-        assertTrue("Should timeout", signalResult is PairingSignalerResult.NtfyTimeout)
+        assertTrue(signalResult is PairingSignalerResult.NtfyTimeout, "Should timeout")
     }
 
     // ==================== Nonce Validation Edge Cases ====================
 
+    @Tag("e2e")
     @Test
     fun `accepts all zeros nonce`() = runTest {
         coEvery {
@@ -782,9 +803,10 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer(nonce = ByteArray(16)))
 
         val signalResult = result.await()
-        assertTrue("Should accept all zeros nonce", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should accept all zeros nonce")
     }
 
+    @Tag("e2e")
     @Test
     fun `accepts all ones nonce`() = runTest {
         coEvery {
@@ -809,11 +831,12 @@ class NtfySignalingE2ETest {
         mockNtfyClient.deliverMessage(createEncryptedAnswer(nonce = ByteArray(16) { 0xFF.toByte() }))
 
         val signalResult = result.await()
-        assertTrue("Should accept all ones nonce", signalResult is PairingSignalerResult.Success)
+        assertTrue(signalResult is PairingSignalerResult.Success, "Should accept all ones nonce")
     }
 
     // ==================== Interoperability Tests ====================
 
+    @Tag("e2e")
     @Test
     fun `verifies key derivation matches test vectors`() {
         // Test vector from ntfy_signaling.json
@@ -822,9 +845,10 @@ class NtfySignalingE2ETest {
 
         val signalingKey = NtfySignalingCrypto.deriveSignalingKey(masterSecret)
 
-        assertTrue("Key derivation should match test vector", signalingKey.contentEquals(expected))
+        assertTrue(signalingKey.contentEquals(expected), "Key derivation should match test vector")
     }
 
+    @Tag("e2e")
     @Test
     fun `verifies encryption matches test vectors`() {
         // Test vector from ntfy_signaling.json
@@ -836,11 +860,12 @@ class NtfySignalingE2ETest {
         val crypto = NtfySignalingCrypto(key)
         val encrypted = crypto.encryptToBase64WithIv(plaintext, iv)
 
-        assertEquals("Encryption should match test vector", expectedBase64, encrypted)
+        assertEquals(expectedBase64, encrypted, "Encryption should match test vector")
     }
 
     // ==================== SecureRandom Verification ====================
 
+    @Tag("e2e")
     @Test
     fun `crypto uses SecureRandom for IV generation`() {
         val key = ByteArray(32) { it.toByte() }
@@ -855,7 +880,7 @@ class NtfySignalingE2ETest {
 
         // All IVs should be unique (SecureRandom)
         val uniqueIvs = ivs.map { it.toList() }.toSet()
-        assertEquals("All IVs should be unique (CSPRNG)", 10, uniqueIvs.size)
+        assertEquals(10, uniqueIvs.size, "All IVs should be unique (CSPRNG)")
     }
 
     // ==================== Helper Functions ====================

@@ -17,12 +17,13 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.time.Instant
 
 /**
@@ -43,7 +44,7 @@ class ConnectionLifecycleTest {
     private lateinit var eventsFlow: MutableSharedFlow<SessionEvent>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         sessionsFlow = MutableStateFlow(emptyList())
@@ -57,7 +58,7 @@ class ConnectionLifecycleTest {
         }
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
@@ -81,6 +82,7 @@ class ConnectionLifecycleTest {
     // Connection Survives Navigation Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `connection state is preserved across screen transitions`() = runTest {
         /**
@@ -92,16 +94,16 @@ class ConnectionLifecycleTest {
         isConnectedFlow.value = true
         advanceUntilIdle()
 
-        assertTrue("Connection should be active", mockRepository.isConnected.value)
+        assertTrue(mockRepository.isConnected.value, "Connection should be active")
 
         // Simulate navigation: different ViewModels observe the same repository
         // The repository is a singleton, so connection state is preserved
 
         // After "navigation" - same repository, same state
-        assertTrue("Connection should still be active after navigation",
-            mockRepository.isConnected.value)
+        assertTrue(mockRepository.isConnected.value, "Connection should still be active after navigation")
     }
 
+    @Tag("unit")
     @Test
     fun `session data is preserved across navigation`() = runTest {
         /**
@@ -123,6 +125,7 @@ class ConnectionLifecycleTest {
         assertEquals("session1aaaa", mockRepository.sessions.value[0].id)
     }
 
+    @Tag("unit")
     @Test
     fun `connection isConnected flow emits to all observers`() = runTest {
         /**
@@ -155,6 +158,7 @@ class ConnectionLifecycleTest {
     // Post-Navigation Communication Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `can list sessions after navigation`() = runTest {
         /**
@@ -179,6 +183,7 @@ class ConnectionLifecycleTest {
         assertEquals(2, mockRepository.sessions.value.size)
     }
 
+    @Tag("unit")
     @Test
     fun `can receive events after navigation`() = runTest {
         /**
@@ -195,13 +200,14 @@ class ConnectionLifecycleTest {
         advanceUntilIdle()
 
         // Event flow is still working - connection maintained
-        assertTrue("Connection should still be active", mockRepository.isConnected.value)
+        assertTrue(mockRepository.isConnected.value, "Connection should still be active")
     }
 
     // ==========================================================================
     // Connection State Management Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `isConnected reflects connection state changes`() = runTest {
         /**
@@ -212,15 +218,15 @@ class ConnectionLifecycleTest {
         // Start connected
         isConnectedFlow.value = true
         advanceUntilIdle()
-        assertTrue("Should be connected initially", mockRepository.isConnected.value)
+        assertTrue(mockRepository.isConnected.value, "Should be connected initially")
 
         // Simulate network disconnection
         isConnectedFlow.value = false
         advanceUntilIdle()
-        assertFalse("Should be disconnected after network drop",
-            mockRepository.isConnected.value)
+        assertFalse(mockRepository.isConnected.value, "Should be disconnected after network drop")
     }
 
+    @Tag("unit")
     @Test
     fun `ViewModel observation does not affect connection lifecycle`() = runTest {
         /**
@@ -235,14 +241,15 @@ class ConnectionLifecycleTest {
         val observed = mockRepository.isConnected.value
 
         // Connection should still be active
-        assertTrue("Connection should still be active", mockRepository.isConnected.value)
-        assertTrue("Observed value should match", observed)
+        assertTrue(mockRepository.isConnected.value, "Connection should still be active")
+        assertTrue(observed, "Observed value should match")
     }
 
     // ==========================================================================
     // Multiple ViewModel Scenario Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `multiple ViewModels see consistent state`() = runTest {
         /**
@@ -257,10 +264,10 @@ class ConnectionLifecycleTest {
         val sessionsViewState = mockRepository.isConnected.value
         val terminalViewState = mockRepository.isConnected.value
 
-        assertEquals("Both ViewModels should see same state",
-            sessionsViewState, terminalViewState)
+        assertEquals(sessionsViewState, terminalViewState, "Both ViewModels should see same state")
     }
 
+    @Tag("unit")
     @Test
     fun `state updates propagate to all observers`() = runTest {
         /**

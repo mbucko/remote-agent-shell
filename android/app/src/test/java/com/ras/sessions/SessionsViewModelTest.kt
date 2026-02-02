@@ -22,12 +22,13 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -41,7 +42,7 @@ class SessionsViewModelTest {
     private lateinit var eventsFlow: MutableSharedFlow<SessionEvent>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         sessionsFlow = MutableStateFlow(emptyList())
@@ -56,13 +57,14 @@ class SessionsViewModelTest {
         connectionManager = mockk(relaxed = true)
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] initial state is Loaded with empty list`() = runTest {
+    fun `initial state is Loaded with empty list`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -71,8 +73,9 @@ class SessionsViewModelTest {
         assertEquals(0, (state as SessionsScreenState.Loaded).sessions.size)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] sessions from repository update screen state`() = runTest {
+    fun `sessions from repository update screen state`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -86,8 +89,9 @@ class SessionsViewModelTest {
         assertEquals(2, (state as SessionsScreenState.Loaded).sessions.size)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] refreshSessions calls repository`() = runTest {
+    fun `refreshSessions calls repository`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -97,8 +101,9 @@ class SessionsViewModelTest {
         coVerify(atLeast = 2) { repository.listSessions() }
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] showKillDialog updates dialog state`() = runTest {
+    fun `showKillDialog updates dialog state`() = runTest {
         val viewModel = createViewModel()
         val session = createSession("1")
 
@@ -107,8 +112,9 @@ class SessionsViewModelTest {
         assertEquals(session, viewModel.showKillDialog.value)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] dismissKillDialog clears dialog state`() = runTest {
+    fun `dismissKillDialog clears dialog state`() = runTest {
         val viewModel = createViewModel()
         val session = createSession("1")
 
@@ -118,8 +124,9 @@ class SessionsViewModelTest {
         assertNull(viewModel.showKillDialog.value)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] confirmKillSession calls repository and clears dialog`() = runTest {
+    fun `confirmKillSession calls repository and clears dialog`() = runTest {
         val viewModel = createViewModel()
         val session = createSession("1")
 
@@ -131,8 +138,9 @@ class SessionsViewModelTest {
         assertNull(viewModel.showKillDialog.value)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] showRenameDialog updates dialog state`() = runTest {
+    fun `showRenameDialog updates dialog state`() = runTest {
         val viewModel = createViewModel()
         val session = createSession("1")
 
@@ -141,8 +149,9 @@ class SessionsViewModelTest {
         assertEquals(session, viewModel.showRenameDialog.value)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] dismissRenameDialog clears dialog state`() = runTest {
+    fun `dismissRenameDialog clears dialog state`() = runTest {
         val viewModel = createViewModel()
         val session = createSession("1")
 
@@ -152,8 +161,9 @@ class SessionsViewModelTest {
         assertNull(viewModel.showRenameDialog.value)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] confirmRenameSession calls repository and clears dialog`() = runTest {
+    fun `confirmRenameSession calls repository and clears dialog`() = runTest {
         val viewModel = createViewModel()
         val session = createSession("1")
 
@@ -165,8 +175,9 @@ class SessionsViewModelTest {
         assertNull(viewModel.showRenameDialog.value)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] SessionCreated event emits UI event`() = runTest {
+    fun `SessionCreated event emits UI event`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -179,8 +190,9 @@ class SessionsViewModelTest {
         }
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] SessionKilled event emits UI event`() = runTest {
+    fun `SessionKilled event emits UI event`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -193,8 +205,9 @@ class SessionsViewModelTest {
         }
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] SessionRenamed event emits UI event`() = runTest {
+    fun `SessionRenamed event emits UI event`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -208,8 +221,9 @@ class SessionsViewModelTest {
         }
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] SessionError event emits UI event`() = runTest {
+    fun `SessionError event emits UI event`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -223,8 +237,9 @@ class SessionsViewModelTest {
         }
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] isConnected reflects repository state`() = runTest {
+    fun `isConnected reflects repository state`() = runTest {
         val viewModel = createViewModel()
 
         assertTrue(viewModel.isConnected.value)
@@ -238,8 +253,9 @@ class SessionsViewModelTest {
     // Channel Single Delivery Tests (verifying fix for SharedFlow -> Channel)
     // ==========================================================================
 
+    @Tag("unit")
     @Test
-    fun `[Unit] UI events are delivered exactly once via Channel`() = runTest {
+    fun `UI events are delivered exactly once via Channel`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -264,8 +280,9 @@ class SessionsViewModelTest {
         assertTrue(receivedEvents[1] is SessionsUiEvent.SessionKilled)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] multiple rapid events are all delivered via Channel`() = runTest {
+    fun `multiple rapid events are all delivered via Channel`() = runTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
@@ -288,8 +305,9 @@ class SessionsViewModelTest {
     // Atomic State Update Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
-    fun `[Unit] refreshSessions preserves isRefreshing during concurrent session updates`() = runTest {
+    fun `refreshSessions preserves isRefreshing during concurrent session updates`() = runTest {
         val viewModel = createViewModel()
 
         // Set initial loaded state
@@ -309,8 +327,9 @@ class SessionsViewModelTest {
         assertEquals(2, (state as SessionsScreenState.Loaded).sessions.size)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] loadSessions does not overwrite existing sessions with Loading state`() = runTest {
+    fun `loadSessions does not overwrite existing sessions with Loading state`() = runTest {
         // Pre-populate sessions
         sessionsFlow.value = listOf(createSession("1"), createSession("2"))
 
@@ -323,8 +342,9 @@ class SessionsViewModelTest {
         assertEquals(2, (state as SessionsScreenState.Loaded).sessions.size)
     }
 
+    @Tag("unit")
     @Test
-    fun `[Unit] confirmKillSession dismisses dialog immediately for responsiveness`() = runTest {
+    fun `confirmKillSession dismisses dialog immediately for responsiveness`() = runTest {
         val viewModel = createViewModel()
         val session = createSession("1")
 
@@ -342,6 +362,7 @@ class SessionsViewModelTest {
         coVerify { repository.killSession("1") }
     }
 
+    @Tag("unit")
     @Test
     fun `confirmRenameSession dismisses dialog immediately for responsiveness`() = runTest {
         val viewModel = createViewModel()

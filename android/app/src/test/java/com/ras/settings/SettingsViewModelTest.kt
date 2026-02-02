@@ -6,11 +6,12 @@ import com.ras.data.settings.SettingsDefaults
 import com.ras.data.settings.SettingsQuickButton
 import com.ras.ui.settings.SettingsUiEvent
 import com.ras.ui.settings.SettingsUiState
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
 /**
  * Unit tests for Settings UI state classes.
@@ -24,6 +25,7 @@ class SettingsViewModelTest {
     // SettingsUiState Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `SettingsUiState has correct defaults`() {
         val state = SettingsUiState()
@@ -37,6 +39,7 @@ class SettingsViewModelTest {
         assertFalse(state.daemonInfo.connected)
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsUiState copy preserves fields`() {
         val agents = listOf(AgentInfo("test", "test", "/test", true))
@@ -55,6 +58,7 @@ class SettingsViewModelTest {
         assertEquals("error", copy.agentListError)
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsUiState with all fields set`() {
         val agents = listOf(
@@ -81,6 +85,7 @@ class SettingsViewModelTest {
         assertEquals(notifications, state.notifications)
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsUiState with loading state`() {
         val state = SettingsUiState(agentListLoading = true)
@@ -90,6 +95,7 @@ class SettingsViewModelTest {
         assertTrue(state.availableAgents.isEmpty())
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsUiState with error state`() {
         val state = SettingsUiState(
@@ -105,12 +111,14 @@ class SettingsViewModelTest {
     // SettingsUiEvent Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `ShowMessage event contains message`() {
         val event = SettingsUiEvent.ShowMessage("Test message")
         assertEquals("Test message", event.message)
     }
 
+    @Tag("unit")
     @Test
     fun `ShowMessage events with same message are equal`() {
         val event1 = SettingsUiEvent.ShowMessage("Test")
@@ -118,6 +126,7 @@ class SettingsViewModelTest {
         assertEquals(event1, event2)
     }
 
+    @Tag("unit")
     @Test
     fun `ShowMessage events with different messages are not equal`() {
         val event1 = SettingsUiEvent.ShowMessage("Test 1")
@@ -125,6 +134,7 @@ class SettingsViewModelTest {
         assertFalse(event1 == event2)
     }
 
+    @Tag("unit")
     @Test
     fun `NavigateToAgentPicker is singleton`() {
         val event1 = SettingsUiEvent.NavigateToAgentPicker
@@ -136,6 +146,7 @@ class SettingsViewModelTest {
     // NotificationSettings Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `NotificationSettings default has all enabled`() {
         val settings = SettingsDefaults.NOTIFICATIONS
@@ -145,6 +156,7 @@ class SettingsViewModelTest {
         assertTrue(settings.errorEnabled)
     }
 
+    @Tag("unit")
     @Test
     fun `NotificationSettings copy works correctly`() {
         val settings = NotificationSettings(true, true, true)
@@ -159,6 +171,7 @@ class SettingsViewModelTest {
     // SettingsQuickButton Tests
     // ==========================================================================
 
+    @Tag("unit")
     @Test
     fun `default quick buttons list`() {
         val defaults = SettingsDefaults.QUICK_BUTTONS
@@ -169,6 +182,7 @@ class SettingsViewModelTest {
         assertEquals(SettingsQuickButton.CTRL_C, defaults[2])
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton fromId returns correct button`() {
         assertEquals(SettingsQuickButton.YES, SettingsQuickButton.fromId("yes"))
@@ -181,6 +195,7 @@ class SettingsViewModelTest {
         assertEquals(SettingsQuickButton.BACKSPACE, SettingsQuickButton.fromId("backspace"))
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton fromId returns null for unknown`() {
         assertNull(SettingsQuickButton.fromId("unknown"))
@@ -189,6 +204,7 @@ class SettingsViewModelTest {
         assertNull(SettingsQuickButton.fromId(" yes")) // no trimming
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton ALL contains all buttons`() {
         assertEquals(9, SettingsQuickButton.ALL.size)
@@ -203,6 +219,7 @@ class SettingsViewModelTest {
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.BACKSPACE))
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton has correct key sequences`() {
         assertEquals("Yes", SettingsQuickButton.YES.keySequence)
@@ -216,12 +233,14 @@ class SettingsViewModelTest {
         assertEquals("\u007f", SettingsQuickButton.BACKSPACE.keySequence)
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton has unique IDs`() {
         val ids = SettingsQuickButton.ALL.map { it.id }
         assertEquals(ids.size, ids.distinct().size)
     }
 
+    @Tag("unit")
     @Test
     fun `SettingsQuickButton has unique labels`() {
         val labels = SettingsQuickButton.ALL.map { it.label }

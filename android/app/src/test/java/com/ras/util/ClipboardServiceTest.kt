@@ -6,9 +6,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import io.mockk.every
 import io.mockk.mockk
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Unit tests for AndroidClipboardService.
@@ -26,7 +28,7 @@ class ClipboardServiceTest {
     private lateinit var clipboardManager: ClipboardManager
     private lateinit var service: AndroidClipboardService
 
-    @Before
+    @BeforeEach
     fun setup() {
         clipboardManager = mockk(relaxed = true)
         context = mockk {
@@ -39,6 +41,7 @@ class ClipboardServiceTest {
     // extractText tests
     // =========================================================================
 
+    @Tag("unit")
     @Test
     fun `extractText returns null when clipboard manager unavailable`() {
         every { context.getSystemService(Context.CLIPBOARD_SERVICE) } returns null
@@ -49,6 +52,7 @@ class ClipboardServiceTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `extractText returns null when primaryClip is null`() {
         every { clipboardManager.primaryClip } returns null
@@ -58,6 +62,7 @@ class ClipboardServiceTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `extractText returns null when clip has no items`() {
         val emptyClip = mockk<ClipData> {
@@ -70,6 +75,7 @@ class ClipboardServiceTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `extractText returns text from clipboard`() {
         val item = mockk<ClipData.Item> {
@@ -86,6 +92,7 @@ class ClipboardServiceTest {
         assertEquals("clipboard text", result)
     }
 
+    @Tag("unit")
     @Test
     fun `extractText returns null when coerceToText returns empty string`() {
         val item = mockk<ClipData.Item> {
@@ -102,6 +109,7 @@ class ClipboardServiceTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `extractText returns null when coerceToText returns null`() {
         val item = mockk<ClipData.Item> {
@@ -122,12 +130,14 @@ class ClipboardServiceTest {
     // prepareForTerminal tests
     // =========================================================================
 
+    @Tag("unit")
     @Test
     fun `prepareForTerminal returns null for empty string`() {
         val result = service.prepareForTerminal("")
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `prepareForTerminal encodes simple ASCII`() {
         val result = service.prepareForTerminal("hello world")
@@ -135,6 +145,7 @@ class ClipboardServiceTest {
         assertArrayEquals("hello world".toByteArray(), result)
     }
 
+    @Tag("unit")
     @Test
     fun `prepareForTerminal encodes unicode CJK`() {
         val result = service.prepareForTerminal("Hello \u4e16\u754c")
@@ -144,6 +155,7 @@ class ClipboardServiceTest {
         assertArrayEquals(expected, result)
     }
 
+    @Tag("unit")
     @Test
     fun `prepareForTerminal encodes emoji`() {
         val result = service.prepareForTerminal("\uD83C\uDF89")  // 🎉
@@ -152,6 +164,7 @@ class ClipboardServiceTest {
         assertArrayEquals(byteArrayOf(0xF0.toByte(), 0x9F.toByte(), 0x8E.toByte(), 0x89.toByte()), result)
     }
 
+    @Tag("unit")
     @Test
     fun `prepareForTerminal preserves newlines`() {
         val result = service.prepareForTerminal("line1\nline2\r\nline3")
@@ -159,6 +172,7 @@ class ClipboardServiceTest {
         assertArrayEquals("line1\nline2\r\nline3".toByteArray(), result)
     }
 
+    @Tag("unit")
     @Test
     fun `prepareForTerminal handles exactly 64KB`() {
         val text = "x".repeat(65536)
@@ -167,6 +181,7 @@ class ClipboardServiceTest {
         assertEquals(65536, result!!.size)
     }
 
+    @Tag("unit")
     @Test
     fun `prepareForTerminal truncates over 64KB`() {
         val text = "x".repeat(70000)
@@ -179,23 +194,27 @@ class ClipboardServiceTest {
     // wouldTruncate tests
     // =========================================================================
 
+    @Tag("unit")
     @Test
     fun `wouldTruncate returns false for small text`() {
         assertFalse(service.wouldTruncate("hello"))
     }
 
+    @Tag("unit")
     @Test
     fun `wouldTruncate returns false for exactly 64KB`() {
         val text = "x".repeat(65536)
         assertFalse(service.wouldTruncate(text))
     }
 
+    @Tag("unit")
     @Test
     fun `wouldTruncate returns true for over 64KB`() {
         val text = "x".repeat(65537)
         assertTrue(service.wouldTruncate(text))
     }
 
+    @Tag("unit")
     @Test
     fun `wouldTruncate accounts for UTF-8 encoding size`() {
         // Each CJK character is 3 bytes in UTF-8
@@ -212,6 +231,7 @@ class ClipboardServiceTest {
     // truncateUtf8Safe tests
     // =========================================================================
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe returns original if under limit`() {
         val bytes = "hello".toByteArray()
@@ -219,6 +239,7 @@ class ClipboardServiceTest {
         assertArrayEquals(bytes, result)
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe truncates ASCII at exact boundary`() {
         val bytes = "hello world".toByteArray()
@@ -226,6 +247,7 @@ class ClipboardServiceTest {
         assertArrayEquals("hello".toByteArray(), result)
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe does not split 2-byte UTF-8 character`() {
         // "xxxé" where é is C3 A9 (2 bytes)
@@ -236,9 +258,10 @@ class ClipboardServiceTest {
         // Truncate at 4 bytes - should not split the é
         val result = service.truncateUtf8Safe(bytes, 4)
         assertEquals(3, result.size)
-        assertEquals("xxx", String(result, Charsets.UTF_8))
+        assertEquals(String(result, Charsets.UTF_8), "xxx")
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe does not split 3-byte UTF-8 character`() {
         // "xx世" where 世 is E4 B8 96 (3 bytes)
@@ -249,9 +272,10 @@ class ClipboardServiceTest {
         // Truncate at 4 bytes - should not split the 世
         val result = service.truncateUtf8Safe(bytes, 4)
         assertEquals(2, result.size)
-        assertEquals("xx", String(result, Charsets.UTF_8))
+        assertEquals(String(result, Charsets.UTF_8), "xx")
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe does not split 4-byte UTF-8 character`() {
         // "x🎉" where 🎉 is F0 9F 8E 89 (4 bytes)
@@ -262,9 +286,10 @@ class ClipboardServiceTest {
         // Truncate at 4 bytes - should not split the emoji
         val result = service.truncateUtf8Safe(bytes, 4)
         assertEquals(1, result.size)
-        assertEquals("x", String(result, Charsets.UTF_8))
+        assertEquals(String(result, Charsets.UTF_8), "x")
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe includes character that fits exactly`() {
         // "x🎉" is 5 bytes, truncate at 5 should include emoji
@@ -276,6 +301,7 @@ class ClipboardServiceTest {
         assertEquals(text, String(result, Charsets.UTF_8))
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe handles 64KB boundary with 2-byte char`() {
         // 65535 x's + é (2 bytes) = 65537 bytes
@@ -291,6 +317,7 @@ class ClipboardServiceTest {
         assertEquals(65535, decoded.length)
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe handles 64KB boundary with 3-byte char`() {
         // 65534 x's + 世 (3 bytes) = 65537 bytes
@@ -305,6 +332,7 @@ class ClipboardServiceTest {
         assertEquals(65534, decoded.length)
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe handles 64KB boundary with 4-byte char`() {
         // 65533 x's + 🎉 (4 bytes) = 65537 bytes
@@ -319,6 +347,7 @@ class ClipboardServiceTest {
         assertEquals(65533, decoded.length)
     }
 
+    @Tag("unit")
     @Test
     fun `truncateUtf8Safe includes char that fits exactly at boundary`() {
         // 65532 x's + 🎉 (4 bytes) = 65536 bytes exactly
@@ -333,15 +362,19 @@ class ClipboardServiceTest {
         assertTrue(decoded.endsWith("\uD83C\uDF89"))
     }
 
-    @Test(expected = IllegalArgumentException::class)
+    @Tag("unit")
+    @Test
     fun `truncateUtf8Safe throws for non-positive maxBytes`() {
-        service.truncateUtf8Safe("hello".toByteArray(), 0)
+        assertThrows<IllegalArgumentException> {
+            service.truncateUtf8Safe("hello".toByteArray(), 0)
+        }
     }
 
     // =========================================================================
     // Edge case tests
     // =========================================================================
 
+    @Tag("unit")
     @Test
     fun `handles single character`() {
         val result = service.prepareForTerminal("x")
@@ -349,6 +382,7 @@ class ClipboardServiceTest {
         assertArrayEquals(byteArrayOf('x'.code.toByte()), result)
     }
 
+    @Tag("unit")
     @Test
     fun `handles single emoji`() {
         val result = service.prepareForTerminal("\uD83C\uDF89")
@@ -356,6 +390,7 @@ class ClipboardServiceTest {
         assertEquals(4, result!!.size)
     }
 
+    @Tag("unit")
     @Test
     fun `handles whitespace only`() {
         val result = service.prepareForTerminal("   ")
@@ -363,6 +398,7 @@ class ClipboardServiceTest {
         assertArrayEquals("   ".toByteArray(), result)
     }
 
+    @Tag("unit")
     @Test
     fun `handles BOM marker`() {
         val result = service.prepareForTerminal("\uFEFFhello")
@@ -372,6 +408,7 @@ class ClipboardServiceTest {
         assertArrayEquals(expected, result)
     }
 
+    @Tag("unit")
     @Test
     fun `handles shell metacharacters literally`() {
         val dangerous = "; rm -rf / && \$(whoami)"
@@ -380,6 +417,7 @@ class ClipboardServiceTest {
         assertArrayEquals(dangerous.toByteArray(), result)
     }
 
+    @Tag("unit")
     @Test
     fun `handles control characters`() {
         val control = "hello\u0007world\u001b[31m"
@@ -388,6 +426,7 @@ class ClipboardServiceTest {
         assertArrayEquals(control.toByteArray(), result)
     }
 
+    @Tag("unit")
     @Test
     fun `handles null byte in string`() {
         val withNull = "hello\u0000world"
@@ -400,6 +439,7 @@ class ClipboardServiceTest {
     // extractImage tests
     // =========================================================================
 
+    @Tag("unit")
     @Test
     fun `extractImage returns null when clipboard manager unavailable`() {
         every { context.getSystemService(Context.CLIPBOARD_SERVICE) } returns null
@@ -410,6 +450,7 @@ class ClipboardServiceTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `extractImage returns null when primaryClip is null`() {
         every { clipboardManager.primaryClip } returns null
@@ -419,6 +460,7 @@ class ClipboardServiceTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `extractImage returns null when clip has no items`() {
         val emptyClip = mockk<ClipData> {
@@ -431,6 +473,7 @@ class ClipboardServiceTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `extractImage returns null when no image MIME type`() {
         val description = mockk<ClipDescription> {
@@ -456,6 +499,7 @@ class ClipboardServiceTest {
     // hasImage tests
     // =========================================================================
 
+    @Tag("unit")
     @Test
     fun `hasImage returns false when clipboard manager unavailable`() {
         every { context.getSystemService(Context.CLIPBOARD_SERVICE) } returns null
@@ -466,6 +510,7 @@ class ClipboardServiceTest {
         assertFalse(result)
     }
 
+    @Tag("unit")
     @Test
     fun `hasImage returns false when primaryClip is null`() {
         every { clipboardManager.primaryClip } returns null
@@ -475,6 +520,7 @@ class ClipboardServiceTest {
         assertFalse(result)
     }
 
+    @Tag("unit")
     @Test
     fun `hasImage returns false when no image MIME type`() {
         val description = mockk<ClipDescription> {
@@ -492,6 +538,7 @@ class ClipboardServiceTest {
         assertFalse(result)
     }
 
+    @Tag("unit")
     @Test
     fun `hasImage returns true when image MIME type present`() {
         val description = mockk<ClipDescription> {
@@ -509,6 +556,7 @@ class ClipboardServiceTest {
         assertTrue(result)
     }
 
+    @Tag("unit")
     @Test
     fun `hasImage returns true for jpeg MIME type`() {
         val description = mockk<ClipDescription> {
@@ -531,6 +579,7 @@ class ClipboardServiceTest {
     // readImageFromUri tests
     // =========================================================================
 
+    @Tag("unit")
     @Test
     fun `readImageFromUri returns null when contentResolver throws`() {
         val uri = mockk<android.net.Uri>()
@@ -543,6 +592,7 @@ class ClipboardServiceTest {
         assertNull(result)
     }
 
+    @Tag("unit")
     @Test
     fun `readImageFromUri returns null when stream is null`() {
         val uri = mockk<android.net.Uri>()

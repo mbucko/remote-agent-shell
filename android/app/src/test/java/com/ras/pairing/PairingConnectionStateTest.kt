@@ -1,44 +1,52 @@
 package com.ras.pairing
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 class PairingConnectionStateTest {
 
     // Valid state transitions
 
+    @Tag("unit")
     @Test
     fun `Creating can transition to Signaling`() {
         assertTrue(PairingConnectionState.Creating.canTransitionTo(PairingConnectionState.Signaling))
     }
 
+    @Tag("unit")
     @Test
     fun `Creating can transition to Closed`() {
         assertTrue(PairingConnectionState.Creating.canTransitionTo(PairingConnectionState.Closed))
     }
 
+    @Tag("unit")
     @Test
     fun `Signaling can transition to Connecting`() {
         assertTrue(PairingConnectionState.Signaling.canTransitionTo(PairingConnectionState.Connecting))
     }
 
+    @Tag("unit")
     @Test
     fun `Signaling can transition to Closed`() {
         assertTrue(PairingConnectionState.Signaling.canTransitionTo(PairingConnectionState.Closed))
     }
 
+    @Tag("unit")
     @Test
     fun `Connecting can transition to Authenticating`() {
         assertTrue(PairingConnectionState.Connecting.canTransitionTo(PairingConnectionState.Authenticating))
     }
 
+    @Tag("unit")
     @Test
     fun `Connecting can transition to Closed`() {
         assertTrue(PairingConnectionState.Connecting.canTransitionTo(PairingConnectionState.Closed))
     }
 
+    @Tag("unit")
     @Test
     fun `Authenticating can transition to HandedOff`() {
         assertTrue(PairingConnectionState.Authenticating.canTransitionTo(
@@ -46,6 +54,7 @@ class PairingConnectionStateTest {
         ))
     }
 
+    @Tag("unit")
     @Test
     fun `Authenticating can transition to Closed`() {
         assertTrue(PairingConnectionState.Authenticating.canTransitionTo(PairingConnectionState.Closed))
@@ -53,16 +62,19 @@ class PairingConnectionStateTest {
 
     // Invalid state transitions
 
+    @Tag("unit")
     @Test
     fun `Creating cannot skip to Connecting`() {
         assertFalse(PairingConnectionState.Creating.canTransitionTo(PairingConnectionState.Connecting))
     }
 
+    @Tag("unit")
     @Test
     fun `Creating cannot skip to Authenticating`() {
         assertFalse(PairingConnectionState.Creating.canTransitionTo(PairingConnectionState.Authenticating))
     }
 
+    @Tag("unit")
     @Test
     fun `Creating cannot skip to HandedOff`() {
         assertFalse(PairingConnectionState.Creating.canTransitionTo(
@@ -70,11 +82,13 @@ class PairingConnectionStateTest {
         ))
     }
 
+    @Tag("unit")
     @Test
     fun `Signaling cannot skip to Authenticating`() {
         assertFalse(PairingConnectionState.Signaling.canTransitionTo(PairingConnectionState.Authenticating))
     }
 
+    @Tag("unit")
     @Test
     fun `HandedOff is terminal - cannot transition`() {
         val handedOff = PairingConnectionState.HandedOff("ConnectionManager")
@@ -82,6 +96,7 @@ class PairingConnectionStateTest {
         assertFalse(handedOff.canTransitionTo(PairingConnectionState.Creating))
     }
 
+    @Tag("unit")
     @Test
     fun `Closed is terminal - cannot transition`() {
         assertFalse(PairingConnectionState.Closed.canTransitionTo(PairingConnectionState.Creating))
@@ -90,32 +105,38 @@ class PairingConnectionStateTest {
 
     // shouldCloseOnCleanup tests
 
+    @Tag("unit")
     @Test
     fun `Creating should close on cleanup`() {
         assertTrue(PairingConnectionState.Creating.shouldCloseOnCleanup())
     }
 
+    @Tag("unit")
     @Test
     fun `Signaling should close on cleanup`() {
         assertTrue(PairingConnectionState.Signaling.shouldCloseOnCleanup())
     }
 
+    @Tag("unit")
     @Test
     fun `Connecting should close on cleanup`() {
         assertTrue(PairingConnectionState.Connecting.shouldCloseOnCleanup())
     }
 
+    @Tag("unit")
     @Test
     fun `Authenticating should close on cleanup`() {
         assertTrue(PairingConnectionState.Authenticating.shouldCloseOnCleanup())
     }
 
+    @Tag("unit")
     @Test
     fun `HandedOff should NOT close on cleanup - ConnectionManager owns it`() {
         val handedOff = PairingConnectionState.HandedOff("ConnectionManager")
         assertFalse(handedOff.shouldCloseOnCleanup())
     }
 
+    @Tag("unit")
     @Test
     fun `Closed should NOT close on cleanup - already closed`() {
         assertFalse(PairingConnectionState.Closed.shouldCloseOnCleanup())
@@ -123,6 +144,7 @@ class PairingConnectionStateTest {
 
     // toString tests
 
+    @Tag("unit")
     @Test
     fun `toString returns readable state names`() {
         assertEquals("Creating", PairingConnectionState.Creating.toString())

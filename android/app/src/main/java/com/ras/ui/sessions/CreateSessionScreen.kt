@@ -72,7 +72,6 @@ fun CreateSessionScreen(
     val createState by viewModel.createState.collectAsStateWithLifecycle()
     val directoryState by viewModel.directoryState.collectAsStateWithLifecycle()
     val agentsState by viewModel.agentsState.collectAsStateWithLifecycle()
-    val selectedDirectory by viewModel.selectedDirectory.collectAsStateWithLifecycle()
     val selectedAgent by viewModel.selectedAgent.collectAsStateWithLifecycle()
     val currentPath by viewModel.currentPath.collectAsStateWithLifecycle()
     val recentDirectories by viewModel.recentDirectories.collectAsStateWithLifecycle()

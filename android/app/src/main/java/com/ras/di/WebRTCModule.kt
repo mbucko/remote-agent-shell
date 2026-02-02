@@ -25,7 +25,7 @@ object WebRTCModule {
     @Singleton
     fun providePeerConnectionFactory(
         @ApplicationContext context: Context,
-        eglBase: EglBase
+        @Suppress("UNUSED_PARAMETER") eglBase: EglBase
     ): PeerConnectionFactory {
         // Initialize WebRTC
         PeerConnectionFactory.initialize(

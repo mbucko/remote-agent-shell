@@ -124,7 +124,6 @@ fun TerminalScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     // Trigger for scroll-to-bottom button
     var scrollToBottomTrigger by remember { mutableIntStateOf(0) }

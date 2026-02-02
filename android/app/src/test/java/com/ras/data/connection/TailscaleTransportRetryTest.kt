@@ -3,10 +3,11 @@ package com.ras.data.connection
 import android.content.Context
 import io.mockk.*
 import kotlinx.coroutines.test.runTest
-import org.junit.After
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.io.IOException
 import java.net.SocketTimeoutException
 
@@ -30,7 +31,7 @@ class TailscaleTransportRetryTest {
     private lateinit var mockTransport: TailscaleTransport
     private lateinit var strategy: TailscaleStrategy
 
-    @Before
+    @BeforeEach
     fun setup() {
         mockContext = mockk(relaxed = true)
         mockSignaling = mockk(relaxed = true)
@@ -43,7 +44,7 @@ class TailscaleTransportRetryTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         unmockkObject(TailscaleDetector)
         unmockkObject(TailscaleTransport.Companion)
@@ -66,6 +67,7 @@ class TailscaleTransportRetryTest {
 
     // ==================== Handshake Retry Tests ====================
 
+    @Tag("unit")
     @Test
     fun `handshake timeout results in IOException from transport`() = runTest {
         /**
@@ -80,15 +82,16 @@ class TailscaleTransportRetryTest {
 
         val result = strategy.connect(createContext()) {}
 
-        assertTrue("Should fail on handshake timeout", result is ConnectionResult.Failed)
+        assertTrue(result is ConnectionResult.Failed, "Should fail on handshake timeout")
         assertTrue(
-            "Error message should indicate handshake failure",
             (result as ConnectionResult.Failed).error.contains("Handshake") ||
             result.error.contains("timeout") ||
-            result.error.contains("daemon")
+            result.error.contains("daemon"),
+            "Error message should indicate handshake failure"
         )
     }
 
+    @Tag("unit")
     @Test
     fun `strategy reports handshake error correctly`() = runTest {
         /**
@@ -108,13 +111,14 @@ class TailscaleTransportRetryTest {
         // The error should contain relevant information
         val failedResult = result as ConnectionResult.Failed
         assertTrue(
-            "Error should mention handshake or daemon",
             failedResult.error.contains("Handshake") ||
             failedResult.error.contains("daemon") ||
-            failedResult.error.lowercase().contains("handshake")
+            failedResult.error.lowercase().contains("handshake"),
+            "Error should mention handshake or daemon"
         )
     }
 
+    @Tag("unit")
     @Test
     fun `handshake success leads to auth message`() = runTest {
         /**
@@ -129,11 +133,12 @@ class TailscaleTransportRetryTest {
 
         val result = strategy.connect(createContext()) {}
 
-        assertTrue("Should succeed", result is ConnectionResult.Success)
+        assertTrue(result is ConnectionResult.Success, "Should succeed")
         // Verify send was called (auth message)
         coVerify { mockTransport.send(any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `auth message sent immediately after handshake - no delay`() = runTest {
         /**
@@ -153,11 +158,12 @@ class TailscaleTransportRetryTest {
         strategy.connect(createContext()) {}
 
         // Auth should be sent (verifies it happens, not timing since mocked operations are instant)
-        assertTrue("Auth message should be sent after connect", authSent)
+        assertTrue(authSent, "Auth message should be sent after connect")
     }
 
     // ==================== Socket Cleanup Tests ====================
 
+    @Tag("unit")
     @Test
     fun `transport closed on auth failure`() = runTest {
         /**
@@ -176,6 +182,7 @@ class TailscaleTransportRetryTest {
         coVerify { mockTransport.close() }
     }
 
+    @Tag("unit")
     @Test
     fun `auth timeout returns failed result`() = runTest {
         /**
@@ -197,6 +204,7 @@ class TailscaleTransportRetryTest {
         assertEquals("Receive timeout", (result as ConnectionResult.Failed).error)
     }
 
+    @Tag("unit")
     @Test
     fun `transport not closed on success`() = runTest {
         /**
@@ -216,6 +224,7 @@ class TailscaleTransportRetryTest {
 
     // ==================== Progress Reporting Tests ====================
 
+    @Tag("unit")
     @Test
     fun `progress reports connecting step with IP`() = runTest {
         /**
@@ -231,13 +240,14 @@ class TailscaleTransportRetryTest {
         strategy.connect(createContext(daemonTailscaleIp = "100.125.247.41")) { steps.add(it) }
 
         val connectingStep = steps.find { it.step == "Connecting" }
-        assertNotNull("Should have Connecting step", connectingStep)
+        assertNotNull(connectingStep, "Should have Connecting step")
         assertTrue(
-            "Connecting step should mention IP",
-            connectingStep!!.detail?.contains("100.125.247.41") == true
+            connectingStep!!.detail?.contains("100.125.247.41") == true,
+            "Connecting step should mention IP"
         )
     }
 
+    @Tag("unit")
     @Test
     fun `progress reports auth step`() = runTest {
         /**
@@ -253,11 +263,12 @@ class TailscaleTransportRetryTest {
         strategy.connect(createContext()) { steps.add(it) }
 
         val authStep = steps.find { it.step == "Authenticating" }
-        assertNotNull("Should have Authenticating step", authStep)
+        assertNotNull(authStep, "Should have Authenticating step")
     }
 
     // ==================== Retry Behavior Documentation Tests ====================
 
+    @Tag("unit")
     @Test
     fun `document expected retry behavior - max 3 attempts`() {
         /**
@@ -273,9 +284,10 @@ class TailscaleTransportRetryTest {
          */
         // This is a documentation test - verifies constants exist
         // Actual values: HANDSHAKE_MAX_RETRIES = 3, HANDSHAKE_TIMEOUT_MS = 2000
-        assertTrue("Retry behavior is documented", true)
+        assertTrue(true, "Retry behavior is documented")
     }
 
+    @Tag("unit")
     @Test
     fun `document socket reuse across retries`() {
         /**
@@ -290,11 +302,12 @@ class TailscaleTransportRetryTest {
          *
          * The current implementation correctly reuses the same socket.
          */
-        assertTrue("Socket reuse is documented", true)
+        assertTrue(true, "Socket reuse is documented")
     }
 
     // ==================== Error Message Tests ====================
 
+    @Tag("unit")
     @Test
     fun `various IOException messages are handled`() = runTest {
         /**
@@ -319,14 +332,15 @@ class TailscaleTransportRetryTest {
             val result = strategy.connect(createContext()) {}
 
             assertTrue(
-                "Should fail with error: $errorMsg",
-                result is ConnectionResult.Failed
+                result is ConnectionResult.Failed,
+                "Should fail with error: $errorMsg"
             )
 
             unmockkObject(TailscaleTransport.Companion)
         }
     }
 
+    @Tag("unit")
     @Test
     fun `socket timeout exception is handled`() = runTest {
         /**

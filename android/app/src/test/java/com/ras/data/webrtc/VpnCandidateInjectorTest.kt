@@ -1,7 +1,8 @@
 package com.ras.data.webrtc
 
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Tests for VpnCandidateInjector.
@@ -14,6 +15,7 @@ class VpnCandidateInjectorTest {
 
     // ==================== Tailscale IP Detection Tests ====================
 
+    @Tag("unit")
     @Test
     fun `isTailscaleIp returns true for 100_64 range`() {
         // 100.64.0.0/10 means 100.64.0.0 - 100.127.255.255
@@ -23,6 +25,7 @@ class VpnCandidateInjectorTest {
         assertTrue(VpnCandidateInjector.isTailscaleIp("100.127.255.255"))
     }
 
+    @Tag("unit")
     @Test
     fun `isTailscaleIp returns false for IPs outside range`() {
         // Below range
@@ -40,6 +43,7 @@ class VpnCandidateInjectorTest {
         assertFalse(VpnCandidateInjector.isTailscaleIp("203.0.113.50"))
     }
 
+    @Tag("unit")
     @Test
     fun `isTailscaleIp returns false for invalid IPs`() {
         assertFalse(VpnCandidateInjector.isTailscaleIp("not-an-ip"))
@@ -50,6 +54,7 @@ class VpnCandidateInjectorTest {
 
     // ==================== SDP Filtering Tests ====================
 
+    @Tag("unit")
     @Test
     fun `filterTailscaleCandidates removes Tailscale IP candidates`() {
         val sdp = """
@@ -75,6 +80,7 @@ class VpnCandidateInjectorTest {
         assertFalse(filtered.contains("100.100.50.25"))
     }
 
+    @Tag("unit")
     @Test
     fun `filterTailscaleCandidates preserves non-candidate lines`() {
         val sdp = """
@@ -99,6 +105,7 @@ class VpnCandidateInjectorTest {
         assertFalse(filtered.contains("100.64.24.163"))
     }
 
+    @Tag("unit")
     @Test
     fun `filterTailscaleCandidates returns unchanged SDP when no Tailscale candidates`() {
         val sdp = """

@@ -5,10 +5,11 @@ import com.ras.data.credentials.StoredCredentials
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 /**
  * Unit tests for CheckCredentialsUseCase.
@@ -18,12 +19,13 @@ class CheckCredentialsUseCaseTest {
     private lateinit var credentialRepository: CredentialRepository
     private lateinit var useCase: CheckCredentialsUseCase
 
-    @Before
+    @BeforeEach
     fun setup() {
         credentialRepository = mockk()
         useCase = CheckCredentialsUseCaseImpl(credentialRepository)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns NoCredentials when repository has no credentials`() = runTest {
         coEvery { credentialRepository.hasCredentials() } returns false
@@ -33,6 +35,7 @@ class CheckCredentialsUseCaseTest {
         assertTrue(result is CredentialStatus.NoCredentials)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns HasCredentials when repository has credentials`() = runTest {
         val credentials = StoredCredentials(
@@ -54,6 +57,7 @@ class CheckCredentialsUseCaseTest {
         assertEquals(8765, hasCredentials.daemonPort)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke returns NoCredentials when hasCredentials true but getCredentials returns null`() = runTest {
         // Edge case: hasCredentials returns true but getCredentials fails (partial data)
@@ -65,6 +69,7 @@ class CheckCredentialsUseCaseTest {
         assertTrue(result is CredentialStatus.NoCredentials)
     }
 
+    @Tag("unit")
     @Test
     fun `invoke preserves all credential info in HasCredentials`() = runTest {
         val credentials = StoredCredentials(

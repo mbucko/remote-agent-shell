@@ -85,15 +85,11 @@ object KeyMapper {
      *
      * @param keyCode The Android keyCode
      * @param isCtrlPressed Whether Ctrl is held
-     * @param isAltPressed Whether Alt is held
-     * @param isShiftPressed Whether Shift is held
      * @return The bytes to send, or null if key should not be sent
      */
     fun keyEventToBytes(
         keyCode: Int,
-        isCtrlPressed: Boolean = false,
-        isAltPressed: Boolean = false,
-        isShiftPressed: Boolean = false
+        isCtrlPressed: Boolean = false
     ): ByteArray? {
         // Handle Ctrl+letter combinations (A-Z map to 0x01-0x1A)
         if (isCtrlPressed && keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z) {

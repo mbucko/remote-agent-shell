@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Intent
 import android.os.Build
 import androidx.test.core.app.ApplicationProvider
+import com.ras.TestApplication
 import com.ras.proto.NotificationType
 import com.ras.proto.TerminalNotification
 import kotlinx.coroutines.Dispatchers
@@ -15,17 +16,18 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import tech.apter.junit.jupiter.robolectric.RobolectricExtension
 import org.robolectric.shadows.ShadowNotificationManager
 
 /**
@@ -41,17 +43,18 @@ import org.robolectric.shadows.ShadowNotificationManager
  * - All notification types
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [Build.VERSION_CODES.TIRAMISU])
+@ExtendWith(RobolectricExtension::class)
+@Config(sdk = [Build.VERSION_CODES.TIRAMISU], application = TestApplication::class)
 class NotificationE2ETest {
 
-    private val testDispatcher = StandardTestDispatcher()
+    private lateinit var testDispatcher: kotlinx.coroutines.test.TestDispatcher
     private lateinit var context: Application
     private lateinit var handler: NotificationHandler
     private lateinit var shadowNotificationManager: ShadowNotificationManager
 
-    @Before
+    @BeforeEach
     fun setup() {
+        testDispatcher = StandardTestDispatcher()
         Dispatchers.setMain(testDispatcher)
         context = ApplicationProvider.getApplicationContext()
 
@@ -67,7 +70,7 @@ class NotificationE2ETest {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
         handler.dismissAll()
@@ -77,6 +80,7 @@ class NotificationE2ETest {
     // E2E01: Complete Happy Path - Show, Dismiss, Verify
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E01 complete flow - show notification, tap, dismiss`() {
         // 1. Daemon sends notification
@@ -89,7 +93,7 @@ class NotificationE2ETest {
 
         // 2. Show notification
         val shown = handler.showNotification(notification)
-        assertTrue("Notification should be shown", shown)
+        assertTrue(shown, "Notification should be shown")
         assertEquals(1, handler.getActiveNotificationCount())
         assertEquals(1, shadowNotificationManager.allNotifications.size)
 
@@ -105,6 +109,7 @@ class NotificationE2ETest {
     // E2E02: Concurrent Show Operations - Thread Safety
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E02 concurrent show operations are thread safe`() = runTest {
         val jobs = (1..100).map { i ->
@@ -123,6 +128,7 @@ class NotificationE2ETest {
     // E2E03: Concurrent Show and Dismiss - Thread Safety
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E03 concurrent show and dismiss operations are thread safe`() = runTest {
         // First show 50 notifications
@@ -153,6 +159,7 @@ class NotificationE2ETest {
     // E2E04: Rapid Show/Dismiss Same Session - No Race Condition
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E04 rapid show dismiss same session is safe`() = runTest {
         val sessionId = "rapid-session"
@@ -171,12 +178,13 @@ class NotificationE2ETest {
     // E2E05: Empty Session ID - Rejected
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E05 empty session ID is rejected`() {
         val notification = createNotification(sessionId = "")
         val result = handler.showNotification(notification)
 
-        assertFalse("Empty sessionId should be rejected", result)
+        assertFalse(result, "Empty sessionId should be rejected")
         assertEquals(0, handler.getActiveNotificationCount())
     }
 
@@ -184,12 +192,13 @@ class NotificationE2ETest {
     // E2E06: Blank Session ID - Rejected
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E06 blank session ID is rejected`() {
         val notification = createNotification(sessionId = "   ")
         val result = handler.showNotification(notification)
 
-        assertFalse("Blank sessionId should be rejected", result)
+        assertFalse(result, "Blank sessionId should be rejected")
         assertEquals(0, handler.getActiveNotificationCount())
     }
 
@@ -197,6 +206,7 @@ class NotificationE2ETest {
     // E2E07: Very Long Session ID - Accepted with Truncation
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E07 very long session ID is accepted`() {
         val longSessionId = "a".repeat(1000)
@@ -204,7 +214,7 @@ class NotificationE2ETest {
 
         val result = handler.showNotification(notification)
 
-        assertTrue("Long sessionId should be accepted", result)
+        assertTrue(result, "Long sessionId should be accepted")
         assertEquals(1, handler.getActiveNotificationCount())
 
         // Dismiss with same long ID
@@ -216,6 +226,7 @@ class NotificationE2ETest {
     // E2E08: Empty Title - Uses Default
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E08 empty title uses default`() {
         val notification = createNotification(
@@ -224,7 +235,7 @@ class NotificationE2ETest {
         )
 
         val result = handler.showNotification(notification)
-        assertTrue("Notification with empty title should be shown", result)
+        assertTrue(result, "Notification with empty title should be shown")
         assertEquals(1, shadowNotificationManager.allNotifications.size)
     }
 
@@ -232,6 +243,7 @@ class NotificationE2ETest {
     // E2E09: Empty Body - Uses Default
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E09 empty body uses default`() {
         val notification = createNotification(
@@ -240,7 +252,7 @@ class NotificationE2ETest {
         )
 
         val result = handler.showNotification(notification)
-        assertTrue("Notification with empty body should be shown", result)
+        assertTrue(result, "Notification with empty body should be shown")
         assertEquals(1, shadowNotificationManager.allNotifications.size)
     }
 
@@ -248,6 +260,7 @@ class NotificationE2ETest {
     // E2E10: Very Long Title - Truncated
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E10 very long title is truncated`() {
         val longTitle = "A".repeat(500)
@@ -265,6 +278,7 @@ class NotificationE2ETest {
     // E2E11: Very Long Body - Truncated
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E11 very long body is truncated`() {
         val longBody = "B".repeat(1000)
@@ -282,6 +296,7 @@ class NotificationE2ETest {
     // E2E12: All Notification Types - Correct Icons
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E12 all notification types show correctly`() {
         val types = listOf(
@@ -296,7 +311,7 @@ class NotificationE2ETest {
                 type = type
             )
             val result = handler.showNotification(notification)
-            assertTrue("Type $type should be shown", result)
+            assertTrue(result, "Type $type should be shown")
         }
 
         assertEquals(3, handler.getActiveNotificationCount())
@@ -306,6 +321,7 @@ class NotificationE2ETest {
     // E2E13: Unknown Notification Type - Uses Default
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E13 unknown notification type uses default`() {
         val notification = createNotification(
@@ -314,7 +330,7 @@ class NotificationE2ETest {
         )
 
         val result = handler.showNotification(notification)
-        assertTrue("Unspecified type should still show", result)
+        assertTrue(result, "Unspecified type should still show")
         assertEquals(1, handler.getActiveNotificationCount())
     }
 
@@ -322,6 +338,7 @@ class NotificationE2ETest {
     // E2E14: Grouping Threshold - Summary at 5
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E14 group summary shown at threshold of 5`() {
         // Show 4 notifications - no summary
@@ -341,6 +358,7 @@ class NotificationE2ETest {
     // E2E15: Group Summary Removed Below Threshold
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E15 group summary removed when below threshold`() {
         // Show 6 notifications
@@ -362,6 +380,7 @@ class NotificationE2ETest {
     // E2E16: Permission Denied - Silent Fail
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E16 permission denied returns false without crash`() {
         shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
@@ -369,7 +388,7 @@ class NotificationE2ETest {
         val notification = createNotification(sessionId = "session-denied")
         val result = handler.showNotification(notification)
 
-        assertFalse("Should return false when permission denied", result)
+        assertFalse(result, "Should return false when permission denied")
         assertEquals(0, handler.getActiveNotificationCount())
     }
 
@@ -377,6 +396,7 @@ class NotificationE2ETest {
     // E2E17: Dismiss Non-Existent Session - No Crash
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E17 dismiss non existent session is safe`() {
         handler.dismissNotification("non-existent-session")
@@ -388,6 +408,7 @@ class NotificationE2ETest {
     // E2E18: Dismiss Blank Session ID - Ignored
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E18 dismiss blank session ID is ignored`() {
         handler.showNotification(createNotification(sessionId = "real-session"))
@@ -404,6 +425,7 @@ class NotificationE2ETest {
     // E2E19: Dismiss All - Clears Everything
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E19 dismiss all clears all notifications`() {
         // Show 10 notifications
@@ -422,6 +444,7 @@ class NotificationE2ETest {
     // E2E20: Hash Collision Prevention - Positive IDs
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E20 notification IDs are always positive`() {
         // Test with session IDs that might produce negative hashes
@@ -446,6 +469,7 @@ class NotificationE2ETest {
     // E2E21: Same Session Duplicate - Updates Existing
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E21 same session shows only one notification`() {
         // Show notification for same session 5 times
@@ -461,6 +485,7 @@ class NotificationE2ETest {
     // E2E22: Unicode in Title and Body - Handled
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E22 unicode content is handled`() {
         val notification = createNotification(
@@ -478,6 +503,7 @@ class NotificationE2ETest {
     // E2E23: Control Characters in Text - Handled
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E23 control characters in text are handled`() {
         val notification = createNotification(
@@ -495,6 +521,7 @@ class NotificationE2ETest {
     // E2E24: Intent Extras - Correct Values
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E24 intent extras are correctly set`() {
         val intent = Intent().apply {
@@ -510,6 +537,7 @@ class NotificationE2ETest {
     // E2E25: Intent Without Session ID - From Group Summary
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E25 intent from group summary has no session ID`() {
         val intent = Intent().apply {
@@ -525,6 +553,7 @@ class NotificationE2ETest {
     // E2E26: Large Number of Notifications - Performance
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E26 handles large number of notifications`() {
         // Show 100 notifications
@@ -543,6 +572,7 @@ class NotificationE2ETest {
     // E2E27: Notification After Permission Revoked - Silent Fail
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E27 notification after permission revoked fails silently`() {
         // First show works
@@ -563,6 +593,7 @@ class NotificationE2ETest {
     // E2E28: Session ID with Special Characters - Handled
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E28 session ID with special characters is handled`() {
         val specialIds = listOf(
@@ -591,6 +622,7 @@ class NotificationE2ETest {
     // E2E29: Whitespace-Only Title - Uses Default
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E29 whitespace only title uses default`() {
         val notification = createNotification(
@@ -606,6 +638,7 @@ class NotificationE2ETest {
     // E2E30: Dismiss During Show - Thread Safe
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E30 dismiss during show is thread safe`() = runTest {
         val sessionId = "concurrent-session"
@@ -635,6 +668,7 @@ class NotificationE2ETest {
     // E2E31: Zero Timestamp - Accepted
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E31 zero timestamp is accepted`() {
         val notification = createNotification(
@@ -650,6 +684,7 @@ class NotificationE2ETest {
     // E2E32: Future Timestamp - Accepted
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E32 future timestamp is accepted`() {
         val notification = createNotification(
@@ -665,6 +700,7 @@ class NotificationE2ETest {
     // E2E33: Notification Flow Integration
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E33 complete notification flow from daemon to dismiss`() {
         // Simulate daemon sending 3 notifications for different sessions
@@ -699,6 +735,7 @@ class NotificationE2ETest {
     // E2E34: Notification ID Uniqueness
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E34 different session IDs have different notification IDs`() {
         val sessionIds = (1..100).map { "session-$it" }
@@ -715,6 +752,7 @@ class NotificationE2ETest {
     // E2E35: Group Summary Has Click Handler
     // ==========================================================================
 
+    @Tag("e2e")
     @Test
     fun `E2E35 group summary notification is shown`() {
         // Show 5 notifications to trigger group summary

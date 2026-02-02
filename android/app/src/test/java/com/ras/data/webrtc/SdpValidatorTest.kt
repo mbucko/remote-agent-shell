@@ -1,7 +1,8 @@
 package com.ras.data.webrtc
 
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 
 class SdpValidatorTest {
 
@@ -38,30 +39,35 @@ class SdpValidatorTest {
         a=candidate:2 1 udp 16777215 10.0.0.1 50000 typ relay raddr 192.168.1.100 rport 50000
     """.trimIndent()
 
+    @Tag("unit")
     @Test
     fun `countCandidates returns correct count`() {
         assertEquals(2, SdpValidator.countCandidates(validSdpWithCandidates))
         assertEquals(0, SdpValidator.countCandidates(sdpWithoutCandidates))
     }
 
+    @Tag("unit")
     @Test
     fun `hasHostCandidate detects host candidates`() {
         assertTrue(SdpValidator.hasHostCandidate(validSdpWithCandidates))
         assertFalse(SdpValidator.hasHostCandidate(sdpWithoutCandidates))
     }
 
+    @Tag("unit")
     @Test
     fun `hasServerReflexiveCandidate detects srflx candidates`() {
         assertTrue(SdpValidator.hasServerReflexiveCandidate(validSdpWithCandidates))
         assertFalse(SdpValidator.hasServerReflexiveCandidate(sdpWithoutCandidates))
     }
 
+    @Tag("unit")
     @Test
     fun `hasRelayCandidate detects relay candidates`() {
         assertTrue(SdpValidator.hasRelayCandidate(sdpWithRelay))
         assertFalse(SdpValidator.hasRelayCandidate(validSdpWithCandidates))
     }
 
+    @Tag("unit")
     @Test
     fun `requireCandidates throws for SDP without candidates`() {
         assertThrows(IllegalStateException::class.java) {
@@ -69,12 +75,14 @@ class SdpValidatorTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `requireCandidates passes for valid SDP`() {
         // Should not throw
         SdpValidator.requireCandidates(validSdpWithCandidates, "Test SDP")
     }
 
+    @Tag("unit")
     @Test
     fun `requireCandidates error message is descriptive`() {
         val exception = assertThrows(IllegalStateException::class.java) {
@@ -84,6 +92,7 @@ class SdpValidatorTest {
         assertTrue(exception.message!!.contains("no ICE candidates"))
     }
 
+    @Tag("unit")
     @Test
     fun `extractCandidates returns all candidate lines`() {
         val candidates = SdpValidator.extractCandidates(validSdpWithCandidates)
@@ -92,17 +101,20 @@ class SdpValidatorTest {
         assertTrue(candidates[1].contains("srflx"))
     }
 
+    @Tag("unit")
     @Test
     fun `extractCandidates returns empty list for no candidates`() {
         val candidates = SdpValidator.extractCandidates(sdpWithoutCandidates)
         assertTrue(candidates.isEmpty())
     }
 
+    @Tag("unit")
     @Test
     fun `countCandidates handles empty string`() {
         assertEquals(0, SdpValidator.countCandidates(""))
     }
 
+    @Tag("unit")
     @Test
     fun `MIN_EXPECTED_CANDIDATES is at least 1`() {
         assertTrue(SdpValidator.MIN_EXPECTED_CANDIDATES >= 1)

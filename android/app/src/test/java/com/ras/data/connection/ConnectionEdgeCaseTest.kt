@@ -17,13 +17,14 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import okhttp3.OkHttpClient
-import org.junit.After
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import java.nio.ByteBuffer
 
 /**
@@ -59,12 +60,13 @@ class ConnectionEdgeCaseTest {
     private lateinit var mockContext: Context
     private lateinit var mdnsDiscoveryService: MdnsDiscoveryService
 
-    @Before
+    @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         mockContext = mockk(relaxed = true)
         credentialRepository = mockk()
         connectionManager = mockk(relaxed = true)
+        every { connectionManager.isConnected } returns kotlinx.coroutines.flow.MutableStateFlow(false)
         httpClient = mockk()
         ntfyClient = mockk(relaxed = true)
         mockSignaling = mockk(relaxed = true)
@@ -81,7 +83,7 @@ class ConnectionEdgeCaseTest {
         coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
     }
 
-    @After
+    @AfterEach
     fun tearDown() {
         Dispatchers.resetMain()
         unmockkObject(TailscaleDetector)
@@ -92,6 +94,7 @@ class ConnectionEdgeCaseTest {
     // SECTION 1: Credential Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `empty device ID in credentials - still attempts connection`() = runTest {
         val credentials = StoredCredentials(
@@ -123,6 +126,7 @@ class ConnectionEdgeCaseTest {
         assertTrue(result is ReconnectionResult.Failure.NetworkError)
     }
 
+    @Tag("unit")
     @Test
     fun `whitespace-only device ID`() = runTest {
         val credentials = StoredCredentials(
@@ -154,6 +158,7 @@ class ConnectionEdgeCaseTest {
         assertEquals("   ", contextSlot.captured.deviceId)
     }
 
+    @Tag("unit")
     @Test
     fun `daemon port at boundary values`() = runTest {
         // Test port 1 (minimum valid)
@@ -192,6 +197,7 @@ class ConnectionEdgeCaseTest {
         assertEquals(65535, contextSlot.captured.daemonPort)
     }
 
+    @Tag("unit")
     @Test
     fun `IPv6 daemon host`() = runTest {
         val credentials = StoredCredentials(
@@ -222,6 +228,7 @@ class ConnectionEdgeCaseTest {
         assertEquals("2001:db8::1", contextSlot.captured.daemonHost)
     }
 
+    @Tag("unit")
     @Test
     fun `localhost daemon host`() = runTest {
         val credentials = StoredCredentials(
@@ -256,6 +263,7 @@ class ConnectionEdgeCaseTest {
     // SECTION 2: Capability Exchange Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `daemon returns empty string for Tailscale IP (not null)`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -292,9 +300,10 @@ class ConnectionEdgeCaseTest {
         // Tailscale should fail because empty string should be treated as "no IP"
         val failed = progressUpdates.filterIsInstance<ConnectionProgress.StrategyFailed>()
             .find { it.strategyName == "Tailscale Direct" }
-        assertNotNull("Tailscale should fail with empty IP", failed)
+        assertNotNull(failed, "Tailscale should fail with empty IP")
     }
 
+    @Tag("unit")
     @Test
     fun `daemon returns port 0`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -337,6 +346,7 @@ class ConnectionEdgeCaseTest {
         coVerify { TailscaleTransport.connect(any(), any(), 9876, any()) }
     }
 
+    @Tag("unit")
     @Test
     fun `capability exchange throws exception`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -365,13 +375,14 @@ class ConnectionEdgeCaseTest {
 
         // Should report capability exchange failed
         val capFailed = progressUpdates.filterIsInstance<ConnectionProgress.CapabilityExchangeFailed>()
-        assertTrue("Should report capability exchange failed", capFailed.isNotEmpty())
+        assertTrue(capFailed.isNotEmpty(), "Should report capability exchange failed")
     }
 
     // ============================================================================
     // SECTION 3: TailscaleDetector Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `TailscaleDetector returns null - strategy unavailable`() = runTest {
         every { TailscaleDetector.detect(any()) } returns null
@@ -383,6 +394,7 @@ class ConnectionEdgeCaseTest {
         assertEquals("Tailscale not connected", (result as DetectionResult.Unavailable).reason)
     }
 
+    @Tag("unit")
     @Test
     fun `TailscaleDetector throws exception`() = runTest {
         every { TailscaleDetector.detect(any()) } throws SecurityException("Permission denied")
@@ -398,6 +410,7 @@ class ConnectionEdgeCaseTest {
         }
     }
 
+    @Tag("unit")
     @Test
     fun `Tailscale IP at boundary - 100_64_0_0`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.0", "tun0")
@@ -409,6 +422,7 @@ class ConnectionEdgeCaseTest {
         assertEquals("100.64.0.0", (result as DetectionResult.Available).info)
     }
 
+    @Tag("unit")
     @Test
     fun `Tailscale IP at boundary - 100_127_255_255`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.127.255.255", "tun0")
@@ -424,6 +438,7 @@ class ConnectionEdgeCaseTest {
     // SECTION 4: TailscaleStrategy Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `very long device ID`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -472,6 +487,7 @@ class ConnectionEdgeCaseTest {
         assertEquals(1000, deviceIdLen)
     }
 
+    @Tag("unit")
     @Test
     fun `Unicode device ID with emoji`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -512,6 +528,7 @@ class ConnectionEdgeCaseTest {
         assertEquals(unicodeDeviceId, String(deviceIdBytes, Charsets.UTF_8))
     }
 
+    @Tag("unit")
     @Test
     fun `connect called before detect`() = runTest {
         // Don't call detect() first
@@ -534,6 +551,7 @@ class ConnectionEdgeCaseTest {
         assertEquals("Tailscale not detected", (result as ConnectionResult.Failed).error)
     }
 
+    @Tag("unit")
     @Test
     fun `auth response with extra bytes`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -566,6 +584,7 @@ class ConnectionEdgeCaseTest {
         assertTrue(result is ConnectionResult.Success)
     }
 
+    @Tag("unit")
     @Test
     fun `auth response with unknown status code`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -602,6 +621,7 @@ class ConnectionEdgeCaseTest {
     // SECTION 5: WebRTC Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `WebRTC createOffer returns empty string`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns ""
@@ -632,6 +652,7 @@ class ConnectionEdgeCaseTest {
         coVerify { mockSignaling.sendOffer("") }
     }
 
+    @Tag("unit")
     @Test
     fun `WebRTC offer with zero candidates`() = runTest {
         val offerWithNoCandidates = """
@@ -673,6 +694,7 @@ class ConnectionEdgeCaseTest {
         assertNotNull(failed)
     }
 
+    @Tag("unit")
     @Test
     fun `WebRTCClient factory throws`() = runTest {
         every { mockWebRTCClientFactory.create() } throws RuntimeException("Failed to initialize")
@@ -708,6 +730,7 @@ class ConnectionEdgeCaseTest {
     // SECTION 6: Resource Cleanup Verification
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `TailscaleStrategy closes transport on auth failure`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -738,6 +761,7 @@ class ConnectionEdgeCaseTest {
         coVerify { mockTransport.close() }
     }
 
+    @Tag("unit")
     @Test
     fun `TailscaleStrategy closes transport on empty response`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -767,6 +791,7 @@ class ConnectionEdgeCaseTest {
         coVerify { mockTransport.close() }
     }
 
+    @Tag("unit")
     @Test
     fun `WebRTCStrategy closes client on signaling failure`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns "offer"
@@ -789,6 +814,7 @@ class ConnectionEdgeCaseTest {
         coVerify { mockWebRTCClient.close() }
     }
 
+    @Tag("unit")
     @Test
     fun `WebRTCStrategy closes client on ICE failure`() = runTest {
         coEvery { mockWebRTCClient.createOffer() } returns "offer"
@@ -817,6 +843,7 @@ class ConnectionEdgeCaseTest {
     // SECTION 7: Concurrency Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `CancellationException propagates correctly`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
@@ -847,13 +874,14 @@ class ConnectionEdgeCaseTest {
             caught = true
         }
 
-        assertTrue("CancellationException should propagate", caught)
+        assertTrue(caught, "CancellationException should propagate")
     }
 
     // ============================================================================
     // SECTION 8: Transport Type Detection Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `isTailscale check with proxy transport`() = runTest {
         // Test that a transport whose class name doesn't contain "Tailscale"
@@ -896,13 +924,14 @@ class ConnectionEdgeCaseTest {
 
         // Since class name doesn't contain "Tailscale", auth should be attempted
         val authenticating = progressUpdates.filterIsInstance<ConnectionProgress.Authenticating>()
-        assertTrue("Should attempt auth for non-Tailscale class name", authenticating.isNotEmpty())
+        assertTrue(authenticating.isNotEmpty(), "Should attempt auth for non-Tailscale class name")
     }
 
     // ============================================================================
     // SECTION 9: Orchestrator Edge Cases
     // ============================================================================
 
+    @Tag("unit")
     @Test
     fun `no strategies provided`() = runTest {
         val orchestrator = ConnectionOrchestrator(emptySet())
@@ -924,6 +953,7 @@ class ConnectionEdgeCaseTest {
         assertEquals(0, allFailed.first().attempts.size)
     }
 
+    @Tag("unit")
     @Test
     fun `all strategies unavailable`() = runTest {
         val strategy1 = mockk<ConnectionStrategy> {
@@ -959,6 +989,7 @@ class ConnectionEdgeCaseTest {
         assertEquals(2, unavailable.size)
     }
 
+    @Tag("unit")
     @Test
     fun `progress callback throws exception`() = runTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tun0")
