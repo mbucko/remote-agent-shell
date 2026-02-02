@@ -120,8 +120,8 @@ data class QuickButton(
  * Optimized for Claude Code usage: approvals, interrupts, navigation, and autocomplete.
  */
 val DEFAULT_QUICK_BUTTONS = listOf(
-    QuickButton(id = "y", label = "Yes", character = "y", isDefault = true),
-    QuickButton(id = "n", label = "No", character = "n", isDefault = true),
+    QuickButton(id = "yes", label = "Yes", character = "Yes", isDefault = true),
+    QuickButton(id = "no", label = "No", character = "No", isDefault = true),
     QuickButton(id = "ctrl_c", label = "Ctrl+C", keyType = KeyType.KEY_CTRL_C, isDefault = true),
     QuickButton(id = "up", label = "↑", keyType = KeyType.KEY_UP, isDefault = true),
     QuickButton(id = "down", label = "↓", keyType = KeyType.KEY_DOWN, isDefault = true),
@@ -135,8 +135,8 @@ val DEFAULT_QUICK_BUTTONS = listOf(
  */
 val AVAILABLE_QUICK_BUTTONS = listOf(
     // Primary actions
-    QuickButton(id = "y", label = "Yes", character = "y"),
-    QuickButton(id = "n", label = "No", character = "n"),
+    QuickButton(id = "yes", label = "Yes", character = "Yes"),
+    QuickButton(id = "no", label = "No", character = "No"),
     QuickButton(id = "ctrl_c", label = "Ctrl+C", keyType = KeyType.KEY_CTRL_C),
     QuickButton(id = "backspace", label = "⌫", keyType = KeyType.KEY_BACKSPACE),
     // Navigation

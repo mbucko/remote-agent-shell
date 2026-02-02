@@ -110,14 +110,37 @@ class QuickButtonSettings @Inject constructor(
         val result = mutableListOf<QuickButton>()
         val array = JSONArray(json)
 
+        // Migration: convert old single-char Yes/No buttons to full words
+        val idMigrations = mapOf(
+            "y" to Triple("yes", "Yes", "Yes"),  // oldId -> (newId, newLabel, newCharacter)
+            "n" to Triple("no", "No", "No")
+        )
+
+        // Build a map of default button labels by id for migration
+        val defaultLabels = DEFAULT_QUICK_BUTTONS.associate { it.id to it.label }
+
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i)
             try {
-                val id = obj.getString("id")
-                val label = obj.getString("label")
+                var id = obj.getString("id")
+                var label = obj.getString("label")
                 val keyTypeNum = if (obj.has("keyType")) obj.getInt("keyType") else null
-                val character = if (obj.has("character")) obj.getString("character") else null
+                var character = if (obj.has("character")) obj.getString("character") else null
                 val isDefault = obj.optBoolean("isDefault", false)
+
+                // Migration: convert old "y"/"n" buttons to "yes"/"no" with full words
+                if (idMigrations.containsKey(id)) {
+                    val (newId, newLabel, newChar) = idMigrations[id]!!
+                    id = newId
+                    label = newLabel
+                    character = newChar
+                }
+
+                // Migration: fix labels for default buttons if they got saved incorrectly
+                // (e.g., label="y" instead of "Yes") - check by id regardless of isDefault flag
+                if (defaultLabels.containsKey(id) && label != defaultLabels[id]) {
+                    label = defaultLabels[id]!!
+                }
 
                 // Map keyType number to enum
                 val keyType = keyTypeNum?.let { num ->

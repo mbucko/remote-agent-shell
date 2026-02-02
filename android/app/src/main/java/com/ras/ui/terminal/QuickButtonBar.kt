@@ -1,21 +1,20 @@
 package com.ras.ui.terminal
 
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
@@ -56,7 +55,7 @@ fun QuickButtonBar(
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -112,7 +111,10 @@ fun QuickButtonBar(
  * - OFF: Tertiary container color (distinct from action buttons)
  * - STICKY: Primary container color (active for next key only)
  * - LOCKED: Primary color (stays active until toggled off)
+ *
+ * Uses same Button component as QuickActionButton for consistent sizing.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ModifierButton(
     label: String,
@@ -121,37 +123,37 @@ fun ModifierButton(
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Use tertiary color when OFF to distinguish from action buttons
+    // Distinct colors for modifier states
+    // OFF uses outline with alpha to visually distinguish from action buttons
     val backgroundColor = when (mode) {
-        ModifierMode.OFF -> MaterialTheme.colorScheme.tertiaryContainer
-        ModifierMode.STICKY -> MaterialTheme.colorScheme.primaryContainer
+        ModifierMode.OFF -> MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+        ModifierMode.STICKY -> MaterialTheme.colorScheme.tertiary
         ModifierMode.LOCKED -> MaterialTheme.colorScheme.primary
     }
 
     val contentColor = when (mode) {
-        ModifierMode.OFF -> MaterialTheme.colorScheme.onTertiaryContainer
-        ModifierMode.STICKY -> MaterialTheme.colorScheme.onPrimaryContainer
+        ModifierMode.OFF -> MaterialTheme.colorScheme.onSurface
+        ModifierMode.STICKY -> MaterialTheme.colorScheme.onTertiary
         ModifierMode.LOCKED -> MaterialTheme.colorScheme.onPrimary
     }
 
-    // Use Surface with pointerInput for both tap and long-press
-    // (Button's onClick conflicts with detectTapGestures)
+    // Use Surface with combinedClickable for proper tap/long-press handling
+    // focusable(false) prevents stealing focus from RawModeInput text field
     Surface(
         modifier = modifier
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { onTap() },
-                    onLongPress = { onLongPress() }
-                )
-            },
-        shape = RoundedCornerShape(4.dp),
-        color = backgroundColor
+            .focusable(false)
+            .combinedClickable(
+                onClick = onTap,
+                onLongClick = onLongPress
+            ),
+        shape = RoundedCornerShape(6.dp),
+        color = backgroundColor,
+        contentColor = contentColor
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             style = MaterialTheme.typography.labelMedium,
-            color = contentColor
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
         )
     }
 }
@@ -162,19 +164,20 @@ private fun QuickActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(4.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        )
+    // Use Surface for consistency with ModifierButton
+    // focusable(false) prevents stealing focus from RawModeInput text field
+    Surface(
+        modifier = modifier
+            .focusable(false)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
     ) {
         Text(
             text = button.label,
-            style = MaterialTheme.typography.labelMedium
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
         )
     }
 }
@@ -227,8 +230,8 @@ private fun QuickButtonBarManyButtonsPreview() {
     MaterialTheme {
         QuickButtonBar(
             buttons = listOf(
-                QuickButton("y", "Yes", character = "y"),
-                QuickButton("n", "No", character = "n"),
+                QuickButton("yes", "Yes", character = "Yes"),
+                QuickButton("no", "No", character = "No"),
                 QuickButton("ctrl_c", "Ctrl+C", keyType = KeyType.KEY_CTRL_C),
                 QuickButton("up", "↑", keyType = KeyType.KEY_UP),
                 QuickButton("down", "↓", keyType = KeyType.KEY_DOWN),
