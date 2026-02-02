@@ -7,8 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.ModifierKeySettings
+import com.ras.data.settings.SettingsQuickButton
 import com.ras.data.settings.SettingsRepository
-import com.ras.data.terminal.DEFAULT_QUICK_BUTTONS
 import com.ras.data.terminal.KeyMapper
 import com.ras.data.terminal.AppAction
 import com.ras.data.terminal.ModifierKey
@@ -27,7 +27,6 @@ import com.ras.proto.clipboard.ClipboardMessage
 import com.ras.proto.clipboard.ImageChunk
 import com.ras.proto.clipboard.ImageFormat
 import com.ras.proto.clipboard.ImageStart
-import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
 import com.ras.util.ClipboardImage
 import com.ras.util.ClipboardService
@@ -40,11 +39,14 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -65,7 +67,6 @@ class TerminalViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val settingsRepository: SettingsRepository,
     private val modifierKeySettings: ModifierKeySettings,
-    private val buttonSettings: QuickButtonSettings,
     private val clipboardService: ClipboardService
 ) : ViewModel() {
 
@@ -100,9 +101,12 @@ class TerminalViewModel @Inject constructor(
     private val _sessionName = MutableStateFlow("Session")
     val sessionName: StateFlow<String> = _sessionName.asStateFlow()
 
-    // Quick buttons
-    private val _quickButtons = MutableStateFlow(buttonSettings.getButtons())
-    val quickButtons: StateFlow<List<QuickButton>> = _quickButtons.asStateFlow()
+    // Quick buttons - observe from settings and convert to QuickButton
+    val quickButtons: StateFlow<List<QuickButton>> = settingsRepository.quickButtons
+        .map { settingsButtons ->
+            settingsButtons.map { it.toQuickButton() }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // Modifier key state (sticky/locked modifiers for quick buttons)
     private val _modifierState = MutableStateFlow(ModifierState())
@@ -789,28 +793,6 @@ class TerminalViewModel @Inject constructor(
     }
 
     // ==========================================================================
-    // Quick Button Editor
-    // ==========================================================================
-
-    fun openButtonEditor() {
-        _showButtonEditor.value = true
-    }
-
-    fun closeButtonEditor() {
-        _showButtonEditor.value = false
-    }
-
-    fun updateQuickButtons(buttons: List<QuickButton>) {
-        buttonSettings.saveButtons(buttons)
-        _quickButtons.value = buttons
-        _showButtonEditor.value = false
-    }
-
-    fun resetQuickButtonsToDefault() {
-        updateQuickButtons(DEFAULT_QUICK_BUTTONS)
-    }
-
-    // ==========================================================================
     // Error Handling
     // ==========================================================================
 
@@ -824,5 +806,17 @@ class TerminalViewModel @Inject constructor(
 
     fun reconnect() {
         attach()
+    }
+}
+
+/**
+ * Convert a SettingsQuickButton to a QuickButton for use in the terminal.
+ */
+private fun SettingsQuickButton.toQuickButton(): QuickButton {
+    val keyType = SettingsQuickButton.getKeyType(id)
+    return if (keyType != null) {
+        QuickButton(id = id, label = label, keyType = keyType)
+    } else {
+        QuickButton(id = id, label = label, character = keySequence)
     }
 }

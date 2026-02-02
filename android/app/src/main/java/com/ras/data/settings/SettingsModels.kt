@@ -83,11 +83,12 @@ data class SettingsQuickButton(
 ) {
     companion object {
         // Predefined quick buttons
-        val YES = SettingsQuickButton("yes", "Yes", "y")
-        val NO = SettingsQuickButton("no", "No", "n")
+        val YES = SettingsQuickButton("yes", "Yes", "Yes")
+        val NO = SettingsQuickButton("no", "No", "No")
         val CTRL_C = SettingsQuickButton("ctrl_c", "Ctrl+C", "\u0003")
         val ESC = SettingsQuickButton("esc", "Esc", "\u001b")
         val TAB = SettingsQuickButton("tab", "Tab", "\t")
+        val SHIFT_TAB = SettingsQuickButton("shift_tab", "⇧Tab", "\u001b[Z")
         val ARROW_UP = SettingsQuickButton("up", "↑", "\u001b[A")
         val ARROW_DOWN = SettingsQuickButton("down", "↓", "\u001b[B")
         val BACKSPACE = SettingsQuickButton("backspace", "⌫", "\u007f")
@@ -95,12 +96,29 @@ data class SettingsQuickButton(
         /**
          * All available quick buttons.
          */
-        val ALL = listOf(YES, NO, CTRL_C, ESC, TAB, ARROW_UP, ARROW_DOWN, BACKSPACE)
+        val ALL = listOf(YES, NO, CTRL_C, ESC, TAB, SHIFT_TAB, ARROW_UP, ARROW_DOWN, BACKSPACE)
 
         /**
          * Find button by ID.
          */
         fun fromId(id: String): SettingsQuickButton? = ALL.find { it.id == id }
+
+        /**
+         * Map of IDs to KeyType for buttons that use special keys.
+         */
+        private val KEY_TYPE_MAP = mapOf(
+            "ctrl_c" to com.ras.proto.KeyType.KEY_CTRL_C,
+            "esc" to com.ras.proto.KeyType.KEY_ESCAPE,
+            "tab" to com.ras.proto.KeyType.KEY_TAB,
+            "up" to com.ras.proto.KeyType.KEY_UP,
+            "down" to com.ras.proto.KeyType.KEY_DOWN,
+            "backspace" to com.ras.proto.KeyType.KEY_BACKSPACE
+        )
+
+        /**
+         * Get the KeyType for this button, or null if it uses character input.
+         */
+        fun getKeyType(id: String): com.ras.proto.KeyType? = KEY_TYPE_MAP[id]
     }
 }
 
