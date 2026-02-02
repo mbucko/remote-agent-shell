@@ -80,7 +80,14 @@ fun DeviceCard(
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        text = connectionState.toDisplayText(sessionCount),
+                        text = if (connectionState == ConnectionState.CONNECTED) {
+                            val countText = pluralStringResource(
+                                R.plurals.sessions_count,
+                                sessionCount,
+                                sessionCount
+                            )
+                            "Connected · $countText"
+                        } else connectionState.toDisplayText(),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -146,11 +153,8 @@ private fun DeviceType.toIcon(): ImageVector = when (this) {
  */
 private fun ConnectionState.toDisplayText(sessionCount: Int = 0): String = when (this) {
     ConnectionState.CONNECTED -> {
-        "Connected · " + pluralStringResource(
-            R.plurals.sessions_count,
-            sessionCount,
-            sessionCount
-        )
+        val sessionText = if (sessionCount == 1) "1 session" else "$sessionCount sessions"
+        "Connected · $sessionText"
     }
     ConnectionState.CONNECTING -> "Connecting..."
     ConnectionState.DISCONNECTED -> "Disconnected"
