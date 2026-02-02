@@ -20,6 +20,7 @@ class PairingViewModel @Inject constructor(
 ) : ViewModel() {
 
     val state: StateFlow<PairingState> = pairingManager.state
+    val progress = pairingManager.progress
 
     private val _qrParseError = MutableStateFlow<QrParseResult.ErrorCode?>(null)
     val qrParseError: StateFlow<QrParseResult.ErrorCode?> = _qrParseError.asStateFlow()

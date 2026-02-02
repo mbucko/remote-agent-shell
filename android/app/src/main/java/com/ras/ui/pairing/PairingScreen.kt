@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
@@ -53,6 +53,8 @@ import com.ras.R
 import com.ras.pairing.PairingState
 import com.ras.pairing.QrParseResult
 import com.ras.pairing.QrScanner
+import com.ras.ui.components.IndeterminateSpinner
+import com.ras.ui.theme.StatusConnected
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,12 +65,13 @@ fun PairingScreen(
     viewModel: PairingViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val progress by viewModel.progress.collectAsStateWithLifecycle()
     val qrParseError by viewModel.qrParseError.collectAsStateWithLifecycle()
 
-    // Navigate when paired successfully
+    // Navigate when paired successfully (0.5s delay)
     LaunchedEffect(state) {
         if (state is PairingState.Authenticated) {
-            delay(1500) // Show success state briefly
+            delay(500)
             onPaired()
         }
     }
@@ -113,50 +116,27 @@ fun PairingScreen(
                 is PairingState.QrParsed,
                 PairingState.Signaling,
                 PairingState.TryingDirect,
-                PairingState.DirectSignaling -> {
-                    ProgressSection(
-                        message = "Connecting to host...",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                PairingState.NtfySubscribing -> {
-                    ProgressSection(
-                        message = "Setting up relay connection...",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                PairingState.NtfyWaitingForAnswer -> {
-                    ProgressSection(
-                        message = "Waiting for host response...",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                PairingState.Connecting -> {
-                    ProgressSection(
-                        message = "Establishing secure connection...",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
+                PairingState.DirectSignaling,
+                PairingState.NtfySubscribing,
+                PairingState.NtfyWaitingForAnswer,
+                PairingState.Connecting,
                 PairingState.Authenticating -> {
                     ProgressSection(
-                        message = "Authenticating...",
+                        progress = progress,
                         modifier = Modifier.weight(1f)
                     )
                 }
 
                 is PairingState.Authenticated -> {
                     SuccessSection(
-                        deviceId = (state as PairingState.Authenticated).deviceId,
+                        progress = progress,
                         modifier = Modifier.weight(1f)
                     )
                 }
 
                 is PairingState.Failed -> {
                     FailureSection(
+                        progress = progress,
                         reason = (state as PairingState.Failed).reason,
                         onRetry = { viewModel.retry() },
                         modifier = Modifier.weight(1f)
@@ -298,7 +278,7 @@ private fun QrScannerView(
 
 @Composable
 private fun ProgressSection(
-    message: String,
+    progress: PairingProgress,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -306,21 +286,34 @@ private fun ProgressSection(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(64.dp)
+        // Top animated spinner
+        IndeterminateSpinner(
+            modifier = Modifier.size(64.dp),
+            color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 4.dp
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
         Text(
-            text = message,
+            text = progress.currentMessage,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        // Step list
+        PairingStepList(
+            steps = progress.steps,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
 
 @Composable
 private fun SuccessSection(
-    deviceId: String,
+    progress: PairingProgress,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -332,24 +325,26 @@ private fun SuccessSection(
             imageVector = Icons.Default.CheckCircle,
             contentDescription = null,
             modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.primary
+            tint = StatusConnected
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Paired successfully!",
+            text = progress.currentMessage,
             style = MaterialTheme.typography.headlineSmall
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Device ID: ${deviceId.take(8)}...",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        // Show completed step list
+        PairingStepList(
+            steps = progress.steps,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
 
 @Composable
 private fun FailureSection(
+    progress: PairingProgress,
     reason: PairingState.FailureReason,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
@@ -359,20 +354,32 @@ private fun FailureSection(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        // Show step list with failure state
+        PairingStepList(
+            steps = progress.steps,
+            modifier = Modifier.fillMaxWidth()
+        )
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
         Icon(
             imageVector = Icons.Default.Error,
             contentDescription = null,
-            modifier = Modifier.size(64.dp),
+            modifier = Modifier.size(48.dp),
             tint = MaterialTheme.colorScheme.error
         )
+        
         Spacer(modifier = Modifier.height(16.dp))
+        
         Text(
             text = getFailureReasonMessage(reason),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.error,
             textAlign = TextAlign.Center
         )
+        
         Spacer(modifier = Modifier.height(24.dp))
+        
         Button(onClick = onRetry) {
             Text("Try Again")
         }

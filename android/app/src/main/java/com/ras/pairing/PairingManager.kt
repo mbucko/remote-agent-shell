@@ -28,7 +28,8 @@ class PairingManager @Inject constructor(
     private val keyManager: KeyManager,
     private val webRTCClientFactory: WebRTCClient.Factory,
     private val ntfyClient: NtfyClientInterface,
-    private val connectionManager: ConnectionManager
+    private val connectionManager: ConnectionManager,
+    private val progressTracker: PairingProgressTracker
 ) {
     // Internal scope that can be overridden for testing
     // Using lazy initialization to allow tests to override before first use
@@ -39,6 +40,8 @@ class PairingManager @Inject constructor(
 
     private val _state = MutableStateFlow<PairingState>(PairingState.Idle)
     val state: StateFlow<PairingState> = _state
+
+    val progress = progressTracker.progress
 
     private var currentPayload: ParsedQrPayload? = null
     private var authKey: ByteArray? = null
@@ -59,6 +62,8 @@ class PairingManager @Inject constructor(
         currentPayload = payload
         authKey = KeyDerivation.deriveKey(payload.masterSecret, "auth")
 
+        progressTracker.start()
+        progressTracker.onQrParsed()
         _state.value = PairingState.QrParsed(payload)
 
         scope.launch {
@@ -69,6 +74,7 @@ class PairingManager @Inject constructor(
     private suspend fun performSignaling() {
         val payload = currentPayload ?: return
 
+        progressTracker.onCreatingConnection()
         _state.value = PairingState.TryingDirect
 
         // Create WebRTC client and generate offer
@@ -80,10 +86,13 @@ class PairingManager @Inject constructor(
         val sdpOffer = try {
             client.createOffer()
         } catch (e: Exception) {
+            progressTracker.onFailed()
             _state.value = PairingState.Failed(PairingState.FailureReason.CONNECTION_FAILED)
             cleanup()
             return
         }
+
+        progressTracker.onConnectionCreated()
 
         // Get device info
         val deviceId = keyManager.getOrCreateDeviceId()
@@ -96,6 +105,8 @@ class PairingManager @Inject constructor(
         )
 
         // Exchange SDP using direct HTTP or ntfy fallback
+        progressTracker.onDirectSignaling()
+        
         val result = pairingSignaler.exchangeSdp(
             ip = payload.ip,
             port = payload.port,
@@ -110,18 +121,23 @@ class PairingManager @Inject constructor(
             is PairingSignalerResult.Success -> {
                 // Update state based on which path was used
                 if (result.usedNtfyPath) {
+                    progressTracker.onSignalingComplete(usedNtfy = true)
                     _state.value = PairingState.NtfyWaitingForAnswer
                 } else {
+                    progressTracker.onSignalingComplete(usedNtfy = false)
                     _state.value = PairingState.DirectSignaling
                 }
                 _state.value = PairingState.Connecting
                 performConnection(result.sdpAnswer)
             }
             is PairingSignalerResult.NtfyTimeout -> {
+                progressTracker.onDirectFailed()
+                progressTracker.onFailed()
                 _state.value = PairingState.Failed(PairingState.FailureReason.NTFY_TIMEOUT)
                 cleanup()
             }
             is PairingSignalerResult.Error -> {
+                progressTracker.onFailed()
                 _state.value = PairingState.Failed(PairingState.FailureReason.SIGNALING_FAILED)
                 cleanup()
             }
@@ -141,15 +157,18 @@ class PairingManager @Inject constructor(
             val channelOpened = client.waitForDataChannel(timeoutMs = 30_000)
 
             if (!channelOpened) {
+                progressTracker.onFailed()
                 _state.value = PairingState.Failed(PairingState.FailureReason.CONNECTION_FAILED)
                 cleanup()
                 return
             }
 
+            progressTracker.onDataChannelOpen()
             _state.value = PairingState.Authenticating
             connectionState = PairingConnectionState.Authenticating
             performAuthentication()
         } catch (e: Exception) {
+            progressTracker.onFailed()
             _state.value = PairingState.Failed(PairingState.FailureReason.CONNECTION_FAILED)
             cleanup()
         }
@@ -227,13 +246,16 @@ class PairingManager @Inject constructor(
                 authKey?.fill(0)
                 authKey = null
 
+                progressTracker.onAuthenticated()
                 _state.value = PairingState.Authenticated(result.deviceId)
             }
             is AuthResult.Error -> {
+                progressTracker.onFailed()
                 _state.value = PairingState.Failed(PairingState.FailureReason.AUTH_FAILED)
                 cleanup()
             }
             AuthResult.Timeout -> {
+                progressTracker.onFailed()
                 _state.value = PairingState.Failed(PairingState.FailureReason.TIMEOUT)
                 cleanup()
             }
@@ -265,6 +287,7 @@ class PairingManager @Inject constructor(
      * Reset to idle state for retry.
      */
     fun reset() {
+        progressTracker.reset()
         cleanup()
         _state.value = PairingState.Idle
     }

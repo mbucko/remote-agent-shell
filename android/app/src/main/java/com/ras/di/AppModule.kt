@@ -7,6 +7,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.ras.data.connection.ConnectionConfig
 import com.ras.data.settings.ModifierKeySettings
 import com.ras.data.settings.SettingsRepositoryImpl
+import com.ras.pairing.Clock
+import com.ras.pairing.SystemClock
 import com.ras.util.AndroidClipboardService
 import com.ras.util.ClipboardService
 import dagger.Binds
@@ -89,4 +91,11 @@ abstract class AppBindingsModule {
     @Binds
     @Singleton
     abstract fun bindModifierKeySettings(impl: SettingsRepositoryImpl): ModifierKeySettings
+
+    /**
+     * Binds Clock interface to SystemClock.
+     */
+    @Binds
+    @Singleton
+    abstract fun bindClock(impl: SystemClock): Clock
 }

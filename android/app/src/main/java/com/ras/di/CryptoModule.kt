@@ -5,6 +5,7 @@ import com.ras.data.connection.ConnectionManager
 import com.ras.data.keystore.KeyManager
 import com.ras.data.webrtc.WebRTCClient
 import com.ras.pairing.PairingManager
+import com.ras.pairing.PairingProgressTracker
 import com.ras.pairing.SignalingClient
 import com.ras.signaling.NtfyClientInterface
 import com.ras.signaling.NtfySignalingClient
@@ -77,8 +78,9 @@ object CryptoModule {
         keyManager: KeyManager,
         webRTCClientFactory: WebRTCClient.Factory,
         ntfyClient: NtfyClientInterface,
-        connectionManager: ConnectionManager
+        connectionManager: ConnectionManager,
+        progressTracker: PairingProgressTracker
     ): PairingManager {
-        return PairingManager(context, signalingClient, keyManager, webRTCClientFactory, ntfyClient, connectionManager)
+        return PairingManager(context, signalingClient, keyManager, webRTCClientFactory, ntfyClient, connectionManager, progressTracker)
     }
 }
