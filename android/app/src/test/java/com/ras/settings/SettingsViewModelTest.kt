@@ -191,12 +191,13 @@ class SettingsViewModelTest {
 
     @Test
     fun `SettingsQuickButton ALL contains all buttons`() {
-        assertEquals(8, SettingsQuickButton.ALL.size)
+        assertEquals(9, SettingsQuickButton.ALL.size)
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.YES))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.NO))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.CTRL_C))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.ESC))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.TAB))
+        assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.SHIFT_TAB))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.ARROW_UP))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.ARROW_DOWN))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.BACKSPACE))
@@ -204,11 +205,12 @@ class SettingsViewModelTest {
 
     @Test
     fun `SettingsQuickButton has correct key sequences`() {
-        assertEquals("y", SettingsQuickButton.YES.keySequence)
-        assertEquals("n", SettingsQuickButton.NO.keySequence)
+        assertEquals("Yes", SettingsQuickButton.YES.keySequence)
+        assertEquals("No", SettingsQuickButton.NO.keySequence)
         assertEquals("\u0003", SettingsQuickButton.CTRL_C.keySequence)
         assertEquals("\u001b", SettingsQuickButton.ESC.keySequence)
         assertEquals("\t", SettingsQuickButton.TAB.keySequence)
+        assertEquals("\u001b[Z", SettingsQuickButton.SHIFT_TAB.keySequence)
         assertEquals("\u001b[A", SettingsQuickButton.ARROW_UP.keySequence)
         assertEquals("\u001b[B", SettingsQuickButton.ARROW_DOWN.keySequence)
         assertEquals("\u007f", SettingsQuickButton.BACKSPACE.keySequence)

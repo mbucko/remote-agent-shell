@@ -4,10 +4,10 @@ import androidx.lifecycle.SavedStateHandle
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.ModifierKeySettings
 import com.ras.data.settings.SettingsDefaults
+import com.ras.data.settings.SettingsQuickButton
 import com.ras.data.settings.SettingsRepository
 import com.ras.data.terminal.TerminalRepository
 import com.ras.data.terminal.TerminalState
-import com.ras.settings.QuickButtonSettings
 import com.ras.ui.navigation.NavArgs
 import com.ras.util.ClipboardService
 import io.mockk.coEvery
@@ -46,7 +46,6 @@ class TerminalViewModelTest {
     private lateinit var sessionRepository: SessionRepository
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var modifierKeySettings: ModifierKeySettings
-    private lateinit var buttonSettings: QuickButtonSettings
     private lateinit var clipboardService: ClipboardService
 
     // Flows for terminal repository
@@ -61,6 +60,7 @@ class TerminalViewModelTest {
     private val showShiftKeyFlow = MutableStateFlow(true)
     private val showAltKeyFlow = MutableStateFlow(false)
     private val showMetaKeyFlow = MutableStateFlow(false)
+    private val quickButtonsFlow = MutableStateFlow<List<SettingsQuickButton>>(emptyList())
 
 
     @Before
@@ -73,7 +73,6 @@ class TerminalViewModelTest {
         sessionRepository = mockk(relaxed = true)
         settingsRepository = mockk(relaxed = true)
         modifierKeySettings = mockk(relaxed = true)
-        buttonSettings = mockk(relaxed = true)
         clipboardService = mockk(relaxed = true)
 
         // Setup terminal repository mocks
@@ -94,8 +93,8 @@ class TerminalViewModelTest {
         every { modifierKeySettings.showAltKey } returns showAltKeyFlow
         every { modifierKeySettings.showMetaKey } returns showMetaKeyFlow
 
-        // Setup button settings
-        every { buttonSettings.getButtons() } returns emptyList()
+        // Setup quick buttons flow from settings repository
+        every { settingsRepository.quickButtons } returns quickButtonsFlow
 
         // Relaxed attach for init
         coEvery { terminalRepository.attach(any(), any()) } returns Unit
@@ -114,7 +113,6 @@ class TerminalViewModelTest {
             sessionRepository = sessionRepository,
             settingsRepository = settingsRepository,
             modifierKeySettings = modifierKeySettings,
-            buttonSettings = buttonSettings,
             clipboardService = clipboardService
         )
     }

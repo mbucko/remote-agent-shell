@@ -4,6 +4,8 @@ import com.ras.data.credentials.CredentialRepository
 import com.ras.data.credentials.CredentialRepositoryImpl
 import com.ras.data.reconnection.ReconnectionService
 import com.ras.data.reconnection.ReconnectionServiceImpl
+import com.ras.data.settings.SettingsRepository
+import com.ras.data.settings.SettingsRepositoryImpl
 import com.ras.domain.startup.AttemptReconnectionUseCase
 import com.ras.domain.startup.AttemptReconnectionUseCaseImpl
 import com.ras.domain.startup.CheckCredentialsUseCase
@@ -52,4 +54,10 @@ abstract class StartupModule {
     abstract fun bindAttemptReconnectionUseCase(
         impl: AttemptReconnectionUseCaseImpl
     ): AttemptReconnectionUseCase
+
+    @Binds
+    @Singleton
+    abstract fun bindSettingsRepository(
+        impl: SettingsRepositoryImpl
+    ): SettingsRepository
 }

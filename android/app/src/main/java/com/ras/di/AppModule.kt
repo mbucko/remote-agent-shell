@@ -6,7 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.ras.data.connection.ConnectionConfig
 import com.ras.data.settings.ModifierKeySettings
-import com.ras.data.settings.SettingsRepository
+import com.ras.data.settings.SettingsRepositoryImpl
 import com.ras.util.AndroidClipboardService
 import com.ras.util.ClipboardService
 import dagger.Binds
@@ -84,9 +84,9 @@ object AppModule {
 @InstallIn(SingletonComponent::class)
 abstract class AppBindingsModule {
     /**
-     * Binds ModifierKeySettings interface to SettingsRepository implementation.
+     * Binds ModifierKeySettings interface to SettingsRepositoryImpl.
      */
     @Binds
     @Singleton
-    abstract fun bindModifierKeySettings(impl: SettingsRepository): ModifierKeySettings
+    abstract fun bindModifierKeySettings(impl: SettingsRepositoryImpl): ModifierKeySettings
 }

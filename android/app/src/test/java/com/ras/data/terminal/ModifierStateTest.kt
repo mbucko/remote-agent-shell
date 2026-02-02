@@ -132,37 +132,37 @@ class ModifierStateTest {
     @Test
     fun `getAppShortcut returns PASTE for Meta+v`() {
         val state = ModifierState(meta = ModifierMode.STICKY)
-        assertEquals(AppAction.PASTE, state.getAppShortcut('v'))
+        assertEquals(AppAction.PASTE_HOST, state.getAppShortcut('v'))
     }
 
     @Test
     fun `getAppShortcut returns PASTE for Meta+V uppercase`() {
         val state = ModifierState(meta = ModifierMode.STICKY)
-        assertEquals(AppAction.PASTE, state.getAppShortcut('V'))
+        assertEquals(AppAction.PASTE_HOST, state.getAppShortcut('V'))
     }
 
     @Test
     fun `getAppShortcut returns PASTE for Ctrl+Shift+v`() {
         val state = ModifierState(ctrl = ModifierMode.STICKY, shift = ModifierMode.STICKY)
-        assertEquals(AppAction.PASTE, state.getAppShortcut('v'))
+        assertEquals(AppAction.PASTE_HOST, state.getAppShortcut('v'))
     }
 
     @Test
     fun `getAppShortcut returns PASTE for Ctrl+Shift+V uppercase`() {
         val state = ModifierState(ctrl = ModifierMode.STICKY, shift = ModifierMode.STICKY)
-        assertEquals(AppAction.PASTE, state.getAppShortcut('V'))
+        assertEquals(AppAction.PASTE_HOST, state.getAppShortcut('V'))
     }
 
     @Test
     fun `getAppShortcut handles LOCKED mode same as STICKY for Meta+V`() {
         val state = ModifierState(meta = ModifierMode.LOCKED)
-        assertEquals(AppAction.PASTE, state.getAppShortcut('v'))
+        assertEquals(AppAction.PASTE_HOST, state.getAppShortcut('v'))
     }
 
     @Test
     fun `getAppShortcut handles LOCKED mode same as STICKY for Ctrl+Shift+V`() {
         val state = ModifierState(ctrl = ModifierMode.LOCKED, shift = ModifierMode.LOCKED)
-        assertEquals(AppAction.PASTE, state.getAppShortcut('v'))
+        assertEquals(AppAction.PASTE_HOST, state.getAppShortcut('v'))
     }
 
     // ==========================================================================

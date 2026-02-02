@@ -8,7 +8,7 @@ import com.ras.data.settings.SETTINGS_VERSION
 import com.ras.data.settings.SettingsDefaults
 import com.ras.data.settings.SettingsKeys
 import com.ras.data.settings.SettingsQuickButton
-import com.ras.data.settings.SettingsRepository
+import com.ras.data.settings.SettingsRepositoryImpl
 import com.ras.data.settings.SettingsSection
 import io.mockk.every
 import io.mockk.mockk
@@ -27,7 +27,7 @@ class SettingsRepositoryTest {
     private lateinit var context: Context
     private lateinit var prefs: SharedPreferences
     private lateinit var editor: SharedPreferences.Editor
-    private lateinit var repository: SettingsRepository
+    private lateinit var repository: SettingsRepositoryImpl
 
     // In-memory storage for testing
     private val storage = mutableMapOf<String, Any?>()
@@ -84,7 +84,7 @@ class SettingsRepositoryTest {
         every { editor.apply() } returns Unit
 
         storage.clear()
-        repository = SettingsRepository(context)
+        repository = SettingsRepositoryImpl(context)
     }
 
     // ==========================================================================
@@ -250,7 +250,7 @@ class SettingsRepositoryTest {
     @Test
     fun `serialize all buttons`() {
         val json = repository.serializeQuickButtons(SettingsQuickButton.ALL)
-        assertEquals("""["yes","no","ctrl_c","esc","tab","up","down","backspace"]""", json)
+        assertEquals("""["yes","no","ctrl_c","esc","tab","shift_tab","up","down","backspace"]""", json)
     }
 
     @Test
@@ -600,12 +600,13 @@ class SettingsRepositoryTest {
 
     @Test
     fun `SettingsQuickButton ALL contains all buttons`() {
-        assertEquals(8, SettingsQuickButton.ALL.size)
+        assertEquals(9, SettingsQuickButton.ALL.size)
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.YES))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.NO))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.CTRL_C))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.ESC))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.TAB))
+        assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.SHIFT_TAB))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.ARROW_UP))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.ARROW_DOWN))
         assertTrue(SettingsQuickButton.ALL.contains(SettingsQuickButton.BACKSPACE))
@@ -613,11 +614,12 @@ class SettingsRepositoryTest {
 
     @Test
     fun `SettingsQuickButton has correct key sequences`() {
-        assertEquals("y", SettingsQuickButton.YES.keySequence)
-        assertEquals("n", SettingsQuickButton.NO.keySequence)
+        assertEquals("Yes", SettingsQuickButton.YES.keySequence)
+        assertEquals("No", SettingsQuickButton.NO.keySequence)
         assertEquals("\u0003", SettingsQuickButton.CTRL_C.keySequence)
         assertEquals("\u001b", SettingsQuickButton.ESC.keySequence)
         assertEquals("\t", SettingsQuickButton.TAB.keySequence)
+        assertEquals("\u001b[Z", SettingsQuickButton.SHIFT_TAB.keySequence)
         assertEquals("\u001b[A", SettingsQuickButton.ARROW_UP.keySequence)
         assertEquals("\u001b[B", SettingsQuickButton.ARROW_DOWN.keySequence)
         assertEquals("\u007f", SettingsQuickButton.BACKSPACE.keySequence)
