@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.credentials.CredentialRepository
+import com.ras.data.model.DeviceStatus
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.SettingsRepository
 import com.ras.domain.unpair.UnpairDeviceUseCase
@@ -21,7 +22,7 @@ import javax.inject.Inject
 /**
  * ViewModel for HomeScreen.
  *
- * Manages device info loading, connection state, and navigation events.
+ * Manages multi-device display, connection state, and navigation events.
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -47,39 +48,69 @@ class HomeViewModel @Inject constructor(
     private var hasCheckedAutoConnect = false
 
     init {
-        loadDeviceInfo()
+        loadDevices()
+        observeDeviceChanges()
         observeConnectionState()
         observeSessionCount()
         observeUnpairNotifications()
     }
 
-    private fun loadDeviceInfo() {
+    private fun loadDevices() {
         viewModelScope.launch {
-            val hasCredentials = credentialRepository.hasCredentials()
+            try {
+                val devices = credentialRepository.getAllDevicesFlow()
+                devices.collect { pairedDevices ->
+                    if (pairedDevices.isEmpty()) {
+                        _state.value = HomeState.NoDevices
+                        return@collect
+                    }
 
-            if (!hasCredentials) {
-                _state.value = HomeState.NoPairedDevice
-                return@launch
-            }
+                    val selectedDevice = credentialRepository.getSelectedDevice()
+                    val isConnected = connectionManager.isConnected.value
+                    val sessions = sessionRepository.sessions.value
 
-            val deviceName = credentialRepository.getDeviceName() ?: "Unknown Device"
-            val deviceType = credentialRepository.getDeviceType()
-            val isConnected = connectionManager.isConnected.value
+                    val deviceInfoList = pairedDevices.map { device ->
+                        val isActive = device.deviceId == selectedDevice?.deviceId
+                        DeviceInfo(
+                            deviceId = device.deviceId,
+                            name = device.deviceName,
+                            type = device.deviceType,
+                            connectionState = when {
+                                isActive && isConnected -> ConnectionState.CONNECTED
+                                isActive && !isConnected -> ConnectionState.DISCONNECTED
+                                else -> ConnectionState.DISCONNECTED
+                            },
+                            sessionCount = if (isActive && isConnected) sessions.size else 0,
+                            status = device.status,
+                            lastConnectedAt = device.lastConnectedAt,
+                            pairedAt = device.pairedAt
+                        )
+                    }
 
-            val sessions = sessionRepository.sessions.value
-            _state.value = HomeState.HasDevice(
-                name = deviceName,
-                type = deviceType,
-                connectionState = if (isConnected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
-                sessionCount = if (isConnected) sessions.size else 0
-            )
+                    _state.value = HomeState.HasDevices(
+                        devices = deviceInfoList,
+                        activeDeviceId = selectedDevice?.deviceId
+                    )
 
-            // Auto-connect if enabled and we have a device
-            if (!hasCheckedAutoConnect) {
-                hasCheckedAutoConnect = true
-                if (settingsRepository.getAutoConnectEnabled()) {
-                    _events.emit(HomeUiEvent.NavigateToConnecting)
+                    // Auto-connect if enabled and we have a selected device
+                    if (!hasCheckedAutoConnect && selectedDevice != null) {
+                        hasCheckedAutoConnect = true
+                        if (settingsRepository.getAutoConnectEnabled()) {
+                            _events.emit(HomeUiEvent.NavigateToConnecting(selectedDevice.deviceId))
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load devices", e)
+                _state.value = HomeState.NoDevices
+            }
+        }
+    }
+
+    private fun observeDeviceChanges() {
+        viewModelScope.launch {
+            credentialRepository.getAllDevicesFlow().collect {
+                loadDevices()
             }
         }
     }
@@ -88,15 +119,26 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             connectionManager.isConnected.collect { isConnected ->
                 val currentState = _state.value
-                if (currentState is HomeState.HasDevice) {
-                    _state.value = currentState.copy(
-                        connectionState = if (isConnected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
-                        sessionCount = if (isConnected) currentState.sessionCount else 0
-                    )
+                if (currentState is HomeState.HasDevices) {
+                    val selectedDevice = credentialRepository.getSelectedDevice()
+
+                    // Update connection state for active device
+                    val updatedDevices = currentState.devices.map { device ->
+                        if (device.deviceId == selectedDevice?.deviceId) {
+                            device.copy(
+                                connectionState = if (isConnected) ConnectionState.CONNECTED else ConnectionState.DISCONNECTED,
+                                sessionCount = if (isConnected) device.sessionCount else 0
+                            )
+                        } else {
+                            device
+                        }
+                    }
+
+                    _state.value = currentState.copy(devices = updatedDevices)
 
                     // Navigate to sessions when connected
-                    if (isConnected) {
-                        _events.emit(HomeUiEvent.NavigateToSessions)
+                    if (isConnected && selectedDevice != null) {
+                        _events.emit(HomeUiEvent.NavigateToSessions(selectedDevice.deviceId))
                     }
                 }
             }
@@ -107,8 +149,20 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             sessionRepository.sessions.collect { sessions ->
                 val currentState = _state.value
-                if (currentState is HomeState.HasDevice && currentState.connectionState == ConnectionState.CONNECTED) {
-                    _state.value = currentState.copy(sessionCount = sessions.size)
+                if (currentState is HomeState.HasDevices) {
+                    val selectedDevice = credentialRepository.getSelectedDevice()
+                    val isConnected = connectionManager.isConnected.value
+
+                    if (isConnected && selectedDevice != null) {
+                        val updatedDevices = currentState.devices.map { device ->
+                            if (device.deviceId == selectedDevice.deviceId) {
+                                device.copy(sessionCount = sessions.size)
+                            } else {
+                                device
+                            }
+                        }
+                        _state.value = currentState.copy(devices = updatedDevices)
+                    }
                 }
             }
         }
@@ -116,21 +170,28 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Observe unpair notifications from daemon.
-     * When daemon unpairs this device, use case handles cleanup and update UI.
+     * When daemon unpairs this device, update device status to show unpaired.
      */
     private fun observeUnpairNotifications() {
         viewModelScope.launch {
             connectionManager.unpairedByDaemon.collect { notification ->
                 try {
-                    // Use case handles all unpair logic (clear credentials, disconnect)
-                    // Pass null deviceId since daemon already knows about the unpair
-                    unpairDeviceUseCase(deviceId = null)
+                    // Get the device that was unpaired
+                    val unpairedDevice = credentialRepository.getSelectedDevice()
 
-                    // Show notification to user
-                    _events.emit(HomeUiEvent.ShowSnackbar("Unpaired by host: ${notification.reason}"))
+                    if (unpairedDevice != null) {
+                        // Mark device as unpaired by daemon
+                        credentialRepository.updateDeviceStatus(
+                            unpairedDevice.deviceId,
+                            DeviceStatus.UNPAIRED_BY_DAEMON
+                        )
 
-                    // Update state to show no paired device
-                    _state.value = HomeState.NoPairedDevice
+                        // Show notification to user
+                        _events.emit(HomeUiEvent.ShowSnackbar("Unpaired by host: ${notification.reason}"))
+
+                        // Refresh device list
+                        loadDevices()
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to handle daemon unpair notification", e)
                     _events.emit(HomeUiEvent.ShowSnackbar("Unpair failed: ${e.message}"))
@@ -140,44 +201,91 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * Called when user taps on a device to connect or open sessions.
+     */
+    fun onDeviceClicked(deviceId: String) {
+        viewModelScope.launch {
+            val currentState = _state.value
+            if (currentState !is HomeState.HasDevices) return@launch
+
+            val device = currentState.devices.find { it.deviceId == deviceId } ?: return@launch
+
+            // If device is unpaired, show snackbar
+            if (device.status != DeviceStatus.PAIRED) {
+                _events.emit(HomeUiEvent.ShowSnackbar("Device is unpaired. Please remove and re-pair."))
+                return@launch
+            }
+
+            // If already connected, go to sessions
+            if (device.connectionState == ConnectionState.CONNECTED) {
+                _events.emit(HomeUiEvent.NavigateToSessions(deviceId))
+            } else {
+                // Select this device and connect
+                credentialRepository.setSelectedDevice(deviceId)
+                _events.emit(HomeUiEvent.NavigateToConnecting(deviceId))
+            }
+        }
+    }
+
+    /**
      * Called when user taps Connect button.
+     * @deprecated Use onDeviceClicked instead
      */
     fun connect() {
         viewModelScope.launch {
-            _events.emit(HomeUiEvent.NavigateToConnecting)
+            val selectedDevice = credentialRepository.getSelectedDevice()
+            if (selectedDevice != null) {
+                _events.emit(HomeUiEvent.NavigateToConnecting(selectedDevice.deviceId))
+            }
         }
     }
 
     /**
      * Called when user taps Open Sessions button (when already connected).
+     * @deprecated Use onDeviceClicked instead
      */
     fun openSessions() {
         viewModelScope.launch {
-            _events.emit(HomeUiEvent.NavigateToSessions)
+            val selectedDevice = credentialRepository.getSelectedDevice()
+            if (selectedDevice != null) {
+                _events.emit(HomeUiEvent.NavigateToSessions(selectedDevice.deviceId))
+            }
         }
     }
 
     /**
-     * Called when user taps Unpair button.
-     * Delegates to use case which handles the complete unpair flow.
+     * Called when user wants to unpair a specific device.
      */
-    fun unpair() {
+    fun unpairDevice(deviceId: String) {
         viewModelScope.launch {
             try {
-                // Get device ID for daemon notification
-                val deviceId = credentialRepository.getCredentials()?.deviceId
-
                 // Use case handles all unpair logic
                 unpairDeviceUseCase(deviceId)
 
-                // Update state
-                _state.value = HomeState.NoPairedDevice
-
                 // Show success message
                 _events.emit(HomeUiEvent.ShowSnackbar("Device unpaired"))
+
+                // Refresh device list
+                loadDevices()
             } catch (e: Exception) {
                 Log.e(TAG, "Unpair failed", e)
                 _events.emit(HomeUiEvent.ShowSnackbar("Unpair failed: ${e.message}"))
+            }
+        }
+    }
+
+    /**
+     * Called when user wants to remove an unpaired device.
+     */
+    fun removeDevice(deviceId: String) {
+        viewModelScope.launch {
+            try {
+                credentialRepository.removeDevice(deviceId)
+                _events.emit(HomeUiEvent.ShowSnackbar("Device removed"))
+                loadDevices()
+            } catch (e: Exception) {
+                Log.e(TAG, "Remove failed", e)
+                _events.emit(HomeUiEvent.ShowSnackbar("Remove failed: ${e.message}"))
             }
         }
     }
@@ -221,6 +329,6 @@ class HomeViewModel @Inject constructor(
      */
     fun refresh() {
         hasCheckedAutoConnect = true // Don't auto-connect on refresh
-        loadDeviceInfo()
+        loadDevices()
     }
 }
