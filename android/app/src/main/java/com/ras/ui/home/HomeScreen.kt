@@ -255,7 +255,13 @@ private fun HasDeviceContent(
         AlertDialog(
             onDismissRequest = { showUnpairDialog = false },
             title = { Text("Unpair Device") },
-            text = { Text("Are you sure you want to unpair? You'll need to scan the QR code again to reconnect.") },
+            text = {
+                Text(
+                    "This will remove the pairing with your computer. " +
+                    "To reconnect, you'll need to scan the QR code again.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {

@@ -12,6 +12,8 @@ import com.ras.domain.startup.CheckCredentialsUseCase
 import com.ras.domain.startup.CheckCredentialsUseCaseImpl
 import com.ras.domain.startup.ClearCredentialsUseCase
 import com.ras.domain.startup.ClearCredentialsUseCaseImpl
+import com.ras.domain.unpair.UnpairDeviceUseCase
+import com.ras.domain.unpair.UnpairDeviceUseCaseImpl
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -42,6 +44,12 @@ abstract class StartupModule {
     abstract fun bindClearCredentialsUseCase(
         impl: ClearCredentialsUseCaseImpl
     ): ClearCredentialsUseCase
+
+    @Binds
+    @Singleton
+    abstract fun bindUnpairDeviceUseCase(
+        impl: UnpairDeviceUseCaseImpl
+    ): UnpairDeviceUseCase
 
     @Binds
     @Singleton

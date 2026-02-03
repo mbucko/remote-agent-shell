@@ -1,11 +1,13 @@
 package com.ras.ui.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.SettingsRepository
+import com.ras.domain.unpair.UnpairDeviceUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,8 +28,13 @@ class HomeViewModel @Inject constructor(
     private val credentialRepository: CredentialRepository,
     private val connectionManager: ConnectionManager,
     private val settingsRepository: SettingsRepository,
-    private val sessionRepository: SessionRepository
+    private val sessionRepository: SessionRepository,
+    private val unpairDeviceUseCase: UnpairDeviceUseCase
 ) : ViewModel() {
+
+    companion object {
+        private const val TAG = "HomeViewModel"
+    }
 
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
@@ -109,19 +116,25 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Observe unpair notifications from daemon.
-     * When daemon unpairs this device, clear credentials and update UI.
+     * When daemon unpairs this device, use case handles cleanup and update UI.
      */
     private fun observeUnpairNotifications() {
         viewModelScope.launch {
             connectionManager.unpairedByDaemon.collect { notification ->
-                // Clear credentials immediately
-                credentialRepository.clearCredentials()
+                try {
+                    // Use case handles all unpair logic (clear credentials, disconnect)
+                    // Pass null deviceId since daemon already knows about the unpair
+                    unpairDeviceUseCase(deviceId = null)
 
-                // Show notification to user
-                _events.emit(HomeUiEvent.ShowSnackbar("Unpaired by host: ${notification.reason}"))
+                    // Show notification to user
+                    _events.emit(HomeUiEvent.ShowSnackbar("Unpaired by host: ${notification.reason}"))
 
-                // Update state to show no paired device
-                _state.value = HomeState.NoPairedDevice
+                    // Update state to show no paired device
+                    _state.value = HomeState.NoPairedDevice
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to handle daemon unpair notification", e)
+                    _events.emit(HomeUiEvent.ShowSnackbar("Unpair failed: ${e.message}"))
+                }
             }
         }
     }
@@ -146,24 +159,16 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Called when user taps Unpair button.
-     * Sends unpair request to daemon if connected, then clears local credentials.
+     * Delegates to use case which handles the complete unpair flow.
      */
     fun unpair() {
         viewModelScope.launch {
             try {
-                // If connected, send unpair request to daemon
-                if (connectionManager.isConnected.value) {
-                    val credentials = credentialRepository.getCredentials()
-                    if (credentials != null) {
-                        connectionManager.sendUnpairRequest(credentials.deviceId)
-                    }
-                }
+                // Get device ID for daemon notification
+                val deviceId = credentialRepository.getCredentials()?.deviceId
 
-                // Clear credentials locally (regardless of daemon response)
-                credentialRepository.clearCredentials()
-
-                // Disconnect if still connected
-                connectionManager.disconnectGracefully("unpair")
+                // Use case handles all unpair logic
+                unpairDeviceUseCase(deviceId)
 
                 // Update state
                 _state.value = HomeState.NoPairedDevice
@@ -171,9 +176,8 @@ class HomeViewModel @Inject constructor(
                 // Show success message
                 _events.emit(HomeUiEvent.ShowSnackbar("Device unpaired"))
             } catch (e: Exception) {
-                // Log error but continue with unpair (best effort to notify daemon)
-                android.util.Log.e("HomeViewModel", "Unpair failed", e)
-                _events.emit(HomeUiEvent.ShowSnackbar("Unpair completed (daemon notification failed)"))
+                Log.e(TAG, "Unpair failed", e)
+                _events.emit(HomeUiEvent.ShowSnackbar("Unpair failed: ${e.message}"))
             }
         }
     }

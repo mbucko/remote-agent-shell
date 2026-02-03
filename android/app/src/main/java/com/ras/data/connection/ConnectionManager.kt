@@ -74,6 +74,11 @@ class ConnectionManager @Inject constructor(
     companion object {
         private const val TAG = "ConnectionManager"
         private const val MAX_MESSAGE_SIZE = 16 * 1024 * 1024 // 16 MB
+
+        // Disconnect reason constants
+        const val DISCONNECT_REASON_UNPAIR = "unpair"
+        const val DISCONNECT_REASON_USER_REQUEST = "user_request"
+        const val DISCONNECT_REASON_APP_CLOSING = "app_closing"
     }
 
     // Exception handler to prevent silent failures in coroutines
@@ -487,9 +492,9 @@ class ConnectionManager @Inject constructor(
      * This allows the daemon to clean up immediately (e.g., resize terminal windows)
      * without waiting for heartbeat timeout detection.
      *
-     * @param reason Optional reason for disconnect (e.g., "user_request", "app_closing")
+     * @param reason Optional reason for disconnect (use DISCONNECT_REASON_* constants)
      */
-    suspend fun sendGracefulDisconnect(reason: String = "user_request") {
+    suspend fun sendGracefulDisconnect(reason: String = DISCONNECT_REASON_USER_REQUEST) {
         try {
             val disconnect = Disconnect.newBuilder()
                 .setReason(reason)
@@ -511,8 +516,10 @@ class ConnectionManager @Inject constructor(
      *
      * Sends a Disconnect message to the daemon, allowing it to clean up immediately,
      * then closes the local connection.
+     *
+     * @param reason Optional reason for disconnect (use DISCONNECT_REASON_* constants)
      */
-    suspend fun disconnectGracefully(reason: String = "user_request") {
+    suspend fun disconnectGracefully(reason: String = DISCONNECT_REASON_USER_REQUEST) {
         sendGracefulDisconnect(reason)
         // Small delay to let the message be sent
         delay(100)
