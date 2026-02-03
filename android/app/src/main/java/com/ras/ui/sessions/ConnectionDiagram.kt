@@ -1,15 +1,7 @@
 package com.ras.ui.sessions
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,22 +13,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -60,21 +44,18 @@ import com.ras.ui.theme.TerminalBlue
 import com.ras.ui.theme.TerminalCyan
 
 /**
- * Expandable connection diagram showing the path between phone and laptop.
- * Displays connection type, IP addresses, and latency with animated Canvas drawing.
+ * Connection diagram showing the path between phone and laptop.
+ * Displays connection type, IP addresses, and latency with Canvas drawing.
+ * Always expanded - shows full diagram without collapse option.
  */
 @Composable
 fun ConnectionDiagram(
     connectionPath: ConnectionPath?,
-    modifier: Modifier = Modifier,
-    initiallyExpanded: Boolean = false
+    modifier: Modifier = Modifier
 ) {
-    var isExpanded by remember { mutableStateOf(initiallyExpanded) }
-
     Card(
         modifier = modifier
-            .fillMaxWidth()
-            .clickable { isExpanded = !isExpanded },
+            .fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
         ),
@@ -88,21 +69,6 @@ fun ConnectionDiagram(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ConnectionTypeBadge(path = connectionPath)
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Expand/collapse icon
-                val rotation by animateFloatAsState(
-                    targetValue = if (isExpanded) 180f else 0f,
-                    animationSpec = tween(200),
-                    label = "arrow_rotation"
-                )
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (isExpanded) "Collapse" else "Expand",
-                    modifier = Modifier.rotate(rotation),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             // Latency indicator (always visible when available)
@@ -111,26 +77,10 @@ fun ConnectionDiagram(
                 LatencyIndicator(latencyMs = latency)
             }
 
-            // Expanded diagram
-            AnimatedVisibility(
-                visible = isExpanded && connectionPath != null,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                connectionPath?.let { path ->
-                    Spacer(modifier = Modifier.height(16.dp))
-                    ConnectionDiagramCanvas(path = path)
-                }
-            }
-
-            // Hint text when collapsed
-            if (!isExpanded) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Tap to view connection details",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
+            // Connection diagram (always visible when path available)
+            if (connectionPath != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                ConnectionDiagramCanvas(path = connectionPath)
             }
         }
     }

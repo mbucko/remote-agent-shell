@@ -163,8 +163,7 @@ fun SessionsScreen(
                                 connectionPath = connectionPath,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                initiallyExpanded = false
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
 
