@@ -9,10 +9,6 @@ import com.ras.notifications.NotificationChannels
 import com.ras.service.ConnectionServiceController
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -26,8 +22,6 @@ class RasApplication : Application() {
 
     @Inject
     lateinit var reconnectionController: ReconnectionController
-
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
         super.onCreate()

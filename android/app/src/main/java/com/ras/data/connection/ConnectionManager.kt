@@ -714,9 +714,6 @@ class ConnectionManager @Inject constructor(
             return
         }
 
-        // DEBUG: Log all event types
-        Log.d(TAG, "Received RasEvent: ${event.eventCase}")
-
         // Route based on event type
         when (event.eventCase) {
             RasEvent.EventCase.SESSION -> {

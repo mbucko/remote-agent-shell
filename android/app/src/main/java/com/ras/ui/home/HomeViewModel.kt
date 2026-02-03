@@ -49,7 +49,6 @@ class HomeViewModel @Inject constructor(
 
     init {
         loadDevices()
-        observeDeviceChanges()
         observeConnectionState()
         observeSessionCount()
         observeUnpairNotifications()
@@ -103,14 +102,6 @@ class HomeViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load devices", e)
                 _state.value = HomeState.NoDevices
-            }
-        }
-    }
-
-    private fun observeDeviceChanges() {
-        viewModelScope.launch {
-            credentialRepository.getAllDevicesFlow().collect {
-                loadDevices()
             }
         }
     }

@@ -331,7 +331,14 @@ class UnifiedServer:
             await self._on_device_removed(device_id, "Removed via CLI")
 
         # Remove from store
-        await self.device_store.remove(device_id)
+        try:
+            await self.device_store.remove(device_id)
+        except Exception as e:
+            logger.error(f"Failed to remove device from store: {e}")
+            return web.json_response(
+                {"error": "Failed to remove device from storage"},
+                status=500
+            )
 
         logger.info(f"Device removed via API: {device.name} ({device_id[:8]}...)")
 
