@@ -105,7 +105,7 @@ class ReconnectionServiceImplTest {
         ntfyClient = mockk(relaxed = true)
         orchestrator = mockk()
         mdnsDiscoveryService = mockk(relaxed = true)
-        coEvery { mdnsDiscoveryService.discoverDaemon(any(), any()) } returns null
+        coEvery { mdnsDiscoveryService.getDiscoveredDaemon(any(), any()) } returns null
     }
 
     @AfterEach
