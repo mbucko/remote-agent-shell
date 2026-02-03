@@ -106,7 +106,7 @@ class ReconnectionServiceImpl @Inject constructor(
         onProgress(ConnectionProgress.DiscoveryStarted)
         val mdnsResult = try {
             Log.d(TAG, "Trying mDNS discovery...")
-            mdnsDiscoveryService.discoverDaemon(timeoutMs = 2000L)
+            mdnsDiscoveryService.getDiscoveredDaemon(timeoutMs = 2000L)
         } catch (e: Exception) {
             Log.w(TAG, "mDNS discovery error: ${e.message}")
             null

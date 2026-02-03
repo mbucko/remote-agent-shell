@@ -4,12 +4,10 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.coroutines.resume
 
 /**
  * Service type for RAS daemon discovery.
@@ -34,9 +32,14 @@ data class DiscoveredDaemon(
  * by daemons. This enables fast local discovery (~10-50ms) without
  * needing ntfy.
  *
+ * This service uses continuous discovery (industry standard approach) to avoid
+ * NsdManager caching issues. The discovery runs continuously and maintains
+ * a state flow of discovered services. Query the current state instead of
+ * starting/stopping discovery for each connection attempt.
+ *
  * Usage:
  *     val service = MdnsDiscoveryService(context)
- *     val daemon = service.discoverDaemon(timeoutMs = 3000)
+ *     val daemon = service.getDiscoveredDaemon(timeoutMs = 3000)
  *     if (daemon != null) {
  *         // Found daemon at daemon.host:daemon.port
  *     }
@@ -48,115 +51,72 @@ class MdnsDiscoveryService(
         context.getSystemService(Context.NSD_SERVICE) as NsdManager
     }
 
+    // Continuous discovery state - maintains list of discovered daemons
+    private val _discoveredDaemons = MutableStateFlow<List<DiscoveredDaemon>>(emptyList())
+    val discoveredDaemons: StateFlow<List<DiscoveredDaemon>> = _discoveredDaemons
+
+    private var discoveryListener: NsdManager.DiscoveryListener? = null
+    private var isDiscoveryActive = false
+
+    companion object {
+        // Timeout for waiting for a daemon to appear in the discovered list
+        private const val DISCOVERY_TIMEOUT_MS = 3000L
+    }
+
+    init {
+        // Start continuous discovery immediately
+        startContinuousDiscovery()
+    }
+
     /**
-     * Discover a daemon on the local network via mDNS.
+     * Get a discovered daemon, optionally filtered by device ID.
+     * Waits up to timeoutMs for a daemon to be discovered.
+     *
+     * This queries the continuous discovery state rather than starting
+     * a new discovery, avoiding NsdManager caching issues.
      *
      * @param deviceId Optional: filter to find a specific daemon by device_id
      * @param timeoutMs Maximum time to wait for discovery (default 3s)
      * @return DiscoveredDaemon if found, null if not found or timeout
      */
-    suspend fun discoverDaemon(
+    suspend fun getDiscoveredDaemon(
         deviceId: String? = null,
-        timeoutMs: Long = 3000L
+        timeoutMs: Long = DISCOVERY_TIMEOUT_MS
     ): DiscoveredDaemon? {
-        Log.d(TAG, "Starting mDNS discovery for _ras._tcp services")
+        Log.d(TAG, "Querying discovered daemons (timeout: ${timeoutMs}ms)")
 
         return withTimeoutOrNull(timeoutMs) {
-            suspendCancellableCoroutine { continuation ->
-                var discoveredService: NsdServiceInfo? = null
-                var isCompleted = false
-
-                val discoveryListener = object : NsdManager.DiscoveryListener {
-                    override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                        Log.e(TAG, "Discovery start failed: $errorCode")
-                        if (!isCompleted) {
-                            isCompleted = true
-                            continuation.resume(null)
-                        }
-                    }
-
-                    override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                        Log.w(TAG, "Discovery stop failed: $errorCode")
-                    }
-
-                    override fun onDiscoveryStarted(serviceType: String) {
-                        Log.d(TAG, "Discovery started for $serviceType")
-                    }
-
-                    override fun onDiscoveryStopped(serviceType: String) {
-                        Log.d(TAG, "Discovery stopped for $serviceType")
-                    }
-
-                    override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                        Log.d(TAG, "Service found: ${serviceInfo.serviceName}")
-                        // Keep the first service found
-                        if (discoveredService == null) {
-                            discoveredService = serviceInfo
-                            // Resolve the service to get host/port
-                            resolveService(serviceInfo, deviceId) { daemon ->
-                                if (!isCompleted && daemon != null) {
-                                    isCompleted = true
-                                    try {
-                                        nsdManager.stopServiceDiscovery(this)
-                                    } catch (e: Exception) {
-                                        Log.w(TAG, "Error stopping discovery: ${e.message}")
-                                    }
-                                    continuation.resume(daemon)
-                                }
-                            }
-                        }
-                    }
-
-                    override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                        Log.d(TAG, "Service lost: ${serviceInfo.serviceName}")
-                    }
-                }
-
-                continuation.invokeOnCancellation {
-                    val reason = if (discoveredService == null) {
-                        "timed out - no daemon found on local network"
-                    } else {
-                        "completed"
-                    }
-                    Log.d(TAG, "Discovery cancelled: $reason")
-                    try {
-                        nsdManager.stopServiceDiscovery(discoveryListener)
-                    } catch (e: Exception) {
-                        // Ignore - might not have started yet
-                    }
-                }
-
-                try {
-                    nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to start discovery: ${e.message}")
-                    if (!isCompleted) {
-                        isCompleted = true
-                        continuation.resume(null)
-                    }
-                }
-            }
+            // Wait for at least one daemon to be discovered
+            _discoveredDaemons.first { daemons ->
+                daemons.isNotEmpty() && (deviceId == null || daemons.any { it.deviceId == deviceId })
+            }.firstOrNull { deviceId == null || it.deviceId == deviceId }
         }.also { result ->
             if (result != null) {
-                Log.i(TAG, "mDNS discovery successful: found daemon at ${result.host}:${result.port}")
+                Log.i(TAG, "Found daemon at ${result.host}:${result.port}")
             } else {
-                Log.w(TAG, "mDNS discovery failed: no daemon found on local network (timeout)")
+                Log.w(TAG, "No daemon found (timeout)")
             }
         }
     }
 
     /**
-     * Start continuous discovery and emit discovered daemons.
-     *
-     * @return Flow of discovered daemons
+     * Start continuous mDNS discovery.
+     * This runs continuously and updates the discoveredDaemons flow.
+     * Called once during initialization.
      */
-    fun discoverDaemonsFlow(): Flow<DiscoveredDaemon> = callbackFlow {
-        Log.d(TAG, "Starting continuous mDNS discovery")
+    private fun startContinuousDiscovery() {
+        if (isDiscoveryActive) {
+            Log.d(TAG, "Discovery already active")
+            return
+        }
 
-        val discoveryListener = object : NsdManager.DiscoveryListener {
+        Log.d(TAG, "Starting continuous mDNS discovery")
+        isDiscoveryActive = true
+
+        discoveryListener = object : NsdManager.DiscoveryListener {
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
                 Log.e(TAG, "Discovery start failed: $errorCode")
-                close()
+                isDiscoveryActive = false
             }
 
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
@@ -169,93 +129,114 @@ class MdnsDiscoveryService(
 
             override fun onDiscoveryStopped(serviceType: String) {
                 Log.d(TAG, "Continuous discovery stopped")
+                isDiscoveryActive = false
             }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 Log.d(TAG, "Service found: ${serviceInfo.serviceName}")
-                resolveService(serviceInfo, null) { daemon ->
-                    if (daemon != null) {
-                        trySend(daemon)
-                    }
+                resolveService(serviceInfo) { daemon ->
+                    daemon?.let { addDiscoveredDaemon(it) }
                 }
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {
                 Log.d(TAG, "Service lost: ${serviceInfo.serviceName}")
+                removeDiscoveredDaemon(serviceInfo.serviceName)
             }
         }
 
         try {
-            nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+            nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener!!)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start continuous discovery: ${e.message}")
-            close()
-        }
-
-        awaitClose {
-            Log.d(TAG, "Stopping continuous discovery")
-            try {
-                nsdManager.stopServiceDiscovery(discoveryListener)
-            } catch (e: Exception) {
-                Log.w(TAG, "Error stopping discovery: ${e.message}")
-            }
+            Log.e(TAG, "Failed to start discovery", e)
+            isDiscoveryActive = false
         }
     }
 
     /**
-     * Resolve a service to get its host and port.
+     * Stop continuous discovery. Call this when the service is destroyed.
+     */
+    fun stopDiscovery() {
+        if (!isDiscoveryActive) return
+
+        Log.d(TAG, "Stopping continuous discovery")
+        discoveryListener?.let { listener ->
+            try {
+                nsdManager.stopServiceDiscovery(listener)
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping discovery", e)
+            }
+        }
+        discoveryListener = null
+        isDiscoveryActive = false
+        _discoveredDaemons.value = emptyList()
+    }
+
+    /**
+     * Add a discovered daemon to the list.
+     */
+    private fun addDiscoveredDaemon(daemon: DiscoveredDaemon) {
+        val currentList = _discoveredDaemons.value.toMutableList()
+        // Remove any existing entry for this device to avoid duplicates
+        currentList.removeAll { it.deviceId == daemon.deviceId }
+        currentList.add(daemon)
+        _discoveredDaemons.value = currentList
+        Log.d(TAG, "Added daemon to list: ${daemon.host}:${daemon.port}")
+    }
+
+    /**
+     * Remove a daemon from the list when service is lost.
+     */
+    private fun removeDiscoveredDaemon(serviceName: String) {
+        val currentList = _discoveredDaemons.value.toMutableList()
+        currentList.removeAll { it.deviceId == null || serviceName.contains(it.deviceId) }
+        _discoveredDaemons.value = currentList
+        Log.d(TAG, "Removed daemon from list: $serviceName")
+    }
+
+    /**
+     * Resolve a service to get host and port information.
      */
     private fun resolveService(
         serviceInfo: NsdServiceInfo,
-        expectedDeviceId: String?,
         callback: (DiscoveredDaemon?) -> Unit
     ) {
-        val resolveListener = object : NsdManager.ResolveListener {
+        nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                Log.e(TAG, "Resolve failed for ${serviceInfo.serviceName}: $errorCode")
+                Log.w(TAG, "Resolve failed for ${serviceInfo.serviceName}: $errorCode")
                 callback(null)
             }
 
-            @Suppress("DEPRECATION")
-            override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                val host = serviceInfo.host?.hostAddress
-                val port = serviceInfo.port
-                val deviceId = serviceInfo.attributes["device_id"]?.toString(Charsets.UTF_8)
+            override fun onServiceResolved(resolvedService: NsdServiceInfo) {
+                Log.d(TAG, "Service resolved: ${resolvedService.serviceName} at ${resolvedService.host}:${resolvedService.port}")
 
-                Log.d(TAG, "Service resolved: $host:$port, device_id=$deviceId")
+                // Extract device ID from service name if present
+                val deviceId = extractDeviceId(resolvedService.serviceName)
 
-                // If filtering by device_id, check it matches
-                if (expectedDeviceId != null && deviceId != null && !deviceId.contains(expectedDeviceId)) {
-                    Log.d(TAG, "Device ID mismatch: expected $expectedDeviceId, got $deviceId")
-                    callback(null)
-                    return
-                }
+                val addresses = mutableListOf<String>()
+                resolvedService.host?.hostAddress?.let { addresses.add(it) }
 
-                if (host != null && port > 0) {
-                    @Suppress("DEPRECATION")
-                    val addresses = serviceInfo.host?.let { inetAddr ->
-                        listOfNotNull(inetAddr.hostAddress)
-                    } ?: emptyList()
-
-                    callback(DiscoveredDaemon(
-                        host = host,
-                        port = port,
-                        deviceId = deviceId,
-                        addresses = addresses
-                    ))
-                } else {
-                    Log.w(TAG, "Invalid service info: host=$host, port=$port")
-                    callback(null)
-                }
+                val daemon = DiscoveredDaemon(
+                    host = resolvedService.host?.hostAddress ?: return callback(null),
+                    port = resolvedService.port,
+                    deviceId = deviceId,
+                    addresses = addresses
+                )
+                callback(daemon)
             }
-        }
+        })
+    }
 
-        try {
-            @Suppress("DEPRECATION")
-            nsdManager.resolveService(serviceInfo, resolveListener)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to resolve service: ${e.message}")
-            callback(null)
+    /**
+     * Extract device ID from service name.
+     * Service names are typically "daemon_<deviceId>._ras._tcp"
+     */
+    private fun extractDeviceId(serviceName: String): String? {
+        return when {
+            serviceName.startsWith("daemon_") -> {
+                serviceName.removePrefix("daemon_").substringBefore(".")
+            }
+            else -> null
         }
     }
 }
