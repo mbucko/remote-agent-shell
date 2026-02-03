@@ -22,9 +22,9 @@ The app tries multiple connection strategies in order of preference:
 | Method | Scenario | Status |
 |--------|----------|--------|
 | **Tailscale Direct** | Both devices on same Tailscale network | ✅ Works |
-| **Local Network** | Same WiFi/LAN, direct HTTP signaling | ✅ Works |
-| **WebRTC + STUN** | Different networks, typical home NAT | ✅ Works |
-| **WebRTC + ntfy** | Signaling relay when direct fails | ✅ Works |
+| **Local Network** | Same WiFi/LAN, direct HTTP + WebRTC | ✅ Works |
+| **Direct HTTP + WebRTC (STUN)** | Different networks, STUN for NAT traversal | ✅ Works |
+| **ntfy Relay + WebRTC (STUN)** | HTTP blocked/NATed, ntfy signaling + STUN | ✅ Works |
 
 ### TODO
 
