@@ -5,13 +5,111 @@ import logging
 import time
 from typing import Awaitable, Callable
 
-from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
+from aiortc import (
+    RTCConfiguration,
+    RTCIceServer,
+    RTCPeerConnection,
+    RTCSessionDescription,
+)
 
 from ras.protocols import PeerOwnership, PeerState
 from ras.sdp_validator import validate_sdp
 from ras.vpn_candidate_injector import inject_vpn_candidates
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# WORKAROUND: aioice STUN Transaction Timer Race Condition
+# =============================================================================
+# PROBLEM:
+#   aioice 0.10.2 (and likely earlier versions) has a race condition where
+#   STUN Transaction retry timers continue to fire after the ICE transport
+#   is closed. When Transaction.__retry() executes, it tries to call
+#   sendto() on a closed socket (self._sock is None), causing:
+#
+#   AttributeError: 'NoneType' object has no attribute 'sendto'
+#
+#   This crash occurs during peer connection cleanup, particularly when
+#   rapidly connecting/disconnecting or during connection handoffs.
+#
+# ROOT CAUSE:
+#   - STUN binding requests have retry timers (5s, 10s, 20s, 40s intervals)
+#   - When peer.close() is called, the UDP socket closes immediately
+#   - But asyncio timer callbacks for retries are still scheduled in the event loop
+#   - Timer fires -> tries to send on closed socket -> crash
+#
+# UPSTREAM STATUS:
+#   - GitHub Issue: Related to #101 (StunProtocol connection_lost handling)
+#   - Not fixed in aioice 0.10.2 (latest as of 2025-11-28)
+#   - Track: https://github.com/aiortc/aioice/issues
+#
+# WHEN TO REMOVE:
+#   This workaround can be removed when:
+#   1. aioice releases a version that properly cancels STUN transaction
+#      timers when the transport closes (check release notes for
+#      "STUN timer cleanup" or "Transaction cancellation")
+#   2. OR when we migrate away from aiortc/aioice to a different ICE lib
+#
+# VERIFICATION:
+#   To verify the fix is no longer needed:
+#   1. Remove this monkey patch
+#   2. Run: pytest tests/test_connection_edge_cases.py -v
+#   3. Run rapid connect/disconnect test 20 times
+#   4. Check logs for no AttributeError in STUN retry paths
+#
+# REFERENCES:
+#   - aioice source: stun.py Transaction.__retry() method
+#   - Similar issues in: aiortc, Home Assistant WebRTC integrations
+# =============================================================================
+
+import aioice.stun
+
+_original_transaction_retry = aioice.stun.Transaction._Transaction__retry
+
+
+def _safe_transaction_retry(self):
+    """
+    Safe wrapper for Transaction.__retry() that handles closed transports.
+
+    Checks transport/socket validity before attempting retry.
+    Silently ignores retries on closed connections.
+    """
+    try:
+        # Check if protocol still exists
+        protocol = getattr(self, "_Transaction__protocol", None)
+        if protocol is None:
+            return
+
+        # Check if transport is still valid
+        transport = getattr(protocol, "transport", None)
+        if transport is None:
+            return
+
+        # Check if socket is still open (the actual crash point)
+        sock = getattr(transport, "_sock", None)
+        if sock is None:
+            return
+
+        # Also check asyncio transport state
+        if hasattr(transport, "is_closing") and transport.is_closing():
+            return
+
+        # All checks passed, proceed with original retry
+        return _original_transaction_retry(self)
+
+    except (AttributeError, OSError, RuntimeError):
+        # Any error during retry means transport is closing/closed
+        # Silently ignore - this is expected during cleanup
+        pass
+
+
+# Apply the monkey patch
+aioice.stun.Transaction._Transaction__retry = _safe_transaction_retry
+logger.debug("Applied aioice STUN timer race condition workaround")
+
+# =============================================================================
+# END WORKAROUND
+# =============================================================================
 
 
 class ConnectionTimer:
@@ -414,7 +512,9 @@ class PeerConnection:
             return False
         old_owner = self._owner
         self._owner = new_owner
-        logger.debug(f"Ownership transferred from {old_owner.value} to {new_owner.value}")
+        logger.debug(
+            f"Ownership transferred from {old_owner.value} to {new_owner.value}"
+        )
         return True
 
     async def close_by_owner(self, caller: PeerOwnership) -> bool:
