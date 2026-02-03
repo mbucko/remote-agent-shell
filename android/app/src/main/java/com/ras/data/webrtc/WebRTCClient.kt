@@ -665,12 +665,35 @@ class WebRTCClient(
             // Classify the path type
             val pathType = com.ras.data.connection.PathClassifier.classifyPath(localInfo, remoteInfo)
 
-            Log.i(TAG, "Active path: type=$pathType, local=${localInfo.ip}:${localInfo.port} (${localInfo.type}), remote=${remoteInfo.ip}:${remoteInfo.port} (${remoteInfo.type})")
+            // For WebRTC Direct, find srflx candidates to show public IPs
+            var localPublic: com.ras.data.connection.CandidateInfo? = null
+            var remotePublic: com.ras.data.connection.CandidateInfo? = null
+
+            if (pathType == com.ras.data.connection.PathType.WEBRTC_DIRECT) {
+                // Look for srflx candidates in all candidates
+                report.statsMap.values
+                    .filter { it.type == "local-candidate" || it.type == "remote-candidate" }
+                    .forEach { candidate ->
+                        parseCandidate(candidate)?.let { info ->
+                            if (info.isServerReflexive()) {
+                                if (candidate.id == localId) {
+                                    localPublic = info
+                                } else if (candidate.id == remoteId) {
+                                    remotePublic = info
+                                }
+                            }
+                        }
+                    }
+            }
+
+            Log.i(TAG, "Active path: type=$pathType, local=${localInfo.ip}:${localInfo.port} (${localInfo.type}), remote=${remoteInfo.ip}:${remoteInfo.port} (${remoteInfo.type}), localPublic=${localPublic?.ip}, remotePublic=${remotePublic?.ip}")
 
             com.ras.data.connection.ConnectionPath(
                 local = localInfo,
                 remote = remoteInfo,
-                type = pathType
+                type = pathType,
+                localPublic = localPublic,
+                remotePublic = remotePublic
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get active path from stats", e)

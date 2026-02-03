@@ -244,6 +244,86 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
                 color = onSurfaceVariantColor,
                 density = density
             )
+        } else if (path.type == PathType.WEBRTC_DIRECT) {
+            // WebRTC Direct: show NAT with public IPs
+            val natY = with(density) { 85.dp.toPx() }
+            val publicIpY = with(density) { 65.dp.toPx() }
+
+            // NAT boxes
+            drawNatBox(
+                x = phoneX,
+                y = natY,
+                color = connectionColor,
+                density = density
+            )
+            drawNatBox(
+                x = laptopX,
+                y = natY,
+                color = connectionColor,
+                density = density
+            )
+
+            // Public IPs above NAT (use public IPs if available, otherwise fall back)
+            val localDisplay = path.getLocalDisplayIp()
+            val remoteDisplay = path.getRemoteDisplayIp()
+
+            drawIpLabel(
+                text = "${localDisplay.ip}:${localDisplay.port}",
+                x = phoneX,
+                y = publicIpY,
+                color = onSurfaceVariantColor,
+                density = density
+            )
+
+            drawIpLabel(
+                text = "${remoteDisplay.ip}:${remoteDisplay.port}",
+                x = laptopX,
+                y = publicIpY,
+                color = onSurfaceVariantColor,
+                density = density
+            )
+
+            // Internet cloud at top
+            drawIpLabel(
+                text = "☁️",
+                x = canvasWidth / 2,
+                y = with(density) { 22.dp.toPx() },
+                color = onSurfaceVariantColor,
+                density = density
+            )
+            // Internet label below cloud
+            drawIpLabel(
+                text = "Internet",
+                x = canvasWidth / 2,
+                y = with(density) { 32.dp.toPx() },
+                color = onSurfaceVariantColor,
+                density = density
+            )
+
+            drawIpLabel(
+                text = "${path.remote.ip}:${path.remote.port}",
+                x = laptopX,
+                y = with(density) { 70.dp.toPx() },
+                color = onSurfaceVariantColor,
+                density = density
+            )
+
+            // Internet cloud icon at very top
+            drawIpLabel(
+                text = "☁️",
+                x = canvasWidth / 2,
+                y = with(density) { 22.dp.toPx() },
+                color = onSurfaceVariantColor,
+                density = density
+            )
+            // Internet label below cloud
+            drawIpLabel(
+                text = "Internet",
+                x = canvasWidth / 2,
+                y = with(density) { 32.dp.toPx() },
+                color = onSurfaceVariantColor,
+                density = density
+            )
         } else {
             // Show generic connection indicators for Internet-based connections
             drawIpLabel(
@@ -255,11 +335,16 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
             )
         }
 
-        // Draw path type in the middle
+        // Draw path type label (at top for Tailscale and WebRTC Direct, middle for others)
+        val labelY = when (path.type) {
+            PathType.TAILSCALE -> with(density) { 40.dp.toPx() }
+            PathType.WEBRTC_DIRECT -> with(density) { 55.dp.toPx() }
+            else -> canvasHeight * 0.45f
+        }
         drawCenterLabel(
             text = path.label,
             x = canvasWidth / 2,
-            y = canvasHeight * 0.45f,
+            y = labelY,
             textColor = connectionColor,
             backgroundColor = surfaceColor,
             density = density
@@ -290,60 +375,80 @@ private fun DrawScope.drawConnectionLines(
             )
         }
         PathType.WEBRTC_DIRECT -> {
-            // Arc with arrow indicators
-            val yOffset = with(density) { 20.dp.toPx() }
+            // WebRTC through NAT: lines go up to public IPs, then to Internet cloud
+            val topY = with(density) { 40.dp.toPx() }
+            val natY = with(density) { 80.dp.toPx() }
+            val ipOffset = with(density) { 20.dp.toPx() }
+
+            // Vertical lines from devices up to NAT/public IP level
             drawLine(
-                color = color,
-                start = Offset(startX, startY - yOffset),
-                end = Offset(endX, endY - yOffset),
+                color = color.copy(alpha = 0.7f),
+                start = Offset(startX, startY - ipOffset),
+                end = Offset(startX, natY),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
-            // Arrow heads
-            val arrowX = (startX + endX) / 2
-            val arrowY = (startY + endY) / 2 - yOffset
-            drawArrowHead(
-                x = arrowX,
-                y = arrowY,
-                color = color,
-                pointingRight = true,
-                density = density
+            drawLine(
+                color = color.copy(alpha = 0.7f),
+                start = Offset(endX, endY - ipOffset),
+                end = Offset(endX, natY),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
             )
-            drawArrowHead(
-                x = arrowX,
-                y = arrowY,
-                color = color,
-                pointingRight = false,
-                density = density
+
+            // Angled lines from NAT level up to Internet cloud at top
+            val internetY = topY
+            drawLine(
+                color = color.copy(alpha = 0.7f),
+                start = Offset(startX, natY),
+                end = Offset((startX + endX) / 2 - 15.dp.toPx(), internetY + 20.dp.toPx()),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = color.copy(alpha = 0.7f),
+                start = Offset(endX, natY),
+                end = Offset((startX + endX) / 2 + 15.dp.toPx(), internetY + 20.dp.toPx()),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
             )
         }
         PathType.TAILSCALE -> {
-            // Shield-like shape indicating VPN
-            val midX = (startX + endX) / 2
-            val midY = (startY + endY) / 2
-            val vpnOffset = with(density) { 30.dp.toPx() }
+            // VPN lines go up from devices to Tailscale VPN at top
+            val topY = with(density) { 40.dp.toPx() }
+            val ipOffset = with(density) { 20.dp.toPx() }
 
-            // Draw through "VPN cloud"
+            // Lines go from IP level (above devices) up to VPN at top
             drawLine(
-                color = color.copy(alpha = 0.5f),
-                start = Offset(startX, startY),
-                end = Offset(midX, midY - vpnOffset),
+                color = color.copy(alpha = 0.7f),
+                start = Offset(startX, startY - ipOffset),
+                end = Offset(startX, topY + 20.dp.toPx()),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
             drawLine(
-                color = color.copy(alpha = 0.5f),
-                start = Offset(midX, midY - vpnOffset),
-                end = Offset(endX, endY),
+                color = color.copy(alpha = 0.7f),
+                start = Offset(endX, endY - ipOffset),
+                end = Offset(endX, topY + 20.dp.toPx()),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
 
-            // VPN cloud indicator
-            drawCircle(
-                color = color.copy(alpha = 0.2f),
-                radius = with(density) { 24.dp.toPx() },
-                center = Offset(midX, midY - vpnOffset)
+            // Angled lines from vertical up to VPN label at top center
+            val vpnLabelY = topY
+            drawLine(
+                color = color.copy(alpha = 0.7f),
+                start = Offset(startX, topY + 20.dp.toPx()),
+                end = Offset((startX + endX) / 2 - 10.dp.toPx(), vpnLabelY + 12.dp.toPx()),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = color.copy(alpha = 0.7f),
+                start = Offset(endX, topY + 20.dp.toPx()),
+                end = Offset((startX + endX) / 2 + 10.dp.toPx(), vpnLabelY + 12.dp.toPx()),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
             )
         }
         PathType.RELAY -> {
@@ -402,6 +507,35 @@ private fun DrawScope.drawArrowHead(
         strokeWidth = strokeWidth,
         cap = StrokeCap.Round
     )
+}
+
+private fun DrawScope.drawNatBox(
+    x: Float,
+    y: Float,
+    color: Color,
+    density: androidx.compose.ui.unit.Density
+) {
+    val width = with(density) { 32.dp.toPx() }
+    val height = with(density) { 18.dp.toPx() }
+    val strokeWidth = with(density) { 1.5f.dp.toPx() }
+
+    // NAT box outline
+    drawRect(
+        color = color.copy(alpha = 0.6f),
+        topLeft = Offset(x - width / 2, y - height / 2),
+        size = Size(width, height),
+        style = Stroke(width = strokeWidth)
+    )
+
+    // NAT label inside
+    val paint = android.graphics.Paint().apply {
+        this.color = color.copy(alpha = 0.8f).toArgb()
+        textSize = with(density) { 8.sp.toPx() }
+        textAlign = android.graphics.Paint.Align.CENTER
+        isAntiAlias = true
+        isFakeBoldText = true
+    }
+    drawContext.canvas.nativeCanvas.drawText("NAT", x, y + 3.dp.toPx(), paint)
 }
 
 private fun DrawScope.drawPhoneIcon(

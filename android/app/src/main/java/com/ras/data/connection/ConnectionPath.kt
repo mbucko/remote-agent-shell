@@ -8,8 +8,23 @@ data class ConnectionPath(
     val local: CandidateInfo,
     val remote: CandidateInfo,
     val type: PathType,
-    val latencyMs: Long? = null
+    val latencyMs: Long? = null,
+    /** Public IP for local side (from srflx/STUN candidate) - for WebRTC Direct display */
+    val localPublic: CandidateInfo? = null,
+    /** Public IP for remote side (from srflx/STUN candidate) - for WebRTC Direct display */
+    val remotePublic: CandidateInfo? = null
 ) {
+    /**
+     * Get the IP to display for the local side.
+     * For WebRTC Direct, returns public IP if available, otherwise local IP.
+     */
+    fun getLocalDisplayIp(): CandidateInfo = localPublic ?: local
+
+    /**
+     * Get the IP to display for the remote side.
+     * For WebRTC Direct, returns public IP if available, otherwise remote IP.
+     */
+    fun getRemoteDisplayIp(): CandidateInfo = remotePublic ?: remote
     /**
      * Human-readable label for the connection type
      */
