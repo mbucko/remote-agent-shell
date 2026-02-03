@@ -42,7 +42,11 @@ from typing import Any, Callable, Coroutine, Optional
 
 import aiohttp
 
-from ras.ntfy_signaling.handler import DeviceStoreProtocol, NtfySignalingHandler, HandlerResult
+from ras.ntfy_signaling.handler import (
+    DeviceStoreProtocol,
+    NtfySignalingHandler,
+    HandlerResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +81,12 @@ class NtfySignalingSubscriber:
 
     # Health check thresholds
     # ntfy sends keepalives every 45 seconds, so we should see events regularly
-    SSE_HEALTH_TIMEOUT = 120.0  # seconds - consider unhealthy if no events for 2+ minutes
-    SSE_RECONNECT_TIMEOUT = 180.0  # seconds - force reconnect if no events for 3+ minutes
+    SSE_HEALTH_TIMEOUT = (
+        120.0  # seconds - consider unhealthy if no events for 2+ minutes
+    )
+    SSE_RECONNECT_TIMEOUT = (
+        180.0  # seconds - force reconnect if no events for 3+ minutes
+    )
 
     def __init__(
         self,
@@ -178,8 +186,12 @@ class NtfySignalingSubscriber:
         return {
             "subscribed": self._subscribed,
             "sse_connected": self._sse_connected,
-            "last_event_age_s": now - self._last_event_time if self._last_event_time > 0 else None,
-            "last_message_age_s": now - self._last_message_time if self._last_message_time > 0 else None,
+            "last_event_age_s": now - self._last_event_time
+            if self._last_event_time > 0
+            else None,
+            "last_message_age_s": now - self._last_message_time
+            if self._last_message_time > 0
+            else None,
             "reconnect_count": self._reconnect_count,
             "is_healthy": self.is_healthy(),
         }
@@ -204,7 +216,9 @@ class NtfySignalingSubscriber:
         # Start health monitoring
         self._health_task = asyncio.create_task(self._run_health_monitor())
         mode = "reconnection" if self._reconnection_mode else "pairing"
-        logger.info(f"Started ntfy signaling subscription ({mode}) to topic {self._topic[:8]}...")
+        logger.info(
+            f"Started ntfy signaling subscription ({mode}) to topic {self._topic[:8]}..."
+        )
 
     async def stop(self) -> None:
         """Stop subscription to ntfy topic."""
@@ -232,7 +246,9 @@ class NtfySignalingSubscriber:
                 pass
             self._subscription_task = None
 
-        logger.info(f"Stopped ntfy signaling subscription to topic {self._topic[:8]}...")
+        logger.info(
+            f"Stopped ntfy signaling subscription to topic {self._topic[:8]}..."
+        )
 
     async def _run_health_monitor(self) -> None:
         """Monitor SSE connection health and log warnings.
@@ -316,7 +332,9 @@ class NtfySignalingSubscriber:
                 self._sse_connected = False
                 self._reconnect_count += 1
                 if self._subscribed:
-                    logger.info(f"Reconnecting in {self.SSE_RECONNECT_DELAY}s... (reconnect #{self._reconnect_count})")
+                    logger.info(
+                        f"Reconnecting in {self.SSE_RECONNECT_DELAY}s... (reconnect #{self._reconnect_count})"
+                    )
                     await asyncio.sleep(self.SSE_RECONNECT_DELAY)
 
     async def _subscribe_sse(self, url: str) -> None:
@@ -364,14 +382,33 @@ class NtfySignalingSubscriber:
 
                     # Extract JSON data from SSE
                     json_data = line_str[5:].strip()
+                    logger.warning(
+                        f"[NTFY_RAW] SSE data received: {json_data[:200]}..."
+                    )  # Log first 200 chars
                     if json_data:
                         # Parse ntfy JSON envelope to extract message
                         encrypted = self._parse_ntfy_message(json_data)
                         if encrypted:
                             self._last_message_time = time.time()
-                            logger.info(f"Received ntfy message ({len(encrypted)} bytes)")
+                            logger.warning(
+                                f"[NTFY_MSG] Received ntfy MESSAGE event ({len(encrypted)} bytes)"
+                            )
                             # Process message in background
                             asyncio.create_task(self._process_message(encrypted))
+                        else:
+                            # Parse to see what event type it was
+                            try:
+                                data = json.loads(json_data)
+                                event = data.get("event", "unknown")
+                                logger.warning(
+                                    f"[NTFY_EVENT] Received ntfy event type: {event} (not a message)"
+                                )
+                            except:
+                                logger.warning(
+                                    f"[NTFY_EVENT] Failed to parse ntfy JSON"
+                                )
+                elif line_str:
+                    logger.warning(f"[NTFY_SSE] Non-data SSE line: {line_str[:100]}")
 
             # If we exit the loop normally, mark as disconnected
             self._sse_connected = False
@@ -420,7 +457,11 @@ class NtfySignalingSubscriber:
                 # Publish answer
                 success = await self._publish(result.answer_encrypted)
 
-                if success and self.on_offer_received and not result.is_capability_exchange:
+                if (
+                    success
+                    and self.on_offer_received
+                    and not result.is_capability_exchange
+                ):
                     # Notify callback with is_reconnection flag
                     # (Skip for capability exchange - no peer to authenticate)
                     await self.on_offer_received(
@@ -461,11 +502,17 @@ class NtfySignalingSubscriber:
                 ) as response:
                     publish_ms = (time.time() - publish_start) * 1000
                     if response.status == 200:
-                        logger.info(f"[TIMING] ntfy: publish_complete @ {publish_ms:.1f}ms")
-                        logger.debug(f"Published signaling response to {self._topic[:8]}...")
+                        logger.info(
+                            f"[TIMING] ntfy: publish_complete @ {publish_ms:.1f}ms"
+                        )
+                        logger.debug(
+                            f"Published signaling response to {self._topic[:8]}..."
+                        )
                         return True
                     else:
-                        logger.info(f"[TIMING] ntfy: publish_failed @ {publish_ms:.1f}ms (status {response.status})")
+                        logger.info(
+                            f"[TIMING] ntfy: publish_failed @ {publish_ms:.1f}ms (status {response.status})"
+                        )
                         logger.debug(f"Publish failed with status {response.status}")
             except Exception as e:
                 logger.debug(f"Publish attempt {attempt + 1} failed: {e}")
@@ -474,5 +521,7 @@ class NtfySignalingSubscriber:
             if attempt < self.MAX_PUBLISH_RETRIES - 1:
                 await asyncio.sleep(self.PUBLISH_RETRY_DELAYS[attempt])
 
-        logger.warning(f"Failed to publish signaling response after {self.MAX_PUBLISH_RETRIES} attempts")
+        logger.warning(
+            f"Failed to publish signaling response after {self.MAX_PUBLISH_RETRIES} attempts"
+        )
         return False

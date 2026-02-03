@@ -546,8 +546,12 @@ class ReconnectionSignaler(
         // Derive auth key for direct signaling
         val authKey = KeyDerivation.deriveKey(masterSecret, "auth")
 
+        // Compute topic for logging
+        val topic = NtfySignalingClient.computeTopic(masterSecret)
+        
         // Start both probes in parallel
-        Log.d(TAG, "Trying direct reconnection to $host:$port (parallel with ntfy)")
+        Log.w(TAG, "[EXCHANGE_SDP] Starting SDP exchange - host=$host:$port, ntfyTopic=$topic")
+        Log.w(TAG, "[EXCHANGE_SDP] Trying direct reconnection first (parallel with ntfy fallback)")
         onProgress?.invoke(ConnectionProgress.TryingDirectSignaling(host, port))
 
         // Start ntfy signaling warming up immediately (in parallel with direct)
@@ -692,7 +696,9 @@ class ReconnectionSignaler(
 
         // Compute topic
         val topic = NtfySignalingClient.computeTopic(masterSecret)
-        Log.d(TAG, "Ntfy topic: $topic")
+        Log.w(TAG, "[NTFY_TOPIC] ========== USING NTFY TOPIC: $topic ==========")
+        Log.w(TAG, "[NTFY_TOPIC] Master secret length: ${masterSecret.size} bytes")
+        Log.w(TAG, "[NTFY_TOPIC] Full topic computed from master secret")
 
         var lastError: Exception? = null
 
@@ -816,15 +822,17 @@ class ReconnectionSignaler(
         onProgress: SignalingProgressCallback?
     ): ReconnectionSignalerResult {
         // Subscribe first - this BLOCKS until WebSocket is connected
+        Log.w(TAG, "[ATTEMPT_NTFY] Attempt #$attemptNumber - Using topic: $topic")
         if (attemptNumber > 1) {
-            Log.d(TAG, "Subscribing to ntfy topic (attempt $attemptNumber)...")
+            Log.w(TAG, "[ATTEMPT_NTFY] Subscribing to ntfy topic (attempt $attemptNumber)...")
         } else {
-            Log.d(TAG, "Subscribing to ntfy topic (waiting for connection)...")
+            Log.w(TAG, "[ATTEMPT_NTFY] Subscribing to ntfy topic for first time...")
         }
         onProgress?.invoke(ConnectionProgress.NtfySubscribing(topic))
 
+        Log.w(TAG, "[ATTEMPT_NTFY] Calling ntfyClient.subscribe($topic)...")
         val messageFlow = ntfyClient.subscribe(topic)
-        Log.d(TAG, "Subscribed and connected to ntfy")
+        Log.w(TAG, "[ATTEMPT_NTFY] SUCCESS - Subscribed and connected to ntfy topic: $topic")
         onProgress?.invoke(ConnectionProgress.NtfySubscribed(topic))
 
         // Create and encrypt OFFER message
@@ -846,11 +854,12 @@ class ReconnectionSignaler(
         val sdpInfo = SdpInfo.parse(sdpOffer)
 
         // Publish offer with retry
-        Log.d(TAG, "Publishing reconnection offer with retry")
+        Log.w(TAG, "[ATTEMPT_NTFY] Publishing offer to topic: $topic (encrypted size: ${encryptedOffer.length} chars)")
         onProgress?.invoke(ConnectionProgress.NtfySendingOffer(topic, sdpInfo))
 
+        Log.w(TAG, "[ATTEMPT_NTFY] Calling ntfyClient.publishWithRetry($topic, ...)")
         ntfyClient.publishWithRetry(topic, encryptedOffer)
-        Log.d(TAG, "Offer published, waiting for answer")
+        Log.w(TAG, "[ATTEMPT_NTFY] Offer published successfully to topic: $topic, now waiting for answer")
         onProgress?.invoke(ConnectionProgress.NtfyWaitingForAnswer(topic))
 
         // Wait for valid answer

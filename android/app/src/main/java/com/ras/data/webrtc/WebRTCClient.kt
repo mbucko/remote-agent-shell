@@ -43,10 +43,9 @@ class WebRTCClient(
         private const val HEARTBEAT_INTERVAL_MS = 15_000L // 15 second heartbeat interval
         // Buffer threshold for backpressure - wait if buffer exceeds this
         private const val BUFFER_LOW_THRESHOLD = 64 * 1024L // 64 KB
-        // ICE gathering timeout - reduced from 10s because COMPLETE state may not fire
-        // during offer creation on Android. Host candidates are gathered immediately,
-        // STUN candidates within 1-2 seconds.
-        private const val ICE_GATHERING_TIMEOUT_MS = 2_000L
+        // ICE gathering timeout - increased to 5s to allow more time for STUN candidates
+        // Host candidates are gathered immediately, STUN candidates within 1-2 seconds
+        private const val ICE_GATHERING_TIMEOUT_MS = 5_000L
     }
 
     // Lock for thread-safe access to connection state

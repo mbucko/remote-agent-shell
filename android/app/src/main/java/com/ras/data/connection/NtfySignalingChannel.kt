@@ -116,9 +116,44 @@ class NtfySignalingChannel(
             hostsToTry.add(Pair(vpnHost, vpnPort))
         }
 
-        // If no direct hosts available, rely on ntfy-only path
+        // If no direct hosts available, use ntfy-only path
         if (hostsToTry.isEmpty()) {
-            Log.d(TAG, "No direct hosts available for SDP exchange, ntfy will be used")
+            Log.w(TAG, "[SEND_OFFER] No direct hosts available, using ntfy-only signaling")
+            
+            // Call exchangeSdp with empty host/port to trigger ntfy-only path
+            val result = signaler.exchangeSdp(
+                host = "",
+                port = 0,
+                masterSecret = masterSecret,
+                sdpOffer = sdp,
+                deviceId = deviceId,
+                deviceName = deviceName,
+                onProgress = onProgress
+            )
+            
+            when (result) {
+                is ReconnectionSignalerResult.Success -> {
+                    Log.i(TAG, "[SEND_OFFER] Got SDP answer via ntfy-only path")
+                    result.capabilities?.let { caps ->
+                        lastReceivedCapabilities = ConnectionCapabilities(
+                            tailscaleIp = caps.tailscaleIp.takeIf { it.isNotEmpty() },
+                            tailscalePort = caps.tailscalePort.takeIf { it > 0 },
+                            supportsWebRTC = caps.supportsWebrtc,
+                            supportsTurn = caps.supportsTurn,
+                            protocolVersion = caps.protocolVersion
+                        )
+                    }
+                    return result.sdpAnswer
+                }
+                is ReconnectionSignalerResult.NtfyTimeout -> {
+                    Log.e(TAG, "[SEND_OFFER] Ntfy signaling timed out")
+                    return null
+                }
+                else -> {
+                    Log.e(TAG, "[SEND_OFFER] Ntfy signaling failed: $result")
+                    return null
+                }
+            }
         }
 
         for ((tryHost, tryPort) in hostsToTry) {
