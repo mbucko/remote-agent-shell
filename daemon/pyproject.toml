@@ -49,5 +49,6 @@ markers = [
 
 [dependency-groups]
 dev = [
+    "aioresponses>=0.7.8",
     "pytest-timeout>=2.4.0",
 ]

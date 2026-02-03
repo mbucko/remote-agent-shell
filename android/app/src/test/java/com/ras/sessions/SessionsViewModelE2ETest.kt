@@ -96,8 +96,10 @@ class SessionsViewModelE2ETest {
     @Tag("e2e")
     @Test
     fun `transitions to loaded with sessions when sessions received`() = runTest {
+        advanceUntilIdle()
+
         viewModel.screenState.test {
-            awaitItem() // Initial Loaded(emptyList())
+            skipItems(1) // Skip initial Loaded(emptyList())
 
             sessionsFlow.value = listOf(
                 createSession("abc123def456", "Test Session")

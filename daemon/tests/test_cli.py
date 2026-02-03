@@ -4,6 +4,7 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from aioresponses import aioresponses
 from click.testing import CliRunner
 
 from ras.cli import main
@@ -269,19 +270,19 @@ class TestDevicesCommands:
             }]
         }))
 
-        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n")
+        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n  port: 8765\n")
 
-        result = runner.invoke(
-            main,
-            ["--config", str(config_file), "devices", "remove", "device123", "--force"]
-        )
+        # Mock HTTP DELETE to return 200 OK
+        with aioresponses() as mock:
+            mock.delete("http://127.0.0.1:8765/api/devices/device123", status=200)
+
+            result = runner.invoke(
+                main,
+                ["--config", str(config_file), "devices", "remove", "device123", "--force"]
+            )
 
         assert result.exit_code == 0
         assert "Device removed" in result.output
-
-        # Verify device was removed
-        data = json.loads(devices_file.read_text())
-        assert len(data["devices"]) == 0
 
     def test_devices_remove_not_found(self, runner, tmp_path):
         """Remove unknown device shows error."""
@@ -324,16 +325,17 @@ class TestDevicesCommands:
             ]
         }))
 
-        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n")
+        config_file.write_text(f"daemon:\n  devices_file: {devices_file}\n  port: 8765\n")
 
-        result = runner.invoke(
-            main,
-            ["--config", str(config_file), "devices", "remove", "--all", "--force"]
-        )
+        # Mock HTTP DELETE to return 200 OK for both devices
+        with aioresponses() as mock:
+            mock.delete("http://127.0.0.1:8765/api/devices/device1", status=200)
+            mock.delete("http://127.0.0.1:8765/api/devices/device2", status=200)
+
+            result = runner.invoke(
+                main,
+                ["--config", str(config_file), "devices", "remove", "--all", "--force"]
+            )
 
         assert result.exit_code == 0
         assert "Removed 2 devices" in result.output
-
-        # Verify all devices removed
-        data = json.loads(devices_file.read_text())
-        assert len(data["devices"]) == 0

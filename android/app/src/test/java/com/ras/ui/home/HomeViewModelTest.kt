@@ -249,11 +249,11 @@ class HomeViewModelTest {
             id = id,
             tmuxName = "tmux_$id",
             displayName = "Session $id",
-            agent = "test-agent",
             directory = "/test",
-            status = SessionStatus.ACTIVE,
-            lastActivity = Instant.now(),
-            createdAt = Instant.now()
+            agent = "test-agent",
+            createdAt = Instant.now(),
+            lastActivityAt = Instant.now(),
+            status = SessionStatus.ACTIVE
         )
     }
 }

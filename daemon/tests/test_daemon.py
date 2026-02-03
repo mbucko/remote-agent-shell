@@ -411,7 +411,8 @@ class TestUnpairHandling:
 
         assert result is True
         assert mock_conn.send.called
-        daemon._connection_manager.close_connection.assert_called_once_with("device123")
+        # Connection should stay open - phone will disconnect gracefully after processing
+        daemon._connection_manager.close_connection.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_send_unpair_notification_not_connected(self):

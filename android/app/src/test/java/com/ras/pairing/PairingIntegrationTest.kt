@@ -57,6 +57,53 @@ class PairingIntegrationTest {
         // Setup KeyManager
         every { keyManager.getOrCreateDeviceId() } returns "phone-device-id"
 
+        // Setup DAO to store and return entities (simulate in-memory storage)
+        val devices = mutableMapOf<String, com.ras.data.database.PairedDeviceEntity>()
+
+        coEvery { dao.insertDevice(any()) } answers {
+            val entity = firstArg<com.ras.data.database.PairedDeviceEntity>()
+            devices[entity.deviceId] = entity
+        }
+
+        coEvery { dao.getDevice(any()) } answers {
+            val deviceId = firstArg<String>()
+            devices[deviceId]
+        }
+
+        every { dao.getAllDevices() } answers {
+            kotlinx.coroutines.flow.flowOf(devices.values.toList())
+        }
+
+        coEvery { dao.getSelectedDevice() } answers {
+            devices.values.firstOrNull { it.isSelected }
+        }
+
+        coEvery { dao.clearAllSelections() } answers {
+            devices.values.forEach { entity ->
+                devices[entity.deviceId] = entity.copy(isSelected = false)
+            }
+        }
+
+        coEvery { dao.updateIsSelected(any(), any()) } answers {
+            val deviceId = firstArg<String>()
+            val isSelected = secondArg<Boolean>()
+            devices[deviceId]?.let { entity ->
+                devices[deviceId] = entity.copy(isSelected = isSelected)
+            }
+        }
+
+        coEvery { dao.setSelectedDevice(any()) } answers {
+            val deviceId = firstArg<String>()
+            // Clear all selections
+            devices.values.forEach { entity ->
+                devices[entity.deviceId] = entity.copy(isSelected = false)
+            }
+            // Set the specified device as selected
+            devices[deviceId]?.let { entity ->
+                devices[deviceId] = entity.copy(isSelected = true)
+            }
+        }
+
         // Create repository with mocked dependencies
         credentialRepository = CredentialRepositoryImpl(dao, encryptionHelper)
     }
@@ -84,9 +131,9 @@ class PairingIntegrationTest {
             masterSecret = masterSecret,
             deviceName = "My Laptop",
             deviceType = DeviceType.LAPTOP,
+            isSelected = true,
             daemonHost = "192.168.1.100",
-            daemonPort = 8080,
-            isSelected = true
+            daemonPort = 8080
         )
 
         // Step 2: RECONNECTION - Try to retrieve credentials by daemon device ID
