@@ -31,12 +31,12 @@ class CredentialRepositoryImpl @Inject constructor(
     // Multi-device operations
 
     override suspend fun getAllDevices(): List<PairedDevice> {
-        // This would need a different DAO query that returns all devices
-        // For now, we'll just use the Flow and get first value
-        return getAllDevicesFlow().first()
+        // Returns ALL devices including unpaired
+        return dao.getAllDevices().first().map { it.toDomainModel() }
     }
 
     override fun getAllDevicesFlow(): Flow<List<PairedDevice>> {
+        // Returns only PAIRED devices for UI display
         return dao.getAllPairedDevices().map { entities ->
             entities.map { entity -> entity.toDomainModel() }
         }

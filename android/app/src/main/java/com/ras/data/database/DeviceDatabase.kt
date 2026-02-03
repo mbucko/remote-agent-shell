@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [PairedDeviceEntity::class],
     version = 1,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class DeviceDatabase : RoomDatabase() {
     /**

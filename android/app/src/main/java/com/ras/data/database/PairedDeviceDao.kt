@@ -16,6 +16,13 @@ import kotlinx.coroutines.flow.Flow
 interface PairedDeviceDao {
 
     /**
+     * Get all devices (including unpaired).
+     * @return Flow of all devices, ordered by most recently paired first
+     */
+    @Query("SELECT * FROM paired_devices ORDER BY paired_at DESC")
+    fun getAllDevices(): Flow<List<PairedDeviceEntity>>
+
+    /**
      * Get all paired devices (excludes unpaired devices).
      * @return Flow of paired devices, ordered by most recently paired first
      */
