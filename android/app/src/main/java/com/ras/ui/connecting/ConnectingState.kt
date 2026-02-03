@@ -15,7 +15,8 @@ sealed class ConnectingState {
     /** Connection failed, showing error and retry option */
     data class Failed(
         val reason: ReconnectionResult.Failure,
-        val log: ConnectionLog
+        val log: ConnectionLog,
+        val message: String? = null  // Optional custom error message
     ) : ConnectingState()
 }
 

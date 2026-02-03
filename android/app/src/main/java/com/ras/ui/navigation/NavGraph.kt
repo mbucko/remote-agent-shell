@@ -33,8 +33,8 @@ fun NavGraph(
             it.savedStateHandle.remove<Boolean>("showDisconnectedMessage")
 
             HomeScreen(
-                onNavigateToConnecting = {
-                    navController.navigate(Routes.Connecting.route)
+                onNavigateToConnecting = { deviceId ->
+                    navController.navigate(Routes.Connecting.createRoute(deviceId))
                 },
                 onNavigateToPairing = {
                     navController.navigate(Routes.Pairing.route)
@@ -42,8 +42,8 @@ fun NavGraph(
                 onNavigateToSettings = {
                     navController.navigate(Routes.Settings.route)
                 },
-                onNavigateToSessions = {
-                    navController.navigate(Routes.Sessions.route) {
+                onNavigateToSessions = { deviceId ->
+                    navController.navigate(Routes.Sessions.createRoute(deviceId)) {
                         popUpTo(Routes.Home.route) { inclusive = false }
                     }
                 },
@@ -51,10 +51,17 @@ fun NavGraph(
             )
         }
 
-        composable(Routes.Connecting.route) {
+        composable(
+            route = Routes.Connecting.route,
+            arguments = listOf(
+                navArgument(NavArgs.DEVICE_ID) { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val deviceId = backStackEntry.arguments?.getString(NavArgs.DEVICE_ID) ?: return@composable
             ConnectingScreen(
-                onNavigateToSessions = {
-                    navController.navigate(Routes.Sessions.route) {
+                deviceId = deviceId,
+                onNavigateToSessions = { devId ->
+                    navController.navigate(Routes.Sessions.createRoute(devId)) {
                         popUpTo(Routes.Home.route) { inclusive = false }
                     }
                 },
@@ -77,8 +84,15 @@ fun NavGraph(
             )
         }
 
-        composable(Routes.Sessions.route) {
+        composable(
+            route = Routes.Sessions.route,
+            arguments = listOf(
+                navArgument(NavArgs.DEVICE_ID) { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val deviceId = backStackEntry.arguments?.getString(NavArgs.DEVICE_ID) ?: return@composable
             SessionsScreen(
+                deviceId = deviceId,
                 onSessionClick = { sessionId ->
                     navController.navigate(Routes.Terminal.createRoute(sessionId))
                 },

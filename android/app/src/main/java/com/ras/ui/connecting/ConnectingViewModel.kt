@@ -85,9 +85,15 @@ class ConnectingViewModel @Inject constructor(
                     _events.emit(ConnectingUiEvent.NavigateToSessions)
                 }
                 is ReconnectionResult.Failure.DeviceNotFound -> {
-                    // Device was unpaired from daemon - clear credentials locally
+                    // Device was unpaired from daemon - mark as unpaired locally
                     unpairDeviceUseCase(deviceId = null)
-                    _events.emit(ConnectingUiEvent.DeviceUnpaired)
+
+                    // Show error state with specific message instead of navigating back
+                    _state.value = ConnectingState.Failed(
+                        reason = result,
+                        log = currentLog,
+                        message = "Device was unpaired from daemon. Please remove and re-pair this device."
+                    )
                 }
                 is ReconnectionResult.Failure -> {
                     _state.value = ConnectingState.Failed(
