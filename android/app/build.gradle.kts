@@ -158,6 +158,11 @@ dependencies {
     // DataStore (for preferences)
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
+    // Room (for device database)
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+
     // OkHttp (for HTTP signaling)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
