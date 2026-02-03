@@ -124,6 +124,9 @@ class UnifiedServer:
         on_pairing_complete: Optional[
             Callable[[str, str], Awaitable[None]]
         ] = None,
+        on_device_removed: Optional[
+            Callable[[str, str], Awaitable[None]]
+        ] = None,
         tailscale_capabilities_provider: Optional[Callable[[], dict]] = None,
     ):
         """Initialize unified server.
@@ -137,6 +140,7 @@ class UnifiedServer:
             ntfy_server: ntfy server URL for signaling relay.
             on_device_connected: Callback when device connects (paired or new).
             on_pairing_complete: Callback when pairing completes.
+            on_device_removed: Callback when device is removed (device_id, reason).
             tailscale_capabilities_provider: Callable that returns Tailscale info dict.
         """
         self.device_store = device_store
@@ -148,6 +152,7 @@ class UnifiedServer:
         self.tailscale_capabilities_provider = tailscale_capabilities_provider
         self._on_device_connected = on_device_connected
         self._on_pairing_complete = on_pairing_complete
+        self._on_device_removed = on_device_removed
 
         # Pairing sessions
         self._pairing_sessions: Dict[str, PairingSession] = {}
@@ -177,6 +182,9 @@ class UnifiedServer:
         self.app.router.add_post("/api/pair", self._handle_start_pairing)
         self.app.router.add_get("/api/pair/{session_id}", self._handle_pairing_status)
         self.app.router.add_delete("/api/pair/{session_id}", self._handle_cancel_pairing)
+
+        # Device management API (for CLI)
+        self.app.router.add_delete("/api/devices/{device_id}", self._handle_remove_device)
 
         # Signaling (for phone during pairing)
         self.app.router.add_post("/signal/{session_id}", self._handle_signal)
@@ -308,6 +316,30 @@ class UnifiedServer:
         logger.info(f"Pairing session cancelled: {session_id[:8]}...")
 
         return web.json_response({"status": "cancelled"})
+
+    async def _handle_remove_device(self, request: web.Request) -> web.Response:
+        """Remove a paired device (called by CLI)."""
+        device_id = request.match_info["device_id"]
+
+        # Check if device exists
+        device = self.device_store.get(device_id)
+        if device is None:
+            return web.json_response({"error": "Device not found"}, status=404)
+
+        # If device is connected, send unpair notification before removing
+        if self._on_device_removed:
+            await self._on_device_removed(device_id, "Removed via CLI")
+
+        # Remove from store
+        await self.device_store.remove(device_id)
+
+        logger.info(f"Device removed via API: {device.name} ({device_id[:8]}...)")
+
+        return web.json_response({
+            "status": "removed",
+            "device_id": device_id,
+            "device_name": device.name
+        })
 
     async def _session_expiration_timer(self, session_id: str) -> None:
         """Timer to expire pairing session."""

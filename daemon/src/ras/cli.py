@@ -386,7 +386,12 @@ def devices_remove(
     import asyncio
 
     async def _remove():
+        import aiohttp
+
         config = ctx.obj["config"]
+        base_url = f"http://127.0.0.1:{config.port}"
+
+        # Still need to load device store for listing/matching, but not for removal
         devices_path = Path(config.daemon.devices_file).expanduser()
         store = JsonDeviceStore(devices_path)
         await store.load()
@@ -402,10 +407,22 @@ def devices_remove(
                     click.echo("Aborted.")
                     return
 
-            for device in all_devices:
-                await store.remove(device.device_id)
+            # Remove via daemon API
+            removed_count = 0
+            async with aiohttp.ClientSession() as http:
+                for device in all_devices:
+                    try:
+                        async with http.delete(f"{base_url}/api/devices/{device.device_id}") as resp:
+                            if resp.status == 200:
+                                removed_count += 1
+                            else:
+                                click.echo(f"Warning: Failed to remove {device.name}: HTTP {resp.status}", err=True)
+                    except aiohttp.ClientConnectorError:
+                        click.echo("Error: Cannot connect to daemon. Is it running?", err=True)
+                        click.echo("Start the daemon with: ras daemon start", err=True)
+                        raise SystemExit(1)
 
-            click.echo(f"Removed {len(all_devices)} devices.")
+            click.echo(f"Removed {removed_count} devices.")
 
         elif device_id:
             # Support prefix matching (like git short hashes)
@@ -435,8 +452,22 @@ def devices_remove(
                     click.echo("Aborted.")
                     return
 
-            await store.remove(full_device_id)
-            click.echo("Device removed.")
+            # Remove via daemon API
+            try:
+                async with aiohttp.ClientSession() as http:
+                    async with http.delete(f"{base_url}/api/devices/{full_device_id}") as resp:
+                        if resp.status == 200:
+                            click.echo("Device removed.")
+                        elif resp.status == 404:
+                            click.echo("Error: Device not found on daemon.", err=True)
+                            raise SystemExit(1)
+                        else:
+                            click.echo(f"Error: Failed to remove device (HTTP {resp.status})", err=True)
+                            raise SystemExit(1)
+            except aiohttp.ClientConnectorError:
+                click.echo("Error: Cannot connect to daemon. Is it running?", err=True)
+                click.echo("Start the daemon with: ras daemon start", err=True)
+                raise SystemExit(1)
 
         else:
             click.echo("Error: Specify a device ID or use --all", err=True)

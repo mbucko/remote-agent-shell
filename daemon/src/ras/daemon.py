@@ -174,8 +174,6 @@ class Daemon:
         await self._heartbeat_manager.start()
 
         # Start device file watcher for CLI-initiated unpairs
-        asyncio.create_task(self._watch_device_file())
-
         # Set up signal handlers
         self._setup_signals()
 
@@ -294,6 +292,7 @@ class Daemon:
                 pairing_timeout=self._config.daemon.pairing_timeout,
                 max_pairing_sessions=self._config.daemon.max_pairing_sessions,
                 on_device_connected=self._on_device_reconnected,
+                on_device_removed=self._on_device_removed,
                 tailscale_capabilities_provider=self.get_tailscale_capabilities,
             )
 
@@ -751,61 +750,6 @@ class Daemon:
             # Always close connection, even if notification failed
             await self._connection_manager.close_connection(device_id)
 
-    async def _watch_device_file(self) -> None:
-        """Watch devices.json for changes from CLI and notify affected devices.
-
-        When CLI removes a device (ras devices remove), this detects the change
-        and sends UnpairNotification to the device if it's connected.
-        """
-        devices_path = Path(self._config.daemon.devices_file).expanduser()
-        last_mtime = devices_path.stat().st_mtime if devices_path.exists() else 0
-
-        while self._running:
-            try:
-                await asyncio.sleep(2)  # Check every 2 seconds
-
-                if not devices_path.exists():
-                    continue
-
-                current_mtime = devices_path.stat().st_mtime
-                if current_mtime == last_mtime:
-                    continue
-
-                # File changed! Reload devices
-                logger.debug("Devices file changed, reloading...")
-                last_mtime = current_mtime
-
-                # Get currently paired device IDs before reload
-                old_device_ids = set(d.device_id for d in self._device_store.all())
-                logger.debug(f"Old device IDs: {[d[:8] for d in old_device_ids]}")
-
-                # Reload device store
-                await self._device_store.load()
-                new_device_ids = set(d.device_id for d in self._device_store.all())
-                logger.debug(f"New device IDs: {[d[:8] for d in new_device_ids]}")
-
-                # Find devices that were removed
-                removed_device_ids = old_device_ids - new_device_ids
-                logger.debug(f"Removed device IDs: {[d[:8] for d in removed_device_ids]}")
-
-                if not removed_device_ids:
-                    logger.debug("No devices removed, skipping notification")
-                    continue
-
-                logger.info(f"Detected {len(removed_device_ids)} devices removed via CLI")
-
-                # Send unpair notification to removed devices if they're connected
-                for device_id in removed_device_ids:
-                    if self._connection_manager.get_connection(device_id):
-                        logger.info(f"Sending unpair notification to {device_id[:8]}...")
-                        await self.send_unpair_notification(
-                            device_id, reason="Removed via CLI"
-                        )
-
-            except Exception as e:
-                logger.error(f"Error in device file watcher: {e}")
-                await asyncio.sleep(5)  # Back off on error
-
     async def _handle_connection_ready(
         self, device_id: str, ready: ConnectionReady
     ) -> None:
@@ -860,6 +804,20 @@ class Daemon:
         await self._connection_manager.broadcast(data)
 
     # ==================== Connection Handling ====================
+
+    async def _on_device_removed(
+        self, device_id: str, reason: str
+    ) -> None:
+        """Handle device removal from API (called by UnifiedServer).
+
+        Args:
+            device_id: Device identifier.
+            reason: Reason for removal (e.g., "Removed via CLI").
+        """
+        # Send unpair notification if device is connected
+        if self._connection_manager.get_connection(device_id):
+            logger.info(f"Sending unpair notification to {device_id[:8]}... ({reason})")
+            await self.send_unpair_notification(device_id, reason=reason)
 
     async def _on_device_reconnected(
         self,
