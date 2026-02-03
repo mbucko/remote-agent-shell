@@ -380,7 +380,7 @@ def devices_remove(
 ) -> None:
     """Remove a paired device.
 
-    Provide the full DEVICE_ID from 'ras devices list --full',
+    Use the short DEVICE_ID from 'ras devices list' (e.g., 0e49b502),
     or use --all to remove all devices.
     """
     import asyncio
@@ -408,10 +408,26 @@ def devices_remove(
             click.echo(f"Removed {len(all_devices)} devices.")
 
         elif device_id:
+            # Support prefix matching (like git short hashes)
             device = store.get(device_id)
+
+            # If exact match fails, try prefix matching
             if not device:
-                click.echo(f"Error: Device '{device_id}' not found.", err=True)
-                raise SystemExit(1)
+                matches = [d for d in store.all() if d.device_id.startswith(device_id)]
+
+                if len(matches) == 0:
+                    click.echo(f"Error: Device '{device_id}' not found.", err=True)
+                    raise SystemExit(1)
+                elif len(matches) > 1:
+                    click.echo(f"Error: Ambiguous device ID '{device_id}'. Matches:", err=True)
+                    for d in matches:
+                        click.echo(f"  {d.device_id[:8]} - {d.name}", err=True)
+                    raise SystemExit(1)
+                else:
+                    device = matches[0]
+
+            # Use full device ID for removal
+            full_device_id = device.device_id
 
             if not force:
                 last_seen = format_time_ago(device.last_seen)
@@ -419,7 +435,7 @@ def devices_remove(
                     click.echo("Aborted.")
                     return
 
-            await store.remove(device_id)
+            await store.remove(full_device_id)
             click.echo("Device removed.")
 
         else:
