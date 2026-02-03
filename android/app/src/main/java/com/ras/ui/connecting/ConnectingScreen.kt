@@ -78,6 +78,7 @@ fun ConnectingScreen(
             when (event) {
                 is ConnectingUiEvent.NavigateToSessions -> onNavigateToSessions()
                 is ConnectingUiEvent.NavigateBack -> onNavigateBack()
+                is ConnectingUiEvent.DeviceUnpaired -> onNavigateBack()
             }
         }
     }

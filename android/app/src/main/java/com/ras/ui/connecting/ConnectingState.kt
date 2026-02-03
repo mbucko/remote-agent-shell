@@ -25,4 +25,5 @@ sealed class ConnectingState {
 sealed class ConnectingUiEvent {
     data object NavigateToSessions : ConnectingUiEvent()
     data object NavigateBack : ConnectingUiEvent()
+    data object DeviceUnpaired : ConnectingUiEvent()
 }

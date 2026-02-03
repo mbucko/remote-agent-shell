@@ -194,6 +194,14 @@ class ReconnectionServiceImpl @Inject constructor(
             // Clear auth key after handoff
             authKey.fill(0)
             return ReconnectionResult.Success
+        } catch (e: DeviceNotFoundException) {
+            Log.e(TAG, "Device not found - was unpaired from daemon", e)
+            cleanup(authKey)
+            return ReconnectionResult.Failure.DeviceNotFound
+        } catch (e: AuthenticationException) {
+            Log.e(TAG, "Authentication rejected by daemon", e)
+            cleanup(authKey)
+            return ReconnectionResult.Failure.AuthenticationFailed
         } catch (e: Exception) {
             Log.e(TAG, "Reconnection failed: ${e.message}", e)
             cleanup(authKey)

@@ -6,6 +6,7 @@ import com.ras.data.connection.ConnectionLog
 import com.ras.di.DefaultDispatcher
 import com.ras.domain.startup.AttemptReconnectionUseCase
 import com.ras.domain.startup.ReconnectionResult
+import com.ras.domain.unpair.UnpairDeviceUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,6 +27,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ConnectingViewModel @Inject constructor(
     private val attemptReconnectionUseCase: AttemptReconnectionUseCase,
+    private val unpairDeviceUseCase: UnpairDeviceUseCase,
     @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
@@ -81,6 +83,11 @@ class ConnectingViewModel @Inject constructor(
             when (result) {
                 is ReconnectionResult.Success -> {
                     _events.emit(ConnectingUiEvent.NavigateToSessions)
+                }
+                is ReconnectionResult.Failure.DeviceNotFound -> {
+                    // Device was unpaired from daemon - clear credentials locally
+                    unpairDeviceUseCase(deviceId = null)
+                    _events.emit(ConnectingUiEvent.DeviceUnpaired)
                 }
                 is ReconnectionResult.Failure -> {
                     _state.value = ConnectingState.Failed(
