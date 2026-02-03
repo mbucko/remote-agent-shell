@@ -23,13 +23,49 @@ else
     exit 1
 fi
 
-# Check for uv
-if ! command -v uv &> /dev/null; then
-    echo "Error: uv is not installed. Install it from https://docs.astral.sh/uv/"
+# Find uv in PATH or common locations
+find_uv() {
+    # Check if already in PATH
+    if command -v uv &> /dev/null; then
+        echo "$(command -v uv)"
+        return 0
+    fi
+
+    # Check common installation locations
+    COMMON_PATHS=(
+        "$HOME/.local/bin/uv"
+        "$HOME/.cargo/bin/uv"
+        "/usr/local/bin/uv"
+        "/opt/uv/uv"
+    )
+
+    for path in "${COMMON_PATHS[@]}"; do
+        if [ -x "$path" ]; then
+            echo "$path"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+UV_PATH=$(find_uv)
+
+if [ -z "$UV_PATH" ]; then
+    echo "Error: uv is not installed."
+    echo "Install it from: https://docs.astral.sh/uv/"
+    echo ""
+    echo "Quick install:"
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    echo ""
+    echo "Then either:"
+    echo "  1. Open a new terminal"
+    echo "  2. Run: export PATH=\"\$HOME/.local/bin:\$PATH\""
     exit 1
 fi
 
-UV_PATH=$(which uv)
+# Add uv's directory to PATH for this session
+export PATH="$(dirname "$UV_PATH"):$PATH"
 
 install_macos() {
     echo "Installing RemoteAgentShell daemon for macOS..."
@@ -128,6 +164,7 @@ ExecStart=$UV_PATH run --project $DAEMON_DIR ras daemon start
 Restart=on-failure
 RestartSec=5
 Environment="HOME=$HOME"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin:$HOME/.cargo/bin"
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ras
