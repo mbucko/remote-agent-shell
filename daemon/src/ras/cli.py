@@ -323,8 +323,9 @@ def devices() -> None:
 
 
 @devices.command("list")
+@click.option("--full", is_flag=True, help="Show full device IDs")
 @click.pass_context
-def devices_list(ctx: click.Context) -> None:
+def devices_list(ctx: click.Context, full: bool) -> None:
     """List all paired devices."""
     import asyncio
 
@@ -352,12 +353,12 @@ def devices_list(ctx: click.Context) -> None:
         )
 
         for device in sorted_devices:
-            device_id_short = device.device_id[:8]
+            device_id_display = device.device_id if full else device.device_id[:8]
             paired_date = device.paired_at[:10]  # "2024-01-01" from ISO
             last_seen = format_time_ago(device.last_seen)
 
             click.echo(
-                f"{device_id_short:<12} "
+                f"{device_id_display:<12} "
                 f"{device.name:<20} "
                 f"{paired_date:<12} "
                 f"{last_seen}"
@@ -377,7 +378,11 @@ def devices_remove(
     all: bool,
     force: bool,
 ) -> None:
-    """Remove a paired device."""
+    """Remove a paired device.
+
+    Provide the full DEVICE_ID from 'ras devices list --full',
+    or use --all to remove all devices.
+    """
     import asyncio
 
     async def _remove():
