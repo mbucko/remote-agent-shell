@@ -545,7 +545,7 @@ class UnifiedServer:
         device = self.device_store.get(device_id)
         if device is None:
             logger.warning(f"Unknown device attempted reconnection: {device_id[:8]}...")
-            return self._error_response(SignalErrorErrorCode.INVALID_SESSION)
+            return self._error_response(SignalErrorErrorCode.INVALID_SESSION, status=404)
 
         # Derive auth key
         auth_key = derive_key(device.master_secret, "auth")

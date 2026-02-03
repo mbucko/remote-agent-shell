@@ -777,15 +777,19 @@ class Daemon:
 
                 # Get currently paired device IDs before reload
                 old_device_ids = set(d.device_id for d in self._device_store.all())
+                logger.debug(f"Old device IDs: {[d[:8] for d in old_device_ids]}")
 
                 # Reload device store
                 await self._device_store.load()
                 new_device_ids = set(d.device_id for d in self._device_store.all())
+                logger.debug(f"New device IDs: {[d[:8] for d in new_device_ids]}")
 
                 # Find devices that were removed
                 removed_device_ids = old_device_ids - new_device_ids
+                logger.debug(f"Removed device IDs: {[d[:8] for d in removed_device_ids]}")
 
                 if not removed_device_ids:
+                    logger.debug("No devices removed, skipping notification")
                     continue
 
                 logger.info(f"Detected {len(removed_device_ids)} devices removed via CLI")
