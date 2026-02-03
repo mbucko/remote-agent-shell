@@ -193,12 +193,14 @@ LOG_DIR := /tmp/ras-logs
 LOG_FILE := $(LOG_DIR)/daemon.log
 
 daemon-restart:
-	@echo "Stopping daemon..."
-	-cd daemon && uv run ras daemon stop 2>/dev/null || true
+	@echo "Stopping daemon (force kill)..."
+	-pkill -f "ras daemon start" 2>/dev/null || true
+	-sleep 2
 	@mkdir -p $(LOG_DIR)
 	@echo "Starting daemon with logs at $(LOG_FILE)..."
 	cd daemon && nohup uv run ras daemon start > $(LOG_FILE) 2>&1 &
-	@sleep 1
+	@sleep 3
+	@ps aux | grep "ras daemon start" | grep -v grep || echo "Daemon PID not found"
 	@echo "Daemon started. Logs: tail -f $(LOG_FILE)"
 
 android-test:
