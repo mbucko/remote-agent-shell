@@ -113,7 +113,12 @@ class MdnsDiscoveryService(
                 }
 
                 continuation.invokeOnCancellation {
-                    Log.d(TAG, "Discovery cancelled")
+                    val reason = if (discoveredService == null) {
+                        "timed out - no daemon found on local network"
+                    } else {
+                        "completed"
+                    }
+                    Log.d(TAG, "Discovery cancelled: $reason")
                     try {
                         nsdManager.stopServiceDiscovery(discoveryListener)
                     } catch (e: Exception) {
@@ -130,6 +135,12 @@ class MdnsDiscoveryService(
                         continuation.resume(null)
                     }
                 }
+            }
+        }.also { result ->
+            if (result != null) {
+                Log.i(TAG, "mDNS discovery successful: found daemon at ${result.host}:${result.port}")
+            } else {
+                Log.w(TAG, "mDNS discovery failed: no daemon found on local network (timeout)")
             }
         }
     }
