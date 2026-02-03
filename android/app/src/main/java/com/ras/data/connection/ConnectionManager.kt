@@ -156,6 +156,40 @@ class ConnectionManager @Inject constructor(
     )
     val connectionErrors: SharedFlow<ConnectionError> = _connectionErrors.asSharedFlow()
 
+    // Connection path visualization (ICE candidate info, path type, latency)
+    private val _connectionPath = MutableStateFlow<ConnectionPath?>(null)
+    val connectionPath: StateFlow<ConnectionPath?> = _connectionPath.asStateFlow()
+
+    /**
+     * Update the connection path by querying the WebRTC client for active ICE candidate pair.
+     * Should be called when connection is established to capture the initial path.
+     */
+    suspend fun updateConnectionPath() {
+        val client = webRtcClient ?: return
+        val path = client.getActivePath()
+        if (path != null) {
+            _connectionPath.value = path
+            Log.i(TAG, "Connection path updated: ${path.label}")
+        }
+    }
+
+    /**
+     * Update the latency in the current connection path.
+     * Called when a pong is received to reflect the measured latency.
+     */
+    private fun updateLatency(latencyMs: Long) {
+        val currentPath = _connectionPath.value ?: return
+        _connectionPath.value = currentPath.copy(latencyMs = latencyMs)
+    }
+
+    /**
+     * Clear the connection path. Called on disconnect.
+     */
+    private fun clearConnectionPath() {
+        _connectionPath.value = null
+        Log.d(TAG, "Connection path cleared")
+    }
+
     /**
      * Connect using an existing WebRTC client with encryption.
      *
@@ -206,6 +240,9 @@ class ConnectionManager @Inject constructor(
                 sendConnectionReady()
             }
             Log.i(TAG, "Sent ConnectionReady to daemon - handoff complete")
+
+            // Query and store the connection path for visualization
+            updateConnectionPath()
         } catch (e: TimeoutCancellationException) {
             Log.e(TAG, "Timeout sending ConnectionReady - daemon unresponsive")
             disconnect()
@@ -262,6 +299,9 @@ class ConnectionManager @Inject constructor(
                 sendConnectionReady()
             }
             Log.i(TAG, "Sent ConnectionReady - handoff complete")
+
+            // Query and store the connection path for visualization
+            updateConnectionPath()
         } catch (e: TimeoutCancellationException) {
             Log.e(TAG, "Timeout sending ConnectionReady")
             disconnect()
@@ -356,6 +396,7 @@ class ConnectionManager @Inject constructor(
         pingJob = null
         _isConnected.value = false
         _isHealthy.value = false
+        clearConnectionPath()
         transport?.close()
         transport = null
         webRtcClient?.close()
@@ -378,6 +419,7 @@ class ConnectionManager @Inject constructor(
             Log.w(TAG, "Connection lost: $reason")
             _isConnected.value = false
             _isHealthy.value = false
+            clearConnectionPath()
             _connectionErrors.tryEmit(ConnectionError.Disconnected(reason))
             // Don't close the client here - it's already closed/broken
             // Just clean up our state
@@ -736,6 +778,7 @@ class ConnectionManager @Inject constructor(
             RasEvent.EventCase.PONG -> {
                 val latency = System.currentTimeMillis() - event.pong.timestamp
                 Log.d(TAG, "Pong received, latency: ${latency}ms")
+                updateLatency(latency)
             }
             RasEvent.EventCase.ERROR -> {
                 Log.e(TAG, "Error from daemon: ${event.error.errorCode} - ${event.error.message}")

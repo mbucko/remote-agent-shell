@@ -610,6 +610,104 @@ class WebRTCClient(
     }
 
     /**
+     * Get the active connection path by querying RTCStatsReport.
+     * This returns information about the currently selected ICE candidate pair,
+     * allowing us to determine if the connection is direct LAN, WebRTC P2P,
+     * Tailscale VPN, or using a TURN relay.
+     *
+     * @return ConnectionPath if stats are available, null otherwise
+     */
+    suspend fun getActivePath(): com.ras.data.connection.ConnectionPath? {
+        val pc = synchronized(lock) { peerConnection } ?: return null
+
+        return try {
+            val statsDeferred = kotlinx.coroutines.CompletableDeferred<org.webrtc.RTCStatsReport>()
+            pc.getStats { stats ->
+                statsDeferred.complete(stats)
+            }
+            val report = statsDeferred.await()
+
+            // Find the selected (succeeded) candidate pair
+            val selectedPair = report.statsMap.values
+                .filter { it.type == "candidate-pair" && it.members["state"] == "succeeded" }
+                .firstOrNull()
+
+            if (selectedPair == null) {
+                Log.d(TAG, "No selected candidate pair found in stats")
+                return null
+            }
+
+            val localId = selectedPair.members["localCandidateId"] as? String
+            val remoteId = selectedPair.members["remoteCandidateId"] as? String
+
+            if (localId == null || remoteId == null) {
+                Log.w(TAG, "Missing candidate IDs in selected pair")
+                return null
+            }
+
+            // Find the actual candidate objects
+            val localCandidate = report.statsMap[localId]
+            val remoteCandidate = report.statsMap[remoteId]
+
+            if (localCandidate == null || remoteCandidate == null) {
+                Log.w(TAG, "Could not find candidate objects for IDs: local=$localId, remote=$remoteId")
+                return null
+            }
+
+            // Parse candidate info
+            val localInfo = parseCandidate(localCandidate)
+            val remoteInfo = parseCandidate(remoteCandidate)
+
+            if (localInfo == null || remoteInfo == null) {
+                Log.w(TAG, "Failed to parse candidate information")
+                return null
+            }
+
+            // Classify the path type
+            val pathType = com.ras.data.connection.PathClassifier.classifyPath(localInfo, remoteInfo)
+
+            Log.i(TAG, "Active path: type=$pathType, local=${localInfo.ip}:${localInfo.port} (${localInfo.type}), remote=${remoteInfo.ip}:${remoteInfo.port} (${remoteInfo.type})")
+
+            com.ras.data.connection.ConnectionPath(
+                local = localInfo,
+                remote = remoteInfo,
+                type = pathType
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get active path from stats", e)
+            null
+        }
+    }
+
+    /**
+     * Parse a candidate from RTCStats into our CandidateInfo format
+     */
+    private fun parseCandidate(stats: org.webrtc.RTCStats): com.ras.data.connection.CandidateInfo? {
+        val type = stats.members["candidateType"] as? String
+            ?: stats.members["type"] as? String
+            ?: return null
+
+        val ip = stats.members["ip"] as? String
+            ?: stats.members["address"] as? String
+            ?: return null
+
+        val port = (stats.members["port"] as? String)?.toIntOrNull()
+            ?: (stats.members["portNumber"] as? Number)?.toInt()
+            ?: 0
+
+        val isLocal = ip.startsWith("192.168.") ||
+                      ip.startsWith("10.") ||
+                      (ip.startsWith("172.") && ip.split(".")[1].toIntOrNull()?.let { it in 16..31 } == true)
+
+        return com.ras.data.connection.CandidateInfo(
+            type = type,
+            ip = ip,
+            port = port,
+            isLocal = isLocal
+        )
+    }
+
+    /**
      * Factory for creating WebRTCClient instances.
      */
     class Factory @Inject constructor(

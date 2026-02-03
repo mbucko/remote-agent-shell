@@ -81,6 +81,7 @@ fun SessionsScreen(
 ) {
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
+    val connectionPath by viewModel.connectionPath.collectAsStateWithLifecycle()
     val showKillDialog by viewModel.showKillDialog.collectAsStateWithLifecycle()
     val showRenameDialog by viewModel.showRenameDialog.collectAsStateWithLifecycle()
 
@@ -151,17 +152,33 @@ fun SessionsScreen(
                 }
 
                 is SessionsScreenState.Loaded -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Connection diagram (always visible when connected)
+                        AnimatedVisibility(
+                            visible = isConnected,
+                            enter = fadeIn(),
+                            exit = fadeOut()
+                        ) {
+                            ConnectionDiagram(
+                                connectionPath = connectionPath,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                initiallyExpanded = false
+                            )
+                        }
+
                         if (state.sessions.isEmpty()) {
                             EmptySessionsContent(
-                                modifier = Modifier.align(Alignment.Center)
+                                modifier = Modifier.weight(1f)
                             )
                         } else {
                             SessionsList(
                                 sessions = state.sessions,
                                 onSessionClick = onSessionClick,
                                 onKillClick = { viewModel.showKillDialog(it) },
-                                onRenameClick = { viewModel.showRenameDialog(it) }
+                                onRenameClick = { viewModel.showRenameDialog(it) },
+                                modifier = Modifier.weight(1f)
                             )
                         }
                         // No refresh spinner - list content provides visual feedback
@@ -230,21 +247,25 @@ fun SessionsScreen(
 private fun EmptySessionsContent(
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = stringResource(R.string.sessions_empty),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Tap + to create a new session",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = stringResource(R.string.sessions_empty),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Tap + to create a new session",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
     }
 }
 
@@ -283,11 +304,12 @@ private fun SessionsList(
     sessions: List<SessionInfo>,
     onSessionClick: (String) -> Unit,
     onKillClick: (SessionInfo) -> Unit,
-    onRenameClick: (SessionInfo) -> Unit
+    onRenameClick: (SessionInfo) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = modifier
+            .fillMaxWidth()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {

@@ -56,6 +56,9 @@ class SessionsViewModel @Inject constructor(
     // Connection status
     val isConnected: StateFlow<Boolean> = sessionRepository.isConnected
 
+    // Connection path for diagram visualization
+    val connectionPath = connectionManager.connectionPath
+
     init {
         Log.i(TAG, "SessionsViewModel created for deviceId=$deviceId, isConnected=${sessionRepository.isConnected.value}")
         observeSessions()
