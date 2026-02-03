@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,21 +44,22 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ras.R
+import com.ras.data.model.DeviceStatus
 import kotlinx.coroutines.flow.collectLatest
 
 /**
  * Home screen - app entry point.
  *
- * Displays paired device info, connection status, and provides access
- * to pairing, connecting, and settings.
+ * Displays list of paired devices with connection status.
+ * Provides access to pairing, connecting, and settings.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onNavigateToConnecting: () -> Unit,
+    onNavigateToConnecting: (String) -> Unit,
     onNavigateToPairing: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToSessions: () -> Unit,
+    onNavigateToSessions: (String) -> Unit,
     showDisconnectedMessage: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -67,10 +71,10 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
             when (event) {
-                is HomeUiEvent.NavigateToConnecting -> onNavigateToConnecting()
+                is HomeUiEvent.NavigateToConnecting -> onNavigateToConnecting(event.deviceId)
                 is HomeUiEvent.NavigateToPairing -> onNavigateToPairing()
                 is HomeUiEvent.NavigateToSettings -> onNavigateToSettings()
-                is HomeUiEvent.NavigateToSessions -> onNavigateToSessions()
+                is HomeUiEvent.NavigateToSessions -> onNavigateToSessions(event.deviceId)
                 is HomeUiEvent.ShowSnackbar -> snackbarHostState.showSnackbar(event.message)
             }
         }
@@ -97,6 +101,16 @@ fun HomeScreen(
                 }
             )
         },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { viewModel.pair() }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Pair Device"
+                )
+            }
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Box(
@@ -106,18 +120,16 @@ fun HomeScreen(
         ) {
             when (val currentState = state) {
                 is HomeState.Loading -> LoadingContent()
-                is HomeState.NoPairedDevice -> EmptyStateContent(
+                is HomeState.NoDevices -> EmptyStateContent(
                     onPair = { viewModel.pair() }
                 )
-                is HomeState.HasDevice -> HasDeviceContent(
-                    deviceName = currentState.name,
-                    deviceType = currentState.type,
-                    connectionState = currentState.connectionState,
-                    sessionCount = currentState.sessionCount,
+                is HomeState.HasDevices -> HasDevicesContent(
+                    devices = currentState.devices,
+                    activeDeviceId = currentState.activeDeviceId,
                     autoConnectEnabled = autoConnectEnabled,
-                    onConnect = { viewModel.connect() },
-                    onOpenSessions = { viewModel.openSessions() },
-                    onUnpair = { viewModel.unpair() },
+                    onDeviceClick = { viewModel.onDeviceClicked(it) },
+                    onUnpair = { viewModel.unpairDevice(it) },
+                    onRemove = { viewModel.removeDevice(it) },
                     onAutoConnectChanged = { viewModel.setAutoConnect(it) }
                 )
             }
@@ -160,7 +172,7 @@ private fun EmptyStateContent(
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "No device paired yet",
+            text = "No devices paired yet",
             style = MaterialTheme.typography.titleLarge,
             textAlign = TextAlign.Center
         )
@@ -168,7 +180,7 @@ private fun EmptyStateContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Scan a QR code to get started",
+            text = "Tap + to scan a QR code and pair with your computer",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
@@ -192,46 +204,45 @@ private fun EmptyStateContent(
 }
 
 @Composable
-private fun HasDeviceContent(
-    deviceName: String,
-    deviceType: com.ras.data.model.DeviceType,
-    connectionState: ConnectionState,
-    sessionCount: Int,
+private fun HasDevicesContent(
+    devices: List<DeviceInfo>,
+    activeDeviceId: String?,
     autoConnectEnabled: Boolean,
-    onConnect: () -> Unit,
-    onOpenSessions: () -> Unit,
-    onUnpair: () -> Unit,
+    onDeviceClick: (String) -> Unit,
+    onUnpair: (String) -> Unit,
+    onRemove: (String) -> Unit,
     onAutoConnectChanged: (Boolean) -> Unit
 ) {
-    var showUnpairDialog by remember { mutableStateOf(false) }
+    var deviceToUnpair by remember { mutableStateOf<DeviceInfo?>(null) }
+    var deviceToRemove by remember { mutableStateOf<DeviceInfo?>(null) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(16.dp)
     ) {
-        // App logo
-        Image(
-            painter = painterResource(id = R.mipmap.ic_launcher_foreground),
-            contentDescription = "App Logo",
-            modifier = Modifier.size(100.dp)
-        )
+        // Device list
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(devices, key = { it.deviceId }) { device ->
+                DeviceCard(
+                    device = device,
+                    isActive = device.deviceId == activeDeviceId,
+                    onClick = { onDeviceClick(device.deviceId) },
+                    onUnpair = {
+                        if (device.status == DeviceStatus.PAIRED) {
+                            deviceToUnpair = device
+                        } else {
+                            deviceToRemove = device
+                        }
+                    }
+                )
+            }
+        }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Device card
-        DeviceCard(
-            deviceName = deviceName,
-            deviceType = deviceType,
-            connectionState = connectionState,
-            sessionCount = sessionCount,
-            onConnect = onConnect,
-            onOpenSessions = onOpenSessions,
-            onUnpair = { showUnpairDialog = true }
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Auto-connect toggle
         Row(
@@ -251,29 +262,57 @@ private fun HasDeviceContent(
     }
 
     // Unpair confirmation dialog
-    if (showUnpairDialog) {
+    deviceToUnpair?.let { device ->
         AlertDialog(
-            onDismissRequest = { showUnpairDialog = false },
-            title = { Text("Unpair Device") },
+            onDismissRequest = { deviceToUnpair = null },
+            title = { Text("Unpair ${device.name}") },
             text = {
                 Text(
-                    "This will remove the pairing with your computer. " +
-                    "To reconnect, you'll need to scan the QR code again.",
+                    "This will unpair this device. To reconnect, you'll need to scan the QR code again.",
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        showUnpairDialog = false
-                        onUnpair()
+                        onUnpair(device.deviceId)
+                        deviceToUnpair = null
                     }
                 ) {
                     Text("Unpair")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showUnpairDialog = false }) {
+                TextButton(onClick = { deviceToUnpair = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Remove confirmation dialog
+    deviceToRemove?.let { device ->
+        AlertDialog(
+            onDismissRequest = { deviceToRemove = null },
+            title = { Text("Remove ${device.name}") },
+            text = {
+                Text(
+                    "This device is already unpaired. Remove it from the list?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRemove(device.deviceId)
+                        deviceToRemove = null
+                    }
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deviceToRemove = null }) {
                     Text("Cancel")
                 }
             }
