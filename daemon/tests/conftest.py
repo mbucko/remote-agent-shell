@@ -50,3 +50,48 @@ def fast_ice_connectivity():
     # Restore original values
     aioice.stun.RETRY_MAX = old_retry_max
     aioice.stun.RETRY_RTO = old_retry_rto
+
+
+@pytest.fixture(autouse=True, scope="session")
+def cleanup_stale_test_processes():
+    """Kill any stale test processes before and after test session.
+
+    Tests that start the daemon (with mDNS) can leave orphaned processes
+    if interrupted (Ctrl+C) or if they crash. These processes hog mDNS
+    port 5353 and prevent subsequent daemon starts from working.
+
+    This fixture ensures:
+    1. No stale pytest processes are running before tests
+    2. Cleanup happens after all tests complete
+    """
+    import os
+    import signal
+    import subprocess
+
+    def kill_stale_pytest():
+        """Kill any pytest processes that aren't the current one."""
+        current_pid = os.getpid()
+        try:
+            # Find all pytest processes
+            result = subprocess.run(
+                ["pgrep", "-f", "pytest"], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                for pid_str in result.stdout.strip().split("\n"):
+                    try:
+                        pid = int(pid_str.strip())
+                        # Don't kill ourselves or our parent
+                        if pid != current_pid and pid != os.getppid():
+                            os.kill(pid, signal.SIGTERM)
+                    except (ValueError, OSError, ProcessLookupError):
+                        pass
+        except Exception:
+            pass  # Ignore errors in cleanup
+
+    # Clean up before tests
+    kill_stale_pytest()
+
+    yield
+
+    # Clean up after tests
+    kill_stale_pytest()
