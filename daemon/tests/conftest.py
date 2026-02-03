@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+import pytest_asyncio
 
 
 @pytest.fixture(autouse=True)
@@ -15,7 +16,7 @@ def reset_logging_state():
     reset_logging()
 
 
-@pytest.fixture(autouse=True)
+@pytest_asyncio.fixture(autouse=True, loop_scope="function")
 async def cleanup_aiohttp_sessions():
     """Give aiohttp sessions time to clean up their connectors.
 
