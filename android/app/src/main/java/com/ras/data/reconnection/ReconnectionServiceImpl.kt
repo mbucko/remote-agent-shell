@@ -5,6 +5,7 @@ import android.util.Log
 import com.ras.crypto.HmacUtils
 import com.ras.crypto.KeyDerivation
 import com.ras.crypto.toHex
+import com.ras.data.credentials.StoredCredentials
 import com.ras.data.connection.ConnectionContext
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.connection.ConnectionOrchestrator
@@ -70,17 +71,31 @@ class ReconnectionServiceImpl @Inject constructor(
             return ReconnectionResult.Success
         }
 
-        // 1. Get stored credentials
-        val credentials = try {
-            credentialRepository.getCredentials()
+        // 1. Get stored credentials from selected device
+        val selectedDevice = try {
+            credentialRepository.getSelectedDevice()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get credentials", e)
             return ReconnectionResult.Failure.Unknown(e.message ?: "Credential error")
         }
-        if (credentials == null) {
-            Log.d(TAG, "No stored credentials")
+        if (selectedDevice == null) {
+            Log.d(TAG, "No selected device")
             return ReconnectionResult.Failure.NoCredentials
         }
+
+        // Build credentials from selected device
+        val ntfyTopic = KeyDerivation.deriveNtfyTopic(selectedDevice.masterSecret)
+        val credentials = StoredCredentials(
+            deviceId = selectedDevice.deviceId,
+            masterSecret = selectedDevice.masterSecret,
+            daemonHost = selectedDevice.daemonHost,
+            daemonPort = selectedDevice.daemonPort,
+            ntfyTopic = ntfyTopic,
+            daemonTailscaleIp = selectedDevice.daemonTailscaleIp,
+            daemonTailscalePort = selectedDevice.daemonTailscalePort,
+            daemonVpnIp = selectedDevice.daemonVpnIp,
+            daemonVpnPort = selectedDevice.daemonVpnPort
+        )
 
         Log.d(TAG, "Attempting reconnection to ${credentials.daemonHost ?: "unknown"}:${credentials.daemonPort ?: 0}")
 

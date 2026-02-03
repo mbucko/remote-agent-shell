@@ -3,7 +3,6 @@ package com.ras
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ProcessLifecycleOwner
-import com.ras.data.migration.DeviceMigration
 import com.ras.data.reconnection.ReconnectionController
 import com.ras.lifecycle.AppLifecycleObserver
 import com.ras.notifications.NotificationChannels
@@ -28,9 +27,6 @@ class RasApplication : Application() {
     @Inject
     lateinit var reconnectionController: ReconnectionController
 
-    @Inject
-    lateinit var deviceMigration: DeviceMigration
-
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate() {
@@ -41,18 +37,6 @@ class RasApplication : Application() {
 
         // Register lifecycle observer for foreground/background detection
         ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycleObserver)
-
-        // Run migration before initializing controllers
-        // This ensures existing users' devices are migrated to Room before reconnection
-        applicationScope.launch {
-            try {
-                deviceMigration.migrateIfNeeded()
-                Log.i(TAG, "Device migration check complete")
-            } catch (e: Exception) {
-                Log.e(TAG, "Device migration failed", e)
-                // Don't crash - allow app to continue
-            }
-        }
 
         // Initialize controllers
         connectionServiceController.initialize()

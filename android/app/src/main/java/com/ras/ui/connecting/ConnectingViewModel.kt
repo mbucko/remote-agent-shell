@@ -1,8 +1,10 @@
 package com.ras.ui.connecting
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionLog
+import com.ras.data.credentials.CredentialRepository
 import com.ras.di.DefaultDispatcher
 import com.ras.domain.startup.AttemptReconnectionUseCase
 import com.ras.domain.startup.ReconnectionResult
@@ -26,10 +28,15 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class ConnectingViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val credentialRepository: CredentialRepository,
     private val attemptReconnectionUseCase: AttemptReconnectionUseCase,
     private val unpairDeviceUseCase: UnpairDeviceUseCase,
     @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
 ) : ViewModel() {
+
+    private val deviceId: String = savedStateHandle["deviceId"]
+        ?: throw IllegalArgumentException("deviceId is required")
 
     private val _state = MutableStateFlow<ConnectingState>(ConnectingState.Connecting())
     val state: StateFlow<ConnectingState> = _state.asStateFlow()
@@ -38,7 +45,12 @@ class ConnectingViewModel @Inject constructor(
     val events: SharedFlow<ConnectingUiEvent> = _events.asSharedFlow()
 
     init {
-        connect()
+        // Ensure this device is selected before connecting
+        viewModelScope.launch {
+            credentialRepository.setSelectedDevice(deviceId)
+            // CRITICAL: Must wait for device selection before connecting
+            connect()
+        }
     }
 
     /**
@@ -93,6 +105,15 @@ class ConnectingViewModel @Inject constructor(
                         reason = result,
                         log = currentLog,
                         message = "Device was unpaired from daemon. Please remove and re-pair this device."
+                    )
+                }
+                is ReconnectionResult.Failure.DaemonUnreachable -> {
+                    // Timeout - daemon not reachable via any method (HTTP, Tailscale, ntfy)
+                    // This could mean device was removed while phone was offline
+                    _state.value = ConnectingState.Failed(
+                        reason = result,
+                        log = currentLog,
+                        message = "Connection timeout. Device may have been unpaired from host. Check daemon status or remove and re-pair this device."
                     )
                 }
                 is ReconnectionResult.Failure -> {

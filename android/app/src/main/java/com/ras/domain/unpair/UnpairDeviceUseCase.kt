@@ -39,33 +39,45 @@ class UnpairDeviceUseCaseImpl @Inject constructor(
 
     override suspend fun invoke(deviceId: String?) {
         try {
+            // Determine which device to unpair
+            val targetDeviceId = deviceId ?: credentialRepository.getSelectedDevice()?.deviceId
+            if (targetDeviceId == null) {
+                Log.w(TAG, "No device to unpair")
+                return
+            }
+
             // Best-effort notification - we don't wait for ack because unpair
             // should always succeed locally even if daemon is unreachable.
             // The disconnect may close the connection before the message is sent,
             // but this is acceptable since local credential clearing is the critical path.
-            if (deviceId != null && connectionManager.isConnected.value) {
+            if (connectionManager.isConnected.value) {
                 try {
-                    connectionManager.sendUnpairRequest(deviceId)
+                    connectionManager.sendUnpairRequest(targetDeviceId)
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to notify daemon of unpair: ${e.message}")
                     // Continue with local unpair
                 }
             }
 
-            // Always clear credentials locally (critical invariant)
-            credentialRepository.clearCredentials()
+            // Mark device as unpaired locally (critical invariant)
+            credentialRepository.unpairDevice(targetDeviceId)
 
-            // Disconnect gracefully
-            connectionManager.disconnectGracefully(ConnectionManager.DISCONNECT_REASON_UNPAIR)
+            // Disconnect gracefully if connected
+            if (connectionManager.isConnected.value) {
+                connectionManager.disconnectGracefully(ConnectionManager.DISCONNECT_REASON_UNPAIR)
+            }
 
         } catch (e: Exception) {
-            // Even if something fails, try to clear credentials
-            Log.e(TAG, "Error during unpair, attempting to clear credentials anyway", e)
-            try {
-                credentialRepository.clearCredentials()
-            } catch (clearError: Exception) {
-                Log.e(TAG, "Failed to clear credentials", clearError)
-                throw clearError // Re-throw because this is critical
+            // Even if something fails, try to unpair the device
+            Log.e(TAG, "Error during unpair, attempting to unpair anyway", e)
+            val targetDeviceId = deviceId ?: credentialRepository.getSelectedDevice()?.deviceId
+            if (targetDeviceId != null) {
+                try {
+                    credentialRepository.unpairDevice(targetDeviceId)
+                } catch (unpairError: Exception) {
+                    Log.e(TAG, "Failed to unpair device", unpairError)
+                    throw unpairError // Re-throw because this is critical
+                }
             }
         }
     }

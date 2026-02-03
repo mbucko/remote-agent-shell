@@ -1,9 +1,11 @@
 package com.ras.ui.sessions
 
 import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionManager
+import com.ras.data.credentials.CredentialRepository
 import com.ras.data.keystore.KeyManager
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionInfo
@@ -26,10 +28,15 @@ private const val TAG = "SessionsViewModel"
  */
 @HiltViewModel
 class SessionsViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val credentialRepository: CredentialRepository,
     private val sessionRepository: SessionRepository,
     private val keyManager: KeyManager,
     private val connectionManager: ConnectionManager
 ) : ViewModel() {
+
+    private val deviceId: String = savedStateHandle["deviceId"]
+        ?: throw IllegalArgumentException("deviceId is required")
 
     private val _screenState = MutableStateFlow<SessionsScreenState>(SessionsScreenState.Loaded(emptyList()))
     val screenState: StateFlow<SessionsScreenState> = _screenState.asStateFlow()
@@ -50,10 +57,14 @@ class SessionsViewModel @Inject constructor(
     val isConnected: StateFlow<Boolean> = sessionRepository.isConnected
 
     init {
-        Log.i(TAG, "SessionsViewModel created, isConnected=${sessionRepository.isConnected.value}")
+        Log.i(TAG, "SessionsViewModel created for deviceId=$deviceId, isConnected=${sessionRepository.isConnected.value}")
         observeSessions()
         observeRepositoryEvents()
-        loadSessions()
+        // Ensure this device is selected before loading sessions
+        viewModelScope.launch {
+            credentialRepository.setSelectedDevice(deviceId)
+            loadSessions()
+        }
     }
 
     private fun observeSessions() {

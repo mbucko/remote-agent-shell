@@ -1,10 +1,8 @@
 package com.ras.data.credentials
 
-import com.ras.crypto.KeyDerivation
 import com.ras.data.database.PairedDeviceDao
 import com.ras.data.database.PairedDeviceEntity
 import com.ras.data.encryption.DeviceEncryptionHelper
-import com.ras.data.keystore.KeyManager
 import com.ras.data.model.DeviceStatus
 import com.ras.data.model.DeviceType
 import com.ras.data.model.PairedDevice
@@ -24,8 +22,7 @@ import javax.inject.Singleton
 @Singleton
 class CredentialRepositoryImpl @Inject constructor(
     private val dao: PairedDeviceDao,
-    private val encryptionHelper: DeviceEncryptionHelper,
-    private val keyManager: KeyManager // For migration only
+    private val encryptionHelper: DeviceEncryptionHelper
 ) : CredentialRepository {
 
     // Multi-device operations
@@ -36,8 +33,8 @@ class CredentialRepositoryImpl @Inject constructor(
     }
 
     override fun getAllDevicesFlow(): Flow<List<PairedDevice>> {
-        // Returns only PAIRED devices for UI display
-        return dao.getAllPairedDevices().map { entities ->
+        // Returns ALL devices (including unpaired) for UI display
+        return dao.getAllDevices().map { entities ->
             entities.map { entity -> entity.toDomainModel() }
         }
     }
@@ -103,47 +100,6 @@ class CredentialRepositoryImpl @Inject constructor(
 
     override suspend fun unpairDevice(deviceId: String) {
         dao.updateDeviceStatus(deviceId, DeviceStatus.UNPAIRED_BY_USER.name)
-    }
-
-    // Backward compatible methods (for gradual migration)
-
-    override suspend fun hasCredentials(): Boolean {
-        return dao.getSelectedDevice() != null
-    }
-
-    override suspend fun getCredentials(): StoredCredentials? {
-        val device = getSelectedDevice() ?: return null
-
-        // Derive ntfyTopic from master_secret
-        val ntfyTopic = KeyDerivation.deriveNtfyTopic(device.masterSecret)
-
-        return StoredCredentials(
-            deviceId = device.deviceId,
-            masterSecret = device.masterSecret,
-            daemonHost = device.daemonHost,
-            daemonPort = device.daemonPort,
-            ntfyTopic = ntfyTopic,
-            daemonTailscaleIp = device.daemonTailscaleIp,
-            daemonTailscalePort = device.daemonTailscalePort,
-            daemonVpnIp = device.daemonVpnIp,
-            daemonVpnPort = device.daemonVpnPort
-        )
-    }
-
-    override suspend fun getDeviceName(): String? {
-        return getSelectedDevice()?.deviceName
-    }
-
-    override suspend fun getDeviceType(): DeviceType {
-        return getSelectedDevice()?.deviceType ?: DeviceType.UNKNOWN
-    }
-
-    override suspend fun clearCredentials() {
-        // Legacy method - mark selected device as unpaired
-        val selected = dao.getSelectedDevice()
-        if (selected != null) {
-            unpairDevice(selected.deviceId)
-        }
     }
 
     // Private helpers

@@ -76,11 +76,12 @@ object CryptoModule {
         @ApplicationContext context: Context,
         signalingClient: SignalingClient,
         keyManager: KeyManager,
+        credentialRepository: com.ras.data.credentials.CredentialRepository,
         webRTCClientFactory: WebRTCClient.Factory,
         ntfyClient: NtfyClientInterface,
         connectionManager: ConnectionManager,
         progressTracker: PairingProgressTracker
     ): PairingManager {
-        return PairingManager(context, signalingClient, keyManager, webRTCClientFactory, ntfyClient, connectionManager, progressTracker)
+        return PairingManager(context, signalingClient, keyManager, credentialRepository, webRTCClientFactory, ntfyClient, connectionManager, progressTracker)
     }
 }

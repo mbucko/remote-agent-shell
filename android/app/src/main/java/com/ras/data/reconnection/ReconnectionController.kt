@@ -147,7 +147,7 @@ class ReconnectionController @Inject constructor(
             }
 
             // Guard: no credentials
-            if (!credentialRepository.hasCredentials()) {
+            if (credentialRepository.getSelectedDevice() == null) {
                 Log.d(TAG, "Skipping reconnection: no credentials")
                 return false
             }

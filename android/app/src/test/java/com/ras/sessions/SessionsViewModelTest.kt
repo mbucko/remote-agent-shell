@@ -35,6 +35,8 @@ import java.time.Instant
 class SessionsViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
+    private lateinit var savedStateHandle: androidx.lifecycle.SavedStateHandle
+    private lateinit var credentialRepository: com.ras.data.credentials.CredentialRepository
     private lateinit var repository: SessionRepository
     private lateinit var keyManager: KeyManager
     private lateinit var connectionManager: ConnectionManager
@@ -45,6 +47,8 @@ class SessionsViewModelTest {
     @BeforeEach
     fun setup() {
         Dispatchers.setMain(testDispatcher)
+        savedStateHandle = androidx.lifecycle.SavedStateHandle(mapOf("deviceId" to "test-device-id"))
+        credentialRepository = mockk(relaxed = true)
         sessionsFlow = MutableStateFlow(emptyList())
         eventsFlow = MutableSharedFlow()
         isConnectedFlow = MutableStateFlow(true)
@@ -382,7 +386,7 @@ class SessionsViewModelTest {
         coVerify { repository.renameSession("1", "New Name") }
     }
 
-    private fun createViewModel() = SessionsViewModel(repository, keyManager, connectionManager)
+    private fun createViewModel() = SessionsViewModel(savedStateHandle, credentialRepository, repository, keyManager, connectionManager)
 
     private fun createSession(
         id: String,

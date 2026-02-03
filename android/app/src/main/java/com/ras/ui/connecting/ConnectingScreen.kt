@@ -66,7 +66,8 @@ import kotlin.math.sin
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectingScreen(
-    onNavigateToSessions: () -> Unit,
+    deviceId: String,
+    onNavigateToSessions: (String) -> Unit,
     onNavigateBack: () -> Unit,
     viewModel: ConnectingViewModel = hiltViewModel()
 ) {
@@ -76,7 +77,7 @@ fun ConnectingScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
             when (event) {
-                is ConnectingUiEvent.NavigateToSessions -> onNavigateToSessions()
+                is ConnectingUiEvent.NavigateToSessions -> onNavigateToSessions(deviceId)
                 is ConnectingUiEvent.NavigateBack -> onNavigateBack()
                 is ConnectingUiEvent.DeviceUnpaired -> onNavigateBack()
             }

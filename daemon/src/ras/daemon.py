@@ -741,14 +741,15 @@ class Daemon:
 
         try:
             await conn.send(bytes(event))
-            logger.info(f"UnpairNotification sent to {device_id[:8]}...")
+            logger.info(f"UnpairNotification sent to {device_id[:8]}... (phone will disconnect)")
             return True
         except Exception as e:
             logger.error(f"Failed to send UnpairNotification to {device_id[:8]}...: {e}")
-            return False
-        finally:
-            # Always close connection, even if notification failed
+            # If send failed, force close the connection
             await self._connection_manager.close_connection(device_id)
+            return False
+        # Note: Connection stays open - phone will disconnect after processing notification
+        # This ensures the message is delivered before connection closes
 
     async def _handle_connection_ready(
         self, device_id: str, ready: ConnectionReady

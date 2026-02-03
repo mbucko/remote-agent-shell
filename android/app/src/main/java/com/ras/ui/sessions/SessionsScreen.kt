@@ -71,6 +71,7 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionsScreen(
+    deviceId: String,
     onSessionClick: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToCreateSession: () -> Unit,

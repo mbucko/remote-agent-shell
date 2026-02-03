@@ -176,22 +176,22 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             connectionManager.unpairedByDaemon.collect { notification ->
                 try {
-                    // Get the device that was unpaired
-                    val unpairedDevice = credentialRepository.getSelectedDevice()
+                    Log.i(TAG, "Received unpair notification for device: ${notification.deviceId}")
 
-                    if (unpairedDevice != null) {
-                        // Mark device as unpaired by daemon
-                        credentialRepository.updateDeviceStatus(
-                            unpairedDevice.deviceId,
-                            DeviceStatus.UNPAIRED_BY_DAEMON
-                        )
+                    // Mark the specific device from notification as unpaired by daemon
+                    credentialRepository.updateDeviceStatus(
+                        notification.deviceId,
+                        DeviceStatus.UNPAIRED_BY_DAEMON
+                    )
 
-                        // Show notification to user
-                        _events.emit(HomeUiEvent.ShowSnackbar("Unpaired by host: ${notification.reason}"))
+                    // Show notification to user
+                    _events.emit(HomeUiEvent.ShowSnackbar("Unpaired by host: ${notification.reason}"))
 
-                        // Refresh device list
-                        loadDevices()
-                    }
+                    // Disconnect from daemon (this device is no longer paired)
+                    connectionManager.disconnectGracefully("unpaired_by_daemon")
+
+                    // Refresh device list to show unpaired status
+                    loadDevices()
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to handle daemon unpair notification", e)
                     _events.emit(HomeUiEvent.ShowSnackbar("Unpair failed: ${e.message}"))
@@ -255,12 +255,16 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Called when user wants to unpair a specific device.
+     * Removes device immediately from list (user-initiated unpair).
      */
     fun unpairDevice(deviceId: String) {
         viewModelScope.launch {
             try {
-                // Use case handles all unpair logic
+                // Use case handles unpair + disconnect
                 unpairDeviceUseCase(deviceId)
+
+                // Remove from list immediately (don't show as unpaired for user-initiated unpair)
+                credentialRepository.removeDevice(deviceId)
 
                 // Show success message
                 _events.emit(HomeUiEvent.ShowSnackbar("Device unpaired"))

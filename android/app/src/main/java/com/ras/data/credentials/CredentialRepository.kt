@@ -90,35 +90,4 @@ interface CredentialRepository {
      * @param deviceId The device to unpair
      */
     suspend fun unpairDevice(deviceId: String)
-
-    // Backward compatible methods (for gradual migration)
-    /**
-     * Check if any valid credentials are stored.
-     * @return true if selected device exists
-     */
-    suspend fun hasCredentials(): Boolean
-
-    /**
-     * Get stored credentials for the selected device.
-     * @return StoredCredentials if selected device exists, null otherwise
-     */
-    suspend fun getCredentials(): StoredCredentials?
-
-    /**
-     * Get stored device name (hostname) for selected device.
-     * @return device name, or null if not stored
-     */
-    suspend fun getDeviceName(): String?
-
-    /**
-     * Get stored device type for selected device.
-     * @return device type, or UNKNOWN if not stored
-     */
-    suspend fun getDeviceType(): DeviceType
-
-    /**
-     * Clear all stored credentials (for unpairing/re-pairing).
-     * @deprecated Use unpairDevice() or removeDevice() instead
-     */
-    suspend fun clearCredentials()
 }

@@ -26,6 +26,7 @@ class PairingManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val signalingClient: SignalingClient,
     private val keyManager: KeyManager,
+    private val credentialRepository: com.ras.data.credentials.CredentialRepository,
     private val webRTCClientFactory: WebRTCClient.Factory,
     private val ntfyClient: NtfyClientInterface,
     private val connectionManager: ConnectionManager,
@@ -187,20 +188,27 @@ class PairingManager @Inject constructor(
 
         when (result) {
             is AuthResult.Success -> {
-                // Save master secret, daemon info, and device info to keystore
+                // Save device credentials using multi-device repository
                 currentPayload?.let { payload ->
-                    keyManager.storeMasterSecret(payload.masterSecret)
-                    keyManager.storeDaemonInfo(
-                        ip = payload.ip,
-                        port = payload.port,
-                        ntfyTopic = payload.ntfyTopic,
-                        tailscaleIp = payload.tailscaleIp,
-                        tailscalePort = payload.tailscalePort,
-                        vpnIp = payload.vpnIp,
-                        vpnPort = payload.vpnPort
+                    // Use the daemon's device ID from auth result (not phone's device ID)
+                    val daemonDeviceId = result.deviceId
+
+                    // Add device to multi-device storage
+                    credentialRepository.addDevice(
+                        deviceId = daemonDeviceId,
+                        masterSecret = payload.masterSecret,
+                        deviceName = result.hostname,
+                        deviceType = result.deviceType,
+                        daemonHost = payload.ip,
+                        daemonPort = payload.port,
+                        daemonTailscaleIp = payload.tailscaleIp,
+                        daemonTailscalePort = payload.tailscalePort,
+                        daemonVpnIp = payload.vpnIp,
+                        daemonVpnPort = payload.vpnPort
                     )
-                    // Store device info from AuthSuccess
-                    keyManager.storeDeviceInfo(result.hostname, result.deviceType)
+
+                    // Set this device as selected (active)
+                    credentialRepository.setSelectedDevice(daemonDeviceId)
                 }
 
                 // Hand off WebRTC connection to ConnectionManager with encryption key

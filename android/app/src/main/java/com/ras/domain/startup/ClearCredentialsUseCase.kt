@@ -18,6 +18,10 @@ class ClearCredentialsUseCaseImpl @Inject constructor(
 ) : ClearCredentialsUseCase {
 
     override suspend fun invoke() {
-        credentialRepository.clearCredentials()
+        // Unpair the selected device
+        val selectedDevice = credentialRepository.getSelectedDevice()
+        if (selectedDevice != null) {
+            credentialRepository.unpairDevice(selectedDevice.deviceId)
+        }
     }
 }

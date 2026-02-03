@@ -1,5 +1,6 @@
 package com.ras.domain.startup
 
+import com.ras.crypto.KeyDerivation
 import com.ras.data.credentials.CredentialRepository
 import javax.inject.Inject
 
@@ -18,17 +19,16 @@ class CheckCredentialsUseCaseImpl @Inject constructor(
 ) : CheckCredentialsUseCase {
 
     override suspend fun invoke(): CredentialStatus {
-        if (!credentialRepository.hasCredentials()) {
-            return CredentialStatus.NoCredentials
-        }
-
-        val credentials = credentialRepository.getCredentials()
+        val selectedDevice = credentialRepository.getSelectedDevice()
             ?: return CredentialStatus.NoCredentials
 
+        // Derive ntfyTopic from master_secret
+        val ntfyTopic = KeyDerivation.deriveNtfyTopic(selectedDevice.masterSecret)
+
         return CredentialStatus.HasCredentials(
-            deviceId = credentials.deviceId,
-            daemonHost = credentials.daemonHost,
-            daemonPort = credentials.daemonPort
+            deviceId = selectedDevice.deviceId,
+            daemonHost = selectedDevice.daemonHost,
+            daemonPort = selectedDevice.daemonPort
         )
     }
 }
