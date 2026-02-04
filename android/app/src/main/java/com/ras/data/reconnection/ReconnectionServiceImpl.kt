@@ -65,12 +65,6 @@ class ReconnectionServiceImpl @Inject constructor(
     }
 
     override suspend fun reconnect(onProgress: (ConnectionProgress) -> Unit): ReconnectionResult {
-        // Guard: Don't reconnect if already connected
-        if (connectionManager.isConnected.value) {
-            Log.w(TAG, "reconnect() called but already connected - skipping")
-            return ReconnectionResult.Success
-        }
-
         // 1. Get stored credentials from selected device
         val selectedDevice = try {
             credentialRepository.getSelectedDevice()
@@ -81,6 +75,18 @@ class ReconnectionServiceImpl @Inject constructor(
         if (selectedDevice == null) {
             Log.d(TAG, "No selected device")
             return ReconnectionResult.Failure.NoCredentials
+        }
+
+        // Guard: Only skip if already connected to THIS device
+        val connectedTo = connectionManager.connectedDeviceId.value
+        if (connectionManager.isConnected.value && connectedTo == selectedDevice.deviceId) {
+            Log.w(TAG, "reconnect() called but already connected to ${selectedDevice.deviceId.take(8)} - skipping")
+            return ReconnectionResult.Success
+        }
+
+        // If connected to a DIFFERENT device, we'll disconnect and reconnect (handled by ConnectionManager)
+        if (connectionManager.isConnected.value && connectedTo != null) {
+            Log.i(TAG, "Switching from device ${connectedTo.take(8)} to ${selectedDevice.deviceId.take(8)}")
         }
 
         // Build credentials from selected device
@@ -204,7 +210,7 @@ class ReconnectionServiceImpl @Inject constructor(
 
             // 7. Hand off to ConnectionManager
             Log.i(TAG, "Handing off to ConnectionManager")
-            connectionManager.connectWithTransport(transport, authKey)
+            connectionManager.connectWithTransport(transport, authKey, credentials.deviceId)
 
             // Clear auth key after handoff
             authKey.fill(0)

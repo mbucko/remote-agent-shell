@@ -107,6 +107,10 @@ class ConnectionManager @Inject constructor(
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
+    // Track which device we're connected to (for multi-device support)
+    private val _connectedDeviceId = MutableStateFlow<String?>(null)
+    val connectedDeviceId: StateFlow<String?> = _connectedDeviceId.asStateFlow()
+
     // Connection health
     private val _isHealthy = MutableStateFlow(true)
     val isHealthy: StateFlow<Boolean> = _isHealthy.asStateFlow()
@@ -230,7 +234,7 @@ class ConnectionManager @Inject constructor(
      * @param authKey 32-byte key for AES-256-GCM encryption (must match daemon's key)
      * @throws IllegalStateException if sending ConnectionReady fails
      */
-    suspend fun connect(client: WebRTCClient, authKey: ByteArray) {
+    suspend fun connect(client: WebRTCClient, authKey: ByteArray, deviceId: String? = null) {
         require(authKey.size == 32) { "Auth key must be 32 bytes" }
 
         synchronized(connectionLock) {
@@ -243,6 +247,7 @@ class ConnectionManager @Inject constructor(
             codec = BytesCodec(authKey.copyOf())  // Copy to avoid external mutation
             _isConnected.value = true
             _isHealthy.value = true
+            _connectedDeviceId.value = deviceId
 
             // Set up disconnect callback to handle connection loss
             client.onDisconnect {
@@ -288,8 +293,9 @@ class ConnectionManager @Inject constructor(
      *
      * @param t The transport to use for communication
      * @param authKey 32-byte key for AES-256-GCM encryption
+     * @param deviceId Optional device ID for multi-device tracking
      */
-    suspend fun connectWithTransport(t: Transport, authKey: ByteArray) {
+    suspend fun connectWithTransport(t: Transport, authKey: ByteArray, deviceId: String? = null) {
         require(authKey.size == 32) { "Auth key must be 32 bytes" }
 
         synchronized(connectionLock) {
@@ -304,6 +310,7 @@ class ConnectionManager @Inject constructor(
             codec = BytesCodec(authKey.copyOf())
             _isConnected.value = true
             _isHealthy.value = true
+            _connectedDeviceId.value = deviceId
 
             // Set up disconnect callback for WebRTC transports
             webRtcClient?.onDisconnect {
@@ -425,6 +432,7 @@ class ConnectionManager @Inject constructor(
         pingJob = null
         _isConnected.value = false
         _isHealthy.value = false
+        _connectedDeviceId.value = null
         clearConnectionPath()
         transport?.close()
         transport = null

@@ -232,11 +232,12 @@ class PairingManager @Inject constructor(
                     }
                 }
 
+                val daemonDeviceId = result.deviceId
                 if (clientToHandOff != null && keyToHandOff != null) {
                     try {
                         // AWAIT the connection setup - this sends ConnectionReady synchronously
                         // Note: This is outside the lock to avoid blocking cleanup() during connect
-                        connectionManager.connect(clientToHandOff, keyToHandOff)
+                        connectionManager.connect(clientToHandOff, keyToHandOff, daemonDeviceId)
                         android.util.Log.i("PairingManager", "Handoff to ConnectionManager complete")
                     } catch (e: Exception) {
                         // Handoff failed - connection is broken
