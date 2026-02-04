@@ -3,9 +3,11 @@ package com.ras
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.ras.data.keystore.KeyManager
 import com.ras.data.reconnection.ReconnectionController
 import com.ras.lifecycle.AppLifecycleObserver
 import com.ras.notifications.NotificationChannels
+import kotlinx.coroutines.runBlocking
 import com.ras.service.ConnectionServiceController
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -23,11 +25,18 @@ class RasApplication : Application() {
     @Inject
     lateinit var reconnectionController: ReconnectionController
 
+    @Inject
+    lateinit var keyManager: KeyManager
+
     override fun onCreate() {
         super.onCreate()
 
         // Create notification channels
         NotificationChannels.createChannels(this)
+
+        // Clear the "user disconnected" flag on fresh app start
+        // This flag only prevents auto-reconnect within a session, not across app restarts
+        runBlocking { keyManager.setDisconnected(false) }
 
         // Register lifecycle observer for foreground/background detection
         ProcessLifecycleOwner.get().lifecycle.addObserver(appLifecycleObserver)

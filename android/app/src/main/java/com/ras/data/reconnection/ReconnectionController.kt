@@ -1,7 +1,6 @@
 package com.ras.data.reconnection
 
 import android.util.Log
-import com.ras.data.connection.ConnectionError
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.keystore.KeyManager
@@ -12,7 +11,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -27,20 +25,23 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Centralized controller for automatic reconnection logic.
+ * Controller for auto-connect on app foreground.
  *
- * This is the single source of truth for deciding when to reconnect.
- * It prevents duplicate reconnection attempts and respects user intent.
+ * This handles ONE specific case: when the app returns to foreground and the
+ * connection was lost while in background (e.g., OS killed it), auto-reconnect
+ * IF the user hasn't manually disconnected.
  *
- * Reconnection is triggered when:
- * - App comes to foreground and connection is lost
- * - Connection error occurs unexpectedly
+ * Auto-connect is triggered when:
+ * - App comes to foreground AND connection is lost AND user didn't manually disconnect
  *
- * Reconnection is NOT triggered when:
+ * Auto-connect is NOT triggered when:
  * - Already connected
  * - Already reconnecting (prevents duplicates)
  * - No credentials stored
- * - User manually disconnected (isDisconnectedOnce = true)
+ * - User manually disconnected (they must explicitly reconnect)
+ *
+ * NOTE: This does NOT auto-reconnect on connection errors. When user clicks
+ * disconnect, that's final. They must explicitly tap a device to reconnect.
  *
  * Usage:
  * ```
@@ -59,7 +60,6 @@ class ReconnectionController @Inject constructor(
 ) {
     companion object {
         private const val TAG = "ReconnectionController"
-        private const val RECONNECT_DELAY_MS = 1000L
     }
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
@@ -88,33 +88,23 @@ class ReconnectionController @Inject constructor(
     val reconnectionResult: SharedFlow<ReconnectionResult> = _reconnectionResult.asSharedFlow()
 
     /**
-     * Initialize the controller and start observing events.
+     * Initialize the controller and start observing foreground events.
      *
      * Must be called once during app initialization (e.g., in Application.onCreate).
      */
     fun initialize() {
-        // Auto-reconnect when app returns to foreground
+        // Auto-connect when app returns to foreground (if connection was lost in background)
         scope.launch {
             appLifecycleObserver.appInForeground
                 .drop(1) // Skip initial value - StartupViewModel handles initial connection
                 .filter { it } // Only when coming to foreground
                 .collect {
-                    Log.d(TAG, "App came to foreground, checking if reconnection needed")
+                    Log.d(TAG, "App came to foreground, checking if auto-connect needed")
                     attemptReconnectIfNeeded()
                 }
         }
-
-        // Auto-reconnect when connection error occurs
-        scope.launch {
-            connectionManager.connectionErrors.collect { error ->
-                if (error is ConnectionError.Disconnected) {
-                    Log.d(TAG, "Connection error detected: ${error.reason}")
-                    // Small delay to let things settle
-                    delay(RECONNECT_DELAY_MS)
-                    attemptReconnectIfNeeded()
-                }
-            }
-        }
+        // NOTE: We intentionally do NOT listen to connectionErrors here.
+        // When user disconnects, that's final - they must explicitly reconnect.
     }
 
     /**

@@ -3,6 +3,7 @@ package com.ras.ui.home
 import app.cash.turbine.test
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.credentials.CredentialRepository
+import com.ras.data.keystore.KeyManager
 import com.ras.data.model.DeviceStatus
 import com.ras.data.model.DeviceType
 import com.ras.data.model.PairedDevice
@@ -48,6 +49,7 @@ class HomeViewModelUnpairTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var credentialRepository: CredentialRepository
     private lateinit var connectionManager: ConnectionManager
+    private lateinit var keyManager: KeyManager
     private lateinit var settingsRepository: FakeSettingsRepository
     private lateinit var sessionRepository: com.ras.data.sessions.SessionRepository
     private lateinit var unpairDeviceUseCase: com.ras.domain.unpair.UnpairDeviceUseCase
@@ -61,9 +63,13 @@ class HomeViewModelUnpairTest {
         // Mock dependencies
         credentialRepository = mockk(relaxed = true)
         connectionManager = mockk(relaxed = true)
+        keyManager = mockk(relaxed = true)
         sessionRepository = mockk(relaxed = true)
         unpairDeviceUseCase = mockk(relaxed = true)
         unpairedByDaemonFlow = MutableSharedFlow()
+
+        // Default: user hasn't manually disconnected
+        coEvery { keyManager.isDisconnectedOnce() } returns false
 
         // Setup connection manager to emit unpair notifications
         every { connectionManager.unpairedByDaemon } returns unpairedByDaemonFlow
@@ -93,6 +99,7 @@ class HomeViewModelUnpairTest {
         viewModel = HomeViewModel(
             credentialRepository,
             connectionManager,
+            keyManager,
             settingsRepository,
             sessionRepository,
             unpairDeviceUseCase

@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import com.ras.data.connection.ConnectionLog
 import com.ras.data.connection.ConnectionProgress
 import com.ras.data.credentials.CredentialRepository
+import com.ras.data.keystore.KeyManager
 import com.ras.domain.startup.AttemptReconnectionUseCase
 import com.ras.domain.startup.ReconnectionResult
 import com.ras.domain.unpair.UnpairDeviceUseCase
@@ -40,6 +41,7 @@ class ConnectingViewModelTimeoutTest {
     private lateinit var credentialRepository: CredentialRepository
     private lateinit var attemptReconnectionUseCase: AttemptReconnectionUseCase
     private lateinit var unpairDeviceUseCase: UnpairDeviceUseCase
+    private lateinit var keyManager: KeyManager
     private lateinit var savedStateHandle: SavedStateHandle
     private lateinit var viewModel: ConnectingViewModel
 
@@ -50,6 +52,7 @@ class ConnectingViewModelTimeoutTest {
         credentialRepository = mockk(relaxed = true)
         attemptReconnectionUseCase = mockk(relaxed = true)
         unpairDeviceUseCase = mockk(relaxed = true)
+        keyManager = mockk(relaxed = true)
 
         // Mock SavedStateHandle with device ID
         savedStateHandle = SavedStateHandle(mapOf("deviceId" to "test-device-id"))
@@ -78,6 +81,7 @@ class ConnectingViewModelTimeoutTest {
             credentialRepository,
             attemptReconnectionUseCase,
             unpairDeviceUseCase,
+            keyManager,
             testDispatcher
         )
         testDispatcher.scheduler.advanceUntilIdle()
@@ -122,6 +126,7 @@ class ConnectingViewModelTimeoutTest {
             credentialRepository,
             attemptReconnectionUseCase,
             unpairDeviceUseCase,
+            keyManager,
             testDispatcher
         )
         testDispatcher.scheduler.advanceUntilIdle()
@@ -160,6 +165,7 @@ class ConnectingViewModelTimeoutTest {
             credentialRepository,
             attemptReconnectionUseCase,
             unpairDeviceUseCase,
+            keyManager,
             testDispatcher
         )
         testDispatcher.scheduler.advanceUntilIdle()
@@ -201,6 +207,7 @@ class ConnectingViewModelTimeoutTest {
             credentialRepository,
             attemptReconnectionUseCase,
             unpairDeviceUseCase,
+            keyManager,
             testDispatcher
         )
         testDispatcher.scheduler.advanceUntilIdle()

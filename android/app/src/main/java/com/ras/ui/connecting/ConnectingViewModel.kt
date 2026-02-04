@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionLog
 import com.ras.data.credentials.CredentialRepository
+import com.ras.data.keystore.KeyManager
 import com.ras.di.DefaultDispatcher
 import com.ras.domain.startup.AttemptReconnectionUseCase
 import com.ras.domain.startup.ReconnectionResult
@@ -32,6 +33,7 @@ class ConnectingViewModel @Inject constructor(
     private val credentialRepository: CredentialRepository,
     private val attemptReconnectionUseCase: AttemptReconnectionUseCase,
     private val unpairDeviceUseCase: UnpairDeviceUseCase,
+    private val keyManager: KeyManager,
     @DefaultDispatcher private val defaultDispatcher: CoroutineDispatcher
 ) : ViewModel() {
 
@@ -94,6 +96,8 @@ class ConnectingViewModel @Inject constructor(
 
             when (result) {
                 is ReconnectionResult.Success -> {
+                    // Clear disconnect flag - user explicitly chose to reconnect
+                    keyManager.setDisconnected(false)
                     _events.emit(ConnectingUiEvent.NavigateToSessions)
                 }
                 is ReconnectionResult.Failure.DeviceNotFound -> {

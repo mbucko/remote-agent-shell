@@ -223,34 +223,24 @@ class ReconnectionControllerTest {
     }
 
     // ============================================================================
-    // SECTION 3: Auto-Reconnect on Connection Error
+    // SECTION 3: No Auto-Reconnect on Connection Errors (by design)
     // ============================================================================
+    // We intentionally do NOT auto-reconnect when connection errors occur.
+    // When user clicks disconnect, the transport closes which emits an error.
+    // Auto-reconnecting on errors would cause unwanted reconnection after
+    // explicit user disconnect. Users must explicitly tap a device to reconnect.
 
     @Tag("unit")
     @Test
-    fun `reconnects when connection error occurs`() = runTest(testDispatcher) {
+    fun `does NOT reconnect when connection error occurs`() = runTest(testDispatcher) {
         controller.initialize()
         advanceUntilIdle()
 
-        // Emit connection error
+        // Emit connection error - should NOT trigger reconnection
         connectionErrorsFlow.emit(ConnectionError.Disconnected("Network lost"))
         advanceUntilIdle()
 
-        coVerify { mockReconnectionService.reconnect(any()) }
-    }
-
-    @Tag("unit")
-    @Test
-    fun `does not reconnect on connection error when user manually disconnected`() = runTest(testDispatcher) {
-        coEvery { mockKeyManager.isDisconnectedOnce() } returns true
-
-        controller.initialize()
-        advanceUntilIdle()
-
-        // Emit connection error
-        connectionErrorsFlow.emit(ConnectionError.Disconnected("Network lost"))
-        advanceUntilIdle()
-
+        // Verify reconnect was NOT called
         coVerify(exactly = 0) { mockReconnectionService.reconnect(any()) }
     }
 

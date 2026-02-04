@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.credentials.CredentialRepository
+import com.ras.data.keystore.KeyManager
 import com.ras.data.model.DeviceStatus
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.SettingsRepository
@@ -28,6 +29,7 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val credentialRepository: CredentialRepository,
     private val connectionManager: ConnectionManager,
+    private val keyManager: KeyManager,
     private val settingsRepository: SettingsRepository,
     private val sessionRepository: SessionRepository,
     private val unpairDeviceUseCase: UnpairDeviceUseCase
@@ -92,9 +94,11 @@ class HomeViewModel @Inject constructor(
                     )
 
                     // Auto-connect if enabled and we have a selected device
+                    // BUT NOT if user manually disconnected (they must explicitly tap to reconnect)
                     if (!hasCheckedAutoConnect && selectedDevice != null) {
                         hasCheckedAutoConnect = true
-                        if (settingsRepository.getAutoConnectEnabled()) {
+                        val userDisconnected = keyManager.isDisconnectedOnce()
+                        if (settingsRepository.getAutoConnectEnabled() && !userDisconnected) {
                             _events.emit(HomeUiEvent.NavigateToConnecting(selectedDevice.deviceId))
                         }
                     }
