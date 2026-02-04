@@ -7,7 +7,6 @@ to pairing and device removal events:
 - Re-pairing creates a subscriber on the new topic
 """
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -16,7 +15,6 @@ import pytest
 from ras.config import Config, DaemonConfig
 from ras.crypto import derive_ntfy_topic
 from ras.daemon import Daemon
-from ras.device_store import PairedDevice
 
 
 @pytest.fixture
@@ -156,6 +154,22 @@ class TestDaemonNtfySubscriberLifecycle:
 
         # Should not raise
         await daemon._on_pairing_complete("phone-001", "Test Phone")
+
+    @pytest.mark.asyncio
+    async def test_pairing_complete_device_not_in_store_doesnt_crash(self, config):
+        """If device is somehow missing from store when callback fires, should not crash."""
+        daemon = Daemon(config=config)
+        await daemon._initialize_stores()
+
+        mock_reconnection_mgr = MagicMock()
+        mock_reconnection_mgr.add_device = AsyncMock()
+        daemon._ntfy_reconnection_manager = mock_reconnection_mgr
+
+        # Call pairing complete for a device that was never stored
+        await daemon._on_pairing_complete("nonexistent-device", "Ghost Phone")
+
+        # Should not have tried to add a None device
+        mock_reconnection_mgr.add_device.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_device_removal_without_reconnection_manager_doesnt_crash(self, config):
