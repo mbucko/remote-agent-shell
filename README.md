@@ -13,6 +13,28 @@ A mobile app to remotely control your AI coding agents (Claude Code, Cursor, Cli
 - **NAT Traversal** - ntfy signaling relay when direct connection fails
 - **Tailscale Direct** - Fastest connection when both devices are on Tailscale
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/01-devices.png" width="200" alt="Device List"/>
+  <img src="docs/screenshots/02-connection-webrtc.png" width="200" alt="WebRTC Connection"/>
+  <img src="docs/screenshots/03-connection-tailscale.png" width="200" alt="Tailscale Connection"/>
+</p>
+<p align="center">
+  <img src="docs/screenshots/04-sessions.png" width="200" alt="Sessions List"/>
+  <img src="docs/screenshots/05-terminal-claude.png" width="200" alt="Claude Code Terminal"/>
+  <img src="docs/screenshots/06-terminal-opencode.png" width="200" alt="OpenCode Terminal"/>
+</p>
+
+| Screenshot | Description |
+|------------|-------------|
+| **Device List** | Manage paired devices, connect/disconnect, auto-connect on launch |
+| **WebRTC Connection** | P2P connection over the internet with NAT traversal |
+| **Tailscale Connection** | Direct connection via Tailscale VPN for lowest latency |
+| **Sessions List** | Multiple agent sessions with status and last activity |
+| **Claude Code** | Interactive Claude Code terminal with full keyboard support |
+| **OpenCode** | Compatible with OpenCode and other terminal-based AI agents |
+
 ## Connection Methods
 
 The app tries multiple connection strategies in order of preference:
