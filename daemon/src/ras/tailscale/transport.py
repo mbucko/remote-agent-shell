@@ -135,15 +135,17 @@ class TailscaleTransport:
         return payload
 
     def close(self) -> None:
-        """Close the transport."""
+        """Close the transport (marks as closed but does NOT close underlying socket).
+
+        The underlying UDP socket is shared by the listener for all connections.
+        We must NOT close it here, or new connections will fail with "Port Unreachable".
+        """
         if self._closed:
             return
         self._closed = True
         logger.info(f"Closing TailscaleTransport to {self._remote_addr}")
-        try:
-            self._transport.close()
-        except Exception as e:
-            logger.warning(f"Error closing transport: {e}")
+        # NOTE: Do NOT call self._transport.close() here!
+        # The transport is shared by the listener and closing it would break all connections.
 
     def get_stats(self) -> TransportStats:
         """Get transport statistics."""
@@ -255,7 +257,7 @@ class TailscalePeer:
         await self._transport.send(data)
 
     async def close(self) -> None:
-        """Close the connection."""
+        """Close the connection (marks as closed but does NOT close underlying socket)."""
         if self._closed:
             return
         self._closed = True
@@ -268,6 +270,7 @@ class TailscalePeer:
             except asyncio.CancelledError:
                 pass
 
+        # Close the TailscaleTransport (which only marks it as closed, doesn't close socket)
         self._transport.close()
 
     async def receive(self, timeout: float = 30.0) -> bytes:

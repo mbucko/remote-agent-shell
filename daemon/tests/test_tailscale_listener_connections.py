@@ -645,3 +645,105 @@ class TestCallbackNotBlocking:
         # Release callbacks and await tasks
         release_callbacks.set()
         await asyncio.gather(*tasks)
+
+
+class TestTransportCloseDoesNotCloseListenerSocket:
+    """Tests that closing a TailscaleTransport does NOT close the shared listener socket.
+
+    Critical bug fixed: When a phone disconnects, TailscaleTransport.close() was
+    calling self._transport.close() which closed the shared UDP listener socket.
+    This caused subsequent reconnection attempts to fail with "ICMP Port Unreachable".
+
+    Root cause: In UDP, there's no concept of individual connections - the listener
+    has ONE socket for ALL clients. Each TailscaleTransport is just a logical
+    connection that shares the same underlying socket.
+    """
+
+    @pytest.mark.asyncio
+    async def test_transport_close_does_not_close_underlying_socket(
+        self, mock_tailscale_info, mock_protocol, mock_transport
+    ):
+        """Closing TailscaleTransport should NOT close the shared UDP socket."""
+        connection_callback = AsyncMock()
+        listener = TailscaleListener(on_connection=connection_callback)
+        listener._protocol = mock_protocol
+        listener._transport = mock_transport
+        listener._tailscale_info = mock_tailscale_info
+        listener._running = True
+
+        addr = ("100.64.0.2", 12345)
+
+        # Client connects
+        await listener._handle_handshake(addr)
+        transport = listener._connections[addr]
+        assert transport.is_connected
+
+        # Client disconnects - close the transport
+        transport.close()
+        assert not transport.is_connected
+
+        # CRITICAL: The listener's underlying socket should NOT be closed
+        # If it was closed, mock_transport.close() would have been called
+        mock_transport.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_new_client_can_connect_after_previous_client_disconnects(
+        self, mock_tailscale_info, mock_protocol, mock_transport
+    ):
+        """After closing a transport, new clients should still be able to connect."""
+        connection_callback = AsyncMock()
+        listener = TailscaleListener(on_connection=connection_callback)
+        listener._protocol = mock_protocol
+        listener._transport = mock_transport
+        listener._tailscale_info = mock_tailscale_info
+        listener._running = True
+
+        # First client connects and disconnects
+        addr1 = ("100.64.0.2", 12345)
+        await listener._handle_handshake(addr1)
+        transport1 = listener._connections[addr1]
+        transport1.close()
+
+        # Second client connects (simulating phone reconnect with different port)
+        addr2 = ("100.64.0.2", 54321)  # Same IP, different port
+        await listener._handle_handshake(addr2)
+
+        # Second client should get a working transport
+        assert addr2 in listener._connections
+        transport2 = listener._connections[addr2]
+        assert transport2.is_connected
+
+        # Callback should have been called for second connection
+        assert connection_callback.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_closed_connection_cleaned_up_on_next_packet(
+        self, mock_tailscale_info, mock_protocol, mock_transport
+    ):
+        """Closed connections should be cleaned up when next packet arrives."""
+        connection_callback = AsyncMock()
+        listener = TailscaleListener(on_connection=connection_callback)
+        listener._protocol = mock_protocol
+        listener._transport = mock_transport
+        listener._tailscale_info = mock_tailscale_info
+        listener._running = True
+
+        addr = ("100.64.0.2", 12345)
+
+        # Client connects
+        await listener._handle_handshake(addr)
+        transport = listener._connections[addr]
+
+        # Client disconnects (close transport)
+        transport.close()
+        assert not transport.is_connected
+
+        # Connection still in dict (lazy cleanup)
+        assert addr in listener._connections
+
+        # Packet arrives from same address (late packet after disconnect)
+        data = struct.pack(">I", 5) + b"hello"
+        await listener._handle_packet(data, addr)
+
+        # Connection should be cleaned up now
+        assert addr not in listener._connections

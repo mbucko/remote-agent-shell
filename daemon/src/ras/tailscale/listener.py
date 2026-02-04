@@ -161,9 +161,14 @@ class TailscaleListener:
 
         # Regular data packet - route to existing connection
         if addr in self._connections:
+            transport = self._connections[addr]
+            # Clean up closed connections
+            if not transport.is_connected:
+                logger.debug(f"Cleaning up closed connection from {addr}")
+                del self._connections[addr]
+                return None
             # Route packet to the transport's own queue
             logger.debug(f"Routing {len(data)} bytes to existing connection from {addr}")
-            transport = self._connections[addr]
             await transport.enqueue(data, addr)
         else:
             # No established connection for this address - might be a late handshake or error
