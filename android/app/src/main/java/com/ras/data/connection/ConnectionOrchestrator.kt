@@ -362,11 +362,14 @@ class ConnectionOrchestrator @Inject constructor(
             }
 
             // Cache the daemon's Tailscale IP for future fast reconnection
-            Log.i(TAG, "Caching daemon Tailscale IP from ICE: ${path.remote.ip}:${path.remote.port}")
+            // Note: ICE ports are ephemeral, so we use the default Tailscale port (9876)
+            // The actual listening port is fixed, not the ICE candidate port
+            val tailscalePort = 9876
+            Log.i(TAG, "Caching daemon Tailscale IP from ICE: ${path.remote.ip}:$tailscalePort")
             credentialRepository.updateTailscaleInfo(
                 deviceId,
                 path.remote.ip,
-                path.remote.port
+                tailscalePort
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to extract/cache Tailscale IP from ICE: ${e.message}")
