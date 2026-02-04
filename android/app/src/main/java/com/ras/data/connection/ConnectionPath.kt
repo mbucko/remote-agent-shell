@@ -125,6 +125,16 @@ data class CandidateInfo(
      * Check if this is a host candidate (direct local connection)
      */
     fun isHost(): Boolean = type == "host"
+
+    /**
+     * Check if this is an IPv6 address
+     */
+    fun isIPv6(): Boolean = ip.contains(":")
+
+    /**
+     * Check if this is an IPv4 address
+     */
+    fun isIPv4(): Boolean = !ip.contains(":")
 }
 
 /**

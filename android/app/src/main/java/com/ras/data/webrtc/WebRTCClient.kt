@@ -670,20 +670,26 @@ class WebRTCClient(
             var remotePublic: com.ras.data.connection.CandidateInfo? = null
 
             if (pathType == com.ras.data.connection.PathType.WEBRTC_DIRECT) {
-                // Look for srflx candidates in all candidates
-                report.statsMap.values
-                    .filter { it.type == "local-candidate" || it.type == "remote-candidate" }
-                    .forEach { candidate ->
-                        parseCandidate(candidate)?.let { info ->
-                            if (info.isServerReflexive()) {
-                                if (candidate.id == localId) {
-                                    localPublic = info
-                                } else if (candidate.id == remoteId) {
-                                    remotePublic = info
-                                }
+                // Look for ALL srflx candidates, preferring IPv4 over IPv6
+                val localSrflxCandidates = mutableListOf<com.ras.data.connection.CandidateInfo>()
+                val remoteSrflxCandidates = mutableListOf<com.ras.data.connection.CandidateInfo>()
+
+                report.statsMap.values.forEach { candidate ->
+                    parseCandidate(candidate)?.let { info ->
+                        if (info.isServerReflexive()) {
+                            when (candidate.type) {
+                                "local-candidate" -> localSrflxCandidates.add(info)
+                                "remote-candidate" -> remoteSrflxCandidates.add(info)
                             }
                         }
                     }
+                }
+
+                // Prefer IPv4 over IPv6 (IPv4 is shorter and more readable)
+                localPublic = localSrflxCandidates.firstOrNull { it.isIPv4() }
+                    ?: localSrflxCandidates.firstOrNull()
+                remotePublic = remoteSrflxCandidates.firstOrNull { it.isIPv4() }
+                    ?: remoteSrflxCandidates.firstOrNull()
             }
 
             Log.i(TAG, "Active path: type=$pathType, local=${localInfo.ip}:${localInfo.port} (${localInfo.type}), remote=${remoteInfo.ip}:${remoteInfo.port} (${remoteInfo.type}), localPublic=${localPublic?.ip}, remotePublic=${remotePublic?.ip}")
