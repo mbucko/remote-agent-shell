@@ -244,13 +244,12 @@ private fun HasDevicesContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Auto-connect toggle (with bottom padding to avoid FAB overlap)
-        Row(
+        // Auto-connect toggle
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 72.dp),  // Space for FAB
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            horizontalAlignment = Alignment.Start
         ) {
             Text(
                 text = "Auto-connect on launch",
