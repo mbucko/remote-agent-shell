@@ -161,10 +161,36 @@ class ConnectionManager @Inject constructor(
     val connectionPath: StateFlow<ConnectionPath?> = _connectionPath.asStateFlow()
 
     /**
-     * Update the connection path by querying the WebRTC client for active ICE candidate pair.
-     * Should be called when connection is established to capture the initial path.
+     * Update the connection path by querying the transport for path info.
+     * For WebRTC: queries ICE candidate pair
+     * For Tailscale: builds path from transport IPs
      */
-    suspend fun updateConnectionPath() {
+    suspend fun updateConnectionPath(transport: Transport? = this.transport) {
+        // For Tailscale transport, build path manually
+        if (transport is TailscaleTransport) {
+            val localCandidate = CandidateInfo(
+                type = "host",
+                ip = transport.localIp,
+                port = 0,  // Our local port is ephemeral
+                isLocal = false  // Tailscale IPs are not "local" in the private IP sense
+            )
+            val remoteCandidate = CandidateInfo(
+                type = "host",
+                ip = transport.remoteIp,
+                port = transport.remotePort,
+                isLocal = false
+            )
+            val path = ConnectionPath(
+                local = localCandidate,
+                remote = remoteCandidate,
+                type = PathType.TAILSCALE
+            )
+            _connectionPath.value = path
+            Log.i(TAG, "Connection path updated: ${path.label}")
+            return
+        }
+
+        // For WebRTC, query the client
         val client = webRtcClient ?: return
         val path = client.getActivePath()
         if (path != null) {

@@ -139,6 +139,15 @@ class TailscaleTransport private constructor(
 
     override val type: TransportType = TransportType.TAILSCALE
 
+    /** Local Tailscale IP address (100.x.x.x) */
+    val localIp: String = localTailscaleIp
+
+    /** Remote Tailscale IP address */
+    val remoteIp: String = remoteAddress.address.hostAddress ?: "unknown"
+
+    /** Remote port */
+    val remotePort: Int = remoteAddress.port
+
     @Volatile
     private var closed = false
 
