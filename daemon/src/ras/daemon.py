@@ -292,6 +292,7 @@ class Daemon:
                 pairing_timeout=self._config.daemon.pairing_timeout,
                 max_pairing_sessions=self._config.daemon.max_pairing_sessions,
                 on_device_connected=self._on_device_reconnected,
+                on_pairing_complete=self._on_pairing_complete,
                 on_device_removed=self._on_device_removed,
                 tailscale_capabilities_provider=self.get_tailscale_capabilities,
             )
@@ -806,6 +807,29 @@ class Daemon:
 
     # ==================== Connection Handling ====================
 
+    async def _on_pairing_complete(
+        self, device_id: str, device_name: str
+    ) -> None:
+        """Handle pairing complete (called by UnifiedServer after auth succeeds).
+
+        Adds an ntfy reconnection subscriber for the newly paired device so it
+        can be reached for future reconnection signaling.
+
+        Args:
+            device_id: Device identifier.
+            device_name: Human-readable device name.
+        """
+        if self._ntfy_reconnection_manager is None:
+            return
+
+        device = self._device_store.get(device_id)
+        if device is None:
+            logger.warning(f"Pairing complete but device {device_id[:8]}... not found in store")
+            return
+
+        await self._ntfy_reconnection_manager.add_device(device)
+        logger.info(f"Added ntfy reconnection subscriber for {device_id[:8]}... ({device_name})")
+
     async def _on_device_removed(
         self, device_id: str, reason: str
     ) -> None:
@@ -819,6 +843,10 @@ class Daemon:
         if self._connection_manager.get_connection(device_id):
             logger.info(f"Sending unpair notification to {device_id[:8]}... ({reason})")
             await self.send_unpair_notification(device_id, reason=reason)
+
+        # Remove ntfy reconnection subscriber
+        if self._ntfy_reconnection_manager is not None:
+            await self._ntfy_reconnection_manager.remove_device(device_id)
 
     async def _on_device_reconnected(
         self,
