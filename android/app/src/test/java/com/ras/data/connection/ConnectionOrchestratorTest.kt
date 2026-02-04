@@ -263,10 +263,11 @@ class ConnectionOrchestratorTest {
         coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
 
         // Create mock WebRTC transport with Tailscale IP in remote candidate
+        // Note: ICE ports (54321) are ephemeral - should cache fixed port 9876 instead
         val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
         val tailscalePath = ConnectionPath(
             local = CandidateInfo("host", "100.64.1.1", 12345, false),
-            remote = CandidateInfo("host", "100.64.2.2", 9876, false),  // Daemon's Tailscale IP
+            remote = CandidateInfo("host", "100.64.2.2", 54321, false),  // Ephemeral ICE port
             type = PathType.TAILSCALE
         )
         coEvery { mockWebRTCClient.getActivePath() } returns tailscalePath
@@ -277,7 +278,7 @@ class ConnectionOrchestratorTest {
         val orchestrator = createOrchestrator()
         orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
 
-        // Should have cached the daemon's Tailscale IP
+        // Should cache daemon's Tailscale IP with fixed port 9876, not ephemeral ICE port
         coVerify { mockCredentialRepository.updateTailscaleInfo("test-device", "100.64.2.2", 9876) }
     }
 
@@ -364,10 +365,10 @@ class ConnectionOrchestratorTest {
         coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
 
         val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
-        // Use IPv6 Tailscale address
+        // Use IPv6 Tailscale address with ephemeral ICE port
         val ipv6TailscalePath = ConnectionPath(
             local = CandidateInfo("host", "fd7a:115c:a1e0::1", 12345, false),
-            remote = CandidateInfo("host", "fd7a:115c:a1e0:ab12::2", 9876, false),  // IPv6 Tailscale
+            remote = CandidateInfo("host", "fd7a:115c:a1e0:ab12::2", 54321, false),  // Ephemeral ICE port
             type = PathType.TAILSCALE
         )
         coEvery { mockWebRTCClient.getActivePath() } returns ipv6TailscalePath
@@ -378,7 +379,7 @@ class ConnectionOrchestratorTest {
         val orchestrator = createOrchestrator()
         orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
 
-        // Should cache the IPv6 Tailscale IP
+        // Should cache IPv6 Tailscale IP with fixed port 9876, not ephemeral ICE port
         coVerify { mockCredentialRepository.updateTailscaleInfo("test-device", "fd7a:115c:a1e0:ab12::2", 9876) }
     }
 
