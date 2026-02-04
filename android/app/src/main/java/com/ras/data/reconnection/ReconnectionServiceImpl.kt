@@ -217,13 +217,7 @@ class ReconnectionServiceImpl @Inject constructor(
 
             // 7. Hand off to ConnectionManager
             Log.i(TAG, "Handing off to ConnectionManager")
-            connectionManager.connectWithTransport(
-                t = transport,
-                authKey = authKey,
-                deviceId = credentials.deviceId,
-                daemonPublicIp = credentials.daemonHost,
-                daemonPublicPort = credentials.daemonPort
-            )
+            connectionManager.connectWithTransport(transport, authKey, credentials.deviceId)
 
             // Clear auth key after handoff
             authKey.fill(0)

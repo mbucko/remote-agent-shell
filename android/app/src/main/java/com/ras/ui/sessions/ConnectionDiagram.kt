@@ -251,13 +251,9 @@ private fun ConnectionDiagramCanvas(
         )
 
         // Draw IP addresses (if applicable)
-        // Always use getLocalDisplayIp/getRemoteDisplayIp which prefer IPv4 over IPv6
         if (path.showLocalIps) {
-            val localDisplay = path.getLocalDisplayIp()
-            val remoteDisplay = path.getRemoteDisplayIp()
-
             drawIpLabel(
-                text = "${localDisplay.ip}:${localDisplay.port}",
+                text = "${path.local.ip}:${path.local.port}",
                 x = phoneX,
                 y = phoneY - phoneRadius - with(density) { 20.dp.toPx() },
                 color = onSurfaceVariantColor,
@@ -266,7 +262,7 @@ private fun ConnectionDiagramCanvas(
             )
 
             drawIpLabel(
-                text = "${remoteDisplay.ip}:${remoteDisplay.port}",
+                text = "${path.remote.ip}:${path.remote.port}",
                 x = laptopX,
                 y = laptopY - laptopHeight / 2 - with(density) { 20.dp.toPx() },
                 color = onSurfaceVariantColor,

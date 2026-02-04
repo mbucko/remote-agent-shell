@@ -48,8 +48,6 @@ class StunClient:
     async def get_public_ip(self) -> tuple[str, int]:
         """Query STUN server to discover public IP and port.
 
-        Prefers IPv4 over IPv6 for better compatibility and display.
-
         Returns:
             Tuple of (public_ip, public_port).
 
@@ -63,22 +61,13 @@ class StunClient:
 
                 await gatherer.gather()
 
-                # Collect all srflx candidates
-                srflx_candidates = [
-                    c for c in gatherer.getLocalCandidates()
-                    if c.type == "srflx"
-                ]
+                for candidate in gatherer.getLocalCandidates():
+                    if candidate.type == "srflx":  # Server reflexive
+                        logger.info("Discovered public IP via STUN")
+                        logger.debug(f"Public IP: {candidate.ip}:{candidate.port}")
+                        return (candidate.ip, candidate.port)
 
-                if not srflx_candidates:
-                    raise StunError("No server reflexive candidate found")
-
-                # Prefer IPv4 over IPv6 (IPv4 doesn't contain colons)
-                ipv4_candidates = [c for c in srflx_candidates if ":" not in c.ip]
-                candidate = ipv4_candidates[0] if ipv4_candidates else srflx_candidates[0]
-
-                logger.info(f"Discovered public IP via STUN: {candidate.ip}")
-                logger.debug(f"Public IP: {candidate.ip}:{candidate.port}")
-                return (candidate.ip, candidate.port)
+                raise StunError("No server reflexive candidate found")
 
         except asyncio.TimeoutError:
             raise StunError(f"STUN timeout after {self.timeout}s")

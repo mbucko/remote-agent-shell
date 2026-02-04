@@ -12,11 +12,7 @@ data class ConnectionPath(
     /** Public IP for local side (from srflx/STUN candidate) - for WebRTC Direct display */
     val localPublic: CandidateInfo? = null,
     /** Public IP for remote side (from srflx/STUN candidate) - for WebRTC Direct display */
-    val remotePublic: CandidateInfo? = null,
-    /** The daemon's known public IP from pairing/signaling - use for display */
-    val daemonPublicIp: String? = null,
-    /** The daemon's known public port from pairing/signaling */
-    val daemonPublicPort: Int? = null
+    val remotePublic: CandidateInfo? = null
 ) {
     /**
      * Get the IP to display for the local side.
@@ -26,21 +22,9 @@ data class ConnectionPath(
 
     /**
      * Get the IP to display for the remote side.
-     * Priority: daemon's known public IP > srflx public IP > remote candidate
+     * For WebRTC Direct, returns public IP if available, otherwise remote IP.
      */
-    fun getRemoteDisplayIp(): CandidateInfo {
-        // If we have the daemon's known public IP, use that
-        if (daemonPublicIp != null) {
-            return CandidateInfo(
-                type = "known",
-                ip = daemonPublicIp,
-                port = daemonPublicPort ?: remote.port,
-                isLocal = false
-            )
-        }
-        // Fall back to srflx public IP or remote candidate
-        return remotePublic ?: remote
-    }
+    fun getRemoteDisplayIp(): CandidateInfo = remotePublic ?: remote
     /**
      * Human-readable label for the connection type
      */
@@ -166,9 +150,8 @@ object PathClassifier {
             return PathType.RELAY
         }
 
-        // Check for Tailscale IPs - BOTH endpoints must have Tailscale IPs
-        // If only one side has Tailscale, the connection is going through public internet
-        if (local.isTailscaleIp() && remote.isTailscaleIp()) {
+        // Check for Tailscale IPs (100.x.x.x range)
+        if (local.isTailscaleIp() || remote.isTailscaleIp()) {
             return PathType.TAILSCALE
         }
 

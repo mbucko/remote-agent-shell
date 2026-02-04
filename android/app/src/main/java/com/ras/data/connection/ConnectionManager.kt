@@ -111,12 +111,6 @@ class ConnectionManager @Inject constructor(
     private val _connectedDeviceId = MutableStateFlow<String?>(null)
     val connectedDeviceId: StateFlow<String?> = _connectedDeviceId.asStateFlow()
 
-    // Daemon's known public IP (from pairing/credentials) - for display purposes
-    @Volatile
-    private var knownDaemonPublicIp: String? = null
-    @Volatile
-    private var knownDaemonPublicPort: Int? = null
-
     // Connection health
     private val _isHealthy = MutableStateFlow(true)
     val isHealthy: StateFlow<Boolean> = _isHealthy.asStateFlow()
@@ -193,10 +187,7 @@ class ConnectionManager @Inject constructor(
             val path = ConnectionPath(
                 local = localCandidate,
                 remote = remoteCandidate,
-                type = PathType.TAILSCALE,
-                // Include daemon's known public IP for display
-                daemonPublicIp = knownDaemonPublicIp,
-                daemonPublicPort = knownDaemonPublicPort
+                type = PathType.TAILSCALE
             )
             _connectionPath.value = path
             Log.i(TAG, "Connection path updated: ${path.label}")
@@ -207,11 +198,7 @@ class ConnectionManager @Inject constructor(
         val client = webRtcClient ?: return
         val path = client.getActivePath()
         if (path != null) {
-            // Include daemon's known public IP for display
-            _connectionPath.value = path.copy(
-                daemonPublicIp = knownDaemonPublicIp,
-                daemonPublicPort = knownDaemonPublicPort
-            )
+            _connectionPath.value = path
             Log.i(TAG, "Connection path updated: ${path.label}")
         }
     }
@@ -307,16 +294,8 @@ class ConnectionManager @Inject constructor(
      * @param t The transport to use for communication
      * @param authKey 32-byte key for AES-256-GCM encryption
      * @param deviceId Optional device ID for multi-device tracking
-     * @param daemonPublicIp Daemon's known public IP (from credentials) for display
-     * @param daemonPublicPort Daemon's known public port (from credentials) for display
      */
-    suspend fun connectWithTransport(
-        t: Transport,
-        authKey: ByteArray,
-        deviceId: String? = null,
-        daemonPublicIp: String? = null,
-        daemonPublicPort: Int? = null
-    ) {
+    suspend fun connectWithTransport(t: Transport, authKey: ByteArray, deviceId: String? = null) {
         require(authKey.size == 32) { "Auth key must be 32 bytes" }
 
         synchronized(connectionLock) {
@@ -332,9 +311,6 @@ class ConnectionManager @Inject constructor(
             _isConnected.value = true
             _isHealthy.value = true
             _connectedDeviceId.value = deviceId
-            // Store daemon's known public IP for connection path display
-            knownDaemonPublicIp = daemonPublicIp
-            knownDaemonPublicPort = daemonPublicPort
 
             // Set up disconnect callback for WebRTC transports
             webRtcClient?.onDisconnect {
@@ -457,8 +433,6 @@ class ConnectionManager @Inject constructor(
         _isConnected.value = false
         _isHealthy.value = false
         _connectedDeviceId.value = null
-        knownDaemonPublicIp = null
-        knownDaemonPublicPort = null
         clearConnectionPath()
         transport?.close()
         transport = null
