@@ -131,10 +131,10 @@ class HomeViewModel @Inject constructor(
 
                     _state.value = currentState.copy(devices = updatedDevices)
 
-                    // Navigate to sessions when connected
-                    if (isConnected && selectedDevice != null) {
-                        _events.emit(HomeUiEvent.NavigateToSessions(selectedDevice.deviceId))
-                    }
+                    // NOTE: Don't auto-navigate here. Navigation is handled by:
+                    // - onDeviceClicked() when device is already connected
+                    // - ConnectingScreen when connection succeeds
+                    // Auto-navigating here causes bugs when switching between devices.
                 }
             }
         }
