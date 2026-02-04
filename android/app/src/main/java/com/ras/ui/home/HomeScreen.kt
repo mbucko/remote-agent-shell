@@ -244,9 +244,11 @@ private fun HasDevicesContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Auto-connect toggle
+        // Auto-connect toggle (with bottom padding to avoid FAB overlap)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 72.dp),  // Space for FAB
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
