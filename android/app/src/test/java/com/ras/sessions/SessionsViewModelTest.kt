@@ -386,6 +386,50 @@ class SessionsViewModelTest {
         coVerify { repository.renameSession("1", "New Name") }
     }
 
+    // ==========================================================================
+    // Disconnect Tests
+    // ==========================================================================
+
+    @Tag("unit")
+    @Test
+    fun `disconnect sets disconnected flag BEFORE closing transport`() = runTest {
+        // This test verifies the order of operations to prevent reconnection race condition.
+        // When transport closes, it triggers ConnectionError which ReconnectionController
+        // reacts to. If setDisconnected is called after disconnectGracefully, the flag
+        // check races with the reconnection attempt.
+        val callOrder = mutableListOf<String>()
+
+        coEvery { keyManager.setDisconnected(true) } answers {
+            callOrder.add("setDisconnected")
+        }
+        coEvery { connectionManager.disconnectGracefully(any()) } answers {
+            callOrder.add("disconnectGracefully")
+        }
+
+        val viewModel = createViewModel()
+        var navigated = false
+        viewModel.disconnect { navigated = true }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Verify order: setDisconnected must come BEFORE disconnectGracefully
+        assertEquals(listOf("setDisconnected", "disconnectGracefully"), callOrder)
+        assertTrue(navigated)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `disconnect calls both setDisconnected and disconnectGracefully`() = runTest {
+        val viewModel = createViewModel()
+        var navigated = false
+
+        viewModel.disconnect { navigated = true }
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify { keyManager.setDisconnected(true) }
+        coVerify { connectionManager.disconnectGracefully("user_request") }
+        assertTrue(navigated)
+    }
+
     private fun createViewModel() = SessionsViewModel(savedStateHandle, credentialRepository, repository, keyManager, connectionManager)
 
     private fun createSession(
