@@ -47,7 +47,7 @@ def _detect_macos_device_type() -> DeviceType:
 
 
 def _detect_linux_device_type() -> DeviceType:
-    """Detect device type on Linux using DMI chassis type."""
+    """Detect device type on Linux using DMI chassis type and other hints."""
     try:
         with open("/sys/class/dmi/id/chassis_type") as f:
             chassis = int(f.read().strip())
@@ -61,9 +61,41 @@ def _detect_linux_device_type() -> DeviceType:
             # Server types: 17=Rack Mount, 23=Rack Mount Chassis
             elif chassis in (17, 23):
                 return DeviceType.SERVER
+            # Type 1 = "Other" - common for VPS/cloud servers
+            # Check if it's a VM/cloud instance
+            elif chassis == 1:
+                if _is_virtual_machine():
+                    return DeviceType.SERVER
     except Exception:
         pass
     return DeviceType.UNKNOWN
+
+
+def _is_virtual_machine() -> bool:
+    """Check if running in a virtual machine (common for servers)."""
+    try:
+        # Check for common virtualization indicators
+        with open("/sys/class/dmi/id/sys_vendor") as f:
+            vendor = f.read().strip().lower()
+            # Common cloud/VM vendors
+            if any(v in vendor for v in ["hetzner", "digitalocean", "linode",
+                                          "vultr", "amazon", "google", "microsoft",
+                                          "qemu", "kvm", "vmware", "virtualbox",
+                                          "xen", "oracle"]):
+                return True
+    except Exception:
+        pass
+
+    try:
+        # Check product name
+        with open("/sys/class/dmi/id/product_name") as f:
+            product = f.read().strip().lower()
+            if any(p in product for p in ["virtual", "cloud", "vps", "kvm", "hvm"]):
+                return True
+    except Exception:
+        pass
+
+    return False
 
 
 def get_hostname() -> str:
