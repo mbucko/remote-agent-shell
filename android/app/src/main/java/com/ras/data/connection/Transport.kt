@@ -51,6 +51,7 @@ interface Transport {
  * Types of transport connections.
  */
 enum class TransportType(val displayName: String) {
+    LAN_DIRECT("LAN Direct"),
     TAILSCALE("Tailscale Direct"),
     WEBRTC("WebRTC P2P"),
     TURN("TURN Relay"),

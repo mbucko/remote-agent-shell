@@ -4,8 +4,10 @@ import android.content.Context
 import com.ras.data.connection.ConnectionStrategy
 import com.ras.data.connection.DatagramSocketFactory
 import com.ras.data.connection.DefaultDatagramSocketFactory
+import com.ras.data.connection.LanDirectStrategy
 import com.ras.data.connection.TailscaleStrategy
 import com.ras.data.connection.WebRTCStrategy
+import okhttp3.OkHttpClient
 import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.data.webrtc.WebRTCClient
 import dagger.Module
@@ -60,10 +62,25 @@ object ConnectionModule {
     }
 
     /**
+     * Provides LanDirectStrategy for WebSocket connections over LAN.
+     *
+     * This has the highest priority (5) and is tried first when
+     * both devices are on the same local network.
+     */
+    @Provides
+    @IntoSet
+    @Singleton
+    fun provideLanDirectStrategy(
+        @ApplicationContext context: Context,
+        okHttpClient: OkHttpClient
+    ): ConnectionStrategy {
+        return LanDirectStrategy(context, okHttpClient)
+    }
+
+    /**
      * Provides TailscaleStrategy for direct VPN connections.
      *
-     * This has the highest priority (10) and is tried first when
-     * both devices are on the same Tailscale network.
+     * This has priority 10 and is tried after LAN Direct.
      */
     @Provides
     @IntoSet

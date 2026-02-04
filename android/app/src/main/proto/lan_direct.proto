@@ -1,0 +1,31 @@
+// LAN Direct WebSocket authentication messages
+// Used for direct WebSocket connections over local network
+// Shared between: Python daemon, Android app
+
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+option swift_prefix = "RAS";
+
+// First message sent by client after WebSocket upgrade
+// Client sends this to authenticate the connection
+message LanDirectAuthRequest {
+  // Device unique ID (must match a paired device)
+  string device_id = 1;
+
+  // Unix timestamp in seconds (must be within ±30s of server time)
+  int64 timestamp = 2;
+
+  // HMAC-SHA256 signature as hex string
+  // Computed as: HMAC-SHA256(auth_key, device_id || timestamp_bytes)
+  string signature = 3;
+}
+
+// Response from daemon after authentication attempt
+message LanDirectAuthResponse {
+  // "authenticated" on success, error message on failure
+  string status = 1;
+}
