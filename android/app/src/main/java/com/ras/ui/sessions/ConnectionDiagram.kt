@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ras.data.connection.ConnectionPath
 import com.ras.data.connection.PathType
+import com.ras.data.model.DeviceType
 import com.ras.ui.theme.StatusDisconnected
 import com.ras.ui.theme.TerminalGreen
 import com.ras.ui.theme.TerminalYellow
@@ -44,13 +45,15 @@ import com.ras.ui.theme.TerminalBlue
 import com.ras.ui.theme.TerminalCyan
 
 /**
- * Connection diagram showing the path between phone and laptop.
+ * Connection diagram showing the path between phone and daemon device.
  * Displays connection type, IP addresses, and latency with Canvas drawing.
  * Always expanded - shows full diagram without collapse option.
  */
 @Composable
 fun ConnectionDiagram(
     connectionPath: ConnectionPath?,
+    deviceName: String = "Device",
+    deviceType: DeviceType = DeviceType.UNKNOWN,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -64,23 +67,27 @@ fun ConnectionDiagram(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            // Header row with connection type badge
+            // Header row with connection type badge on left, latency on right
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ConnectionTypeBadge(path = connectionPath)
-            }
-
-            // Latency indicator (always visible when available)
-            connectionPath?.latencyMs?.let { latency ->
-                Spacer(modifier = Modifier.height(8.dp))
-                LatencyIndicator(latencyMs = latency)
+                Spacer(modifier = Modifier.weight(1f))
+                // Latency indicator on the right
+                connectionPath?.latencyMs?.let { latency ->
+                    LatencyIndicator(latencyMs = latency)
+                }
             }
 
             // Connection diagram (always visible when path available)
             if (connectionPath != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                ConnectionDiagramCanvas(path = connectionPath)
+                Spacer(modifier = Modifier.height(8.dp))
+                ConnectionDiagramCanvas(
+                    path = connectionPath,
+                    deviceName = deviceName,
+                    deviceType = deviceType
+                )
             }
         }
     }
@@ -155,10 +162,15 @@ private fun LatencyIndicator(latencyMs: Long) {
 }
 
 @Composable
-private fun ConnectionDiagramCanvas(path: ConnectionPath) {
+private fun ConnectionDiagramCanvas(
+    path: ConnectionPath,
+    deviceName: String,
+    deviceType: DeviceType
+) {
     val density = LocalDensity.current
     val connectionColor = getConnectionColor(path.type)
     val surfaceColor = MaterialTheme.colorScheme.surface
+    val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -166,16 +178,16 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp)
+            .height(160.dp)
     ) {
         val canvasWidth = size.width
         val canvasHeight = size.height
 
-        // Positions
+        // Positions - devices lower in the canvas
         val phoneX = canvasWidth * 0.15f
-        val phoneY = canvasHeight * 0.65f
+        val phoneY = canvasHeight * 0.72f
         val laptopX = canvasWidth * 0.85f
-        val laptopY = canvasHeight * 0.65f
+        val laptopY = canvasHeight * 0.72f
         val phoneRadius = with(density) { 28.dp.toPx() }
         val laptopWidth = with(density) { 56.dp.toPx() }
         val laptopHeight = with(density) { 40.dp.toPx() }
@@ -200,29 +212,40 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
             density = density
         )
 
-        // Draw laptop icon (rectangle with screen)
-        drawLaptopIcon(
-            centerX = laptopX,
-            centerY = laptopY,
-            width = laptopWidth,
-            height = laptopHeight,
-            color = primaryColor,
-            density = density
-        )
+        // Draw device icon based on type
+        when (deviceType) {
+            DeviceType.SERVER -> drawServerIcon(
+                centerX = laptopX,
+                centerY = laptopY,
+                width = laptopWidth,
+                height = laptopHeight,
+                color = primaryColor,
+                density = density
+            )
+            else -> drawLaptopIcon(
+                centerX = laptopX,
+                centerY = laptopY,
+                width = laptopWidth,
+                height = laptopHeight,
+                color = primaryColor,
+                density = density
+            )
+        }
 
-        // Draw labels
+        // Draw labels at same Y position for alignment
+        val labelY = canvasHeight - with(density) { 8.dp.toPx() }
         drawDeviceLabel(
             text = "Phone",
             x = phoneX,
-            y = phoneY + phoneRadius + with(density) { 24.dp.toPx() },
+            y = labelY,
             color = onSurfaceColor,
             density = density
         )
 
         drawDeviceLabel(
-            text = "Laptop",
+            text = deviceName,
             x = laptopX,
-            y = laptopY + laptopHeight / 2 + with(density) { 24.dp.toPx() },
+            y = labelY,
             color = onSurfaceColor,
             density = density
         )
@@ -234,7 +257,8 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
                 x = phoneX,
                 y = phoneY - phoneRadius - with(density) { 20.dp.toPx() },
                 color = onSurfaceVariantColor,
-                density = density
+                density = density,
+                backgroundColor = surfaceVariantColor
             )
 
             drawIpLabel(
@@ -242,24 +266,27 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
                 x = laptopX,
                 y = laptopY - laptopHeight / 2 - with(density) { 20.dp.toPx() },
                 color = onSurfaceVariantColor,
-                density = density
+                density = density,
+                backgroundColor = surfaceVariantColor
             )
         } else if (path.type == PathType.WEBRTC_DIRECT) {
             // WebRTC Direct: show NAT with public IPs
-            val natY = with(density) { 85.dp.toPx() }
-            val publicIpY = with(density) { 65.dp.toPx() }
+            val natY = with(density) { 65.dp.toPx() }
+            val publicIpY = with(density) { 45.dp.toPx() }
 
             // NAT boxes
             drawNatBox(
                 x = phoneX,
                 y = natY,
                 color = connectionColor,
+                backgroundColor = surfaceVariantColor,
                 density = density
             )
             drawNatBox(
                 x = laptopX,
                 y = natY,
                 color = connectionColor,
+                backgroundColor = surfaceVariantColor,
                 density = density
             )
 
@@ -272,7 +299,8 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
                 x = phoneX,
                 y = publicIpY,
                 color = onSurfaceVariantColor,
-                density = density
+                density = density,
+                backgroundColor = surfaceVariantColor
             )
 
             drawIpLabel(
@@ -280,14 +308,15 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
                 x = laptopX,
                 y = publicIpY,
                 color = onSurfaceVariantColor,
-                density = density
+                density = density,
+                backgroundColor = surfaceVariantColor
             )
 
             // Internet cloud at top
             drawIpLabel(
                 text = "☁️",
                 x = canvasWidth / 2,
-                y = with(density) { 22.dp.toPx() },
+                y = with(density) { 10.dp.toPx() },
                 color = onSurfaceVariantColor,
                 density = density
             )
@@ -295,32 +324,7 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
             drawIpLabel(
                 text = "Internet",
                 x = canvasWidth / 2,
-                y = with(density) { 32.dp.toPx() },
-                color = onSurfaceVariantColor,
-                density = density
-            )
-
-            drawIpLabel(
-                text = "${path.remote.ip}:${path.remote.port}",
-                x = laptopX,
-                y = with(density) { 70.dp.toPx() },
-                color = onSurfaceVariantColor,
-                density = density
-            )
-
-            // Internet cloud icon at very top
-            drawIpLabel(
-                text = "☁️",
-                x = canvasWidth / 2,
                 y = with(density) { 22.dp.toPx() },
-                color = onSurfaceVariantColor,
-                density = density
-            )
-            // Internet label below cloud
-            drawIpLabel(
-                text = "Internet",
-                x = canvasWidth / 2,
-                y = with(density) { 32.dp.toPx() },
                 color = onSurfaceVariantColor,
                 density = density
             )
@@ -336,15 +340,15 @@ private fun ConnectionDiagramCanvas(path: ConnectionPath) {
         }
 
         // Draw path type label (at top for Tailscale and WebRTC Direct, middle for others)
-        val labelY = when (path.type) {
-            PathType.TAILSCALE -> with(density) { 40.dp.toPx() }
-            PathType.WEBRTC_DIRECT -> with(density) { 55.dp.toPx() }
-            else -> canvasHeight * 0.45f
+        val pathLabelY = when (path.type) {
+            PathType.TAILSCALE -> with(density) { 28.dp.toPx() }
+            PathType.WEBRTC_DIRECT -> with(density) { 35.dp.toPx() }
+            else -> canvasHeight * 0.40f
         }
         drawCenterLabel(
             text = path.label,
             x = canvasWidth / 2,
-            y = labelY,
+            y = pathLabelY,
             textColor = connectionColor,
             backgroundColor = surfaceColor,
             density = density
@@ -376,8 +380,8 @@ private fun DrawScope.drawConnectionLines(
         }
         PathType.WEBRTC_DIRECT -> {
             // WebRTC through NAT: lines go up to public IPs, then to Internet cloud
-            val topY = with(density) { 40.dp.toPx() }
-            val natY = with(density) { 80.dp.toPx() }
+            val topY = with(density) { 28.dp.toPx() }
+            val natY = with(density) { 65.dp.toPx() }
             val ipOffset = with(density) { 20.dp.toPx() }
 
             // Vertical lines from devices up to NAT/public IP level
@@ -401,35 +405,35 @@ private fun DrawScope.drawConnectionLines(
             drawLine(
                 color = color.copy(alpha = 0.7f),
                 start = Offset(startX, natY),
-                end = Offset((startX + endX) / 2 - 15.dp.toPx(), internetY + 20.dp.toPx()),
+                end = Offset((startX + endX) / 2 - 15.dp.toPx(), internetY + 15.dp.toPx()),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
             drawLine(
                 color = color.copy(alpha = 0.7f),
                 start = Offset(endX, natY),
-                end = Offset((startX + endX) / 2 + 15.dp.toPx(), internetY + 20.dp.toPx()),
+                end = Offset((startX + endX) / 2 + 15.dp.toPx(), internetY + 15.dp.toPx()),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
         }
         PathType.TAILSCALE -> {
             // VPN lines go up from devices to Tailscale VPN at top
-            val topY = with(density) { 40.dp.toPx() }
+            val topY = with(density) { 28.dp.toPx() }
             val ipOffset = with(density) { 20.dp.toPx() }
 
             // Lines go from IP level (above devices) up to VPN at top
             drawLine(
                 color = color.copy(alpha = 0.7f),
                 start = Offset(startX, startY - ipOffset),
-                end = Offset(startX, topY + 20.dp.toPx()),
+                end = Offset(startX, topY + 15.dp.toPx()),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
             drawLine(
                 color = color.copy(alpha = 0.7f),
                 start = Offset(endX, endY - ipOffset),
-                end = Offset(endX, topY + 20.dp.toPx()),
+                end = Offset(endX, topY + 15.dp.toPx()),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
@@ -438,15 +442,15 @@ private fun DrawScope.drawConnectionLines(
             val vpnLabelY = topY
             drawLine(
                 color = color.copy(alpha = 0.7f),
-                start = Offset(startX, topY + 20.dp.toPx()),
-                end = Offset((startX + endX) / 2 - 10.dp.toPx(), vpnLabelY + 12.dp.toPx()),
+                start = Offset(startX, topY + 15.dp.toPx()),
+                end = Offset((startX + endX) / 2 - 10.dp.toPx(), vpnLabelY + 10.dp.toPx()),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
             drawLine(
                 color = color.copy(alpha = 0.7f),
-                start = Offset(endX, topY + 20.dp.toPx()),
-                end = Offset((startX + endX) / 2 + 10.dp.toPx(), vpnLabelY + 12.dp.toPx()),
+                start = Offset(endX, topY + 15.dp.toPx()),
+                end = Offset((startX + endX) / 2 + 10.dp.toPx(), vpnLabelY + 10.dp.toPx()),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
@@ -513,11 +517,19 @@ private fun DrawScope.drawNatBox(
     x: Float,
     y: Float,
     color: Color,
+    backgroundColor: Color,
     density: androidx.compose.ui.unit.Density
 ) {
     val width = with(density) { 32.dp.toPx() }
     val height = with(density) { 18.dp.toPx() }
     val strokeWidth = with(density) { 1.5f.dp.toPx() }
+
+    // NAT box background (filled) to cover lines behind it
+    drawRect(
+        color = backgroundColor,
+        topLeft = Offset(x - width / 2, y - height / 2),
+        size = Size(width, height)
+    )
 
     // NAT box outline
     drawRect(
@@ -621,6 +633,44 @@ private fun DrawScope.drawLaptopIcon(
     )
 }
 
+private fun DrawScope.drawServerIcon(
+    centerX: Float,
+    centerY: Float,
+    width: Float,
+    height: Float,
+    color: Color,
+    density: androidx.compose.ui.unit.Density
+) {
+    // Outer circle
+    drawCircle(
+        color = color.copy(alpha = 0.2f),
+        radius = width * 0.6f,
+        center = Offset(centerX, centerY)
+    )
+
+    val strokeWidth = with(density) { 2.dp.toPx() }
+    val serverHeight = height * 1.2f
+    val unitHeight = serverHeight / 3
+
+    // Draw 3 stacked server units (rack server look)
+    for (i in 0 until 3) {
+        val unitY = centerY - serverHeight / 2 + i * unitHeight
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(centerX - width / 2, unitY),
+            size = Size(width, unitHeight - with(density) { 2.dp.toPx() }),
+            cornerRadius = CornerRadius(with(density) { 2.dp.toPx() }, with(density) { 2.dp.toPx() }),
+            style = Stroke(width = strokeWidth)
+        )
+        // LED indicator on each unit
+        drawCircle(
+            color = color.copy(alpha = 0.7f),
+            radius = with(density) { 3.dp.toPx() },
+            center = Offset(centerX + width / 2 - with(density) { 8.dp.toPx() }, unitY + unitHeight / 2 - with(density) { 1.dp.toPx() })
+        )
+    }
+}
+
 private fun DrawScope.drawDeviceLabel(
     text: String,
     x: Float,
@@ -643,7 +693,8 @@ private fun DrawScope.drawIpLabel(
     x: Float,
     y: Float,
     color: Color,
-    density: androidx.compose.ui.unit.Density
+    density: androidx.compose.ui.unit.Density,
+    backgroundColor: Color? = null
 ) {
     val paint = android.graphics.Paint().apply {
         this.color = color.toArgb()
@@ -651,6 +702,19 @@ private fun DrawScope.drawIpLabel(
         textAlign = android.graphics.Paint.Align.CENTER
         isAntiAlias = true
         typeface = android.graphics.Typeface.MONOSPACE
+    }
+
+    // Draw background if provided
+    if (backgroundColor != null) {
+        val bounds = android.graphics.Rect()
+        paint.getTextBounds(text, 0, text.length, bounds)
+        val padding = with(density) { 4.dp.toPx() }
+        drawRoundRect(
+            color = backgroundColor,
+            topLeft = Offset(x - bounds.width() / 2 - padding, y - bounds.height() - padding / 2),
+            size = Size(bounds.width() + padding * 2, bounds.height() + padding),
+            cornerRadius = CornerRadius(with(density) { 4.dp.toPx() }, with(density) { 4.dp.toPx() })
+        )
     }
 
     drawContext.canvas.nativeCanvas.drawText(text, x, y, paint)

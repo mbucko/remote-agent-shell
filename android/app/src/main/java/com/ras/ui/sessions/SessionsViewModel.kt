@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.ras.data.connection.ConnectionManager
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.keystore.KeyManager
+import com.ras.data.model.DeviceType
 import com.ras.data.sessions.SessionEvent
 import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionRepository
@@ -59,6 +60,13 @@ class SessionsViewModel @Inject constructor(
     // Connection path for diagram visualization
     val connectionPath = connectionManager.connectionPath
 
+    // Device info for diagram
+    private val _deviceName = MutableStateFlow("Device")
+    val deviceName: StateFlow<String> = _deviceName.asStateFlow()
+
+    private val _deviceType = MutableStateFlow(DeviceType.UNKNOWN)
+    val deviceType: StateFlow<DeviceType> = _deviceType.asStateFlow()
+
     init {
         Log.i(TAG, "SessionsViewModel created for deviceId=$deviceId, isConnected=${sessionRepository.isConnected.value}")
         observeSessions()
@@ -66,6 +74,11 @@ class SessionsViewModel @Inject constructor(
         // Ensure this device is selected before loading sessions
         viewModelScope.launch {
             credentialRepository.setSelectedDevice(deviceId)
+            // Load device info for diagram
+            credentialRepository.getDevice(deviceId)?.let { device ->
+                _deviceName.value = device.deviceName
+                _deviceType.value = device.deviceType
+            }
             loadSessions()
         }
     }

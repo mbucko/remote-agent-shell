@@ -82,6 +82,8 @@ fun SessionsScreen(
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
     val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
     val connectionPath by viewModel.connectionPath.collectAsStateWithLifecycle()
+    val deviceName by viewModel.deviceName.collectAsStateWithLifecycle()
+    val deviceType by viewModel.deviceType.collectAsStateWithLifecycle()
     val showKillDialog by viewModel.showKillDialog.collectAsStateWithLifecycle()
     val showRenameDialog by viewModel.showRenameDialog.collectAsStateWithLifecycle()
 
@@ -161,6 +163,8 @@ fun SessionsScreen(
                         ) {
                             ConnectionDiagram(
                                 connectionPath = connectionPath,
+                                deviceName = deviceName,
+                                deviceType = deviceType,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 8.dp)
