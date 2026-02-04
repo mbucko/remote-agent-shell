@@ -5,9 +5,9 @@ import com.ras.crypto.HmacUtils
 import com.ras.crypto.KeyDerivation
 import com.ras.proto.LanDirectAuthRequest
 import com.ras.proto.LanDirectAuthResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
@@ -18,10 +18,9 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import java.io.IOException
-import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Transport implementation using WebSocket over LAN.
@@ -38,6 +37,7 @@ import kotlin.coroutines.resumeWithException
  */
 class LanDirectTransport private constructor(
     private val webSocket: WebSocket,
+    private val messageChannel: Channel<ByteArray>,
     private val host: String,
     private val port: Int
 ) : Transport {
@@ -56,7 +56,8 @@ class LanDirectTransport private constructor(
          * @param masterSecret 32-byte master secret for auth key derivation
          * @param client OkHttpClient instance (for DI/testing)
          * @return Connected and authenticated transport
-         * @throws IOException if connection or authentication fails
+         * @throws LanDirectAuthException if authentication fails
+         * @throws IOException if connection fails
          */
         suspend fun connect(
             host: String,
@@ -134,18 +135,22 @@ class LanDirectTransport private constructor(
                 // Wait for auth response
                 val responseBytes = withTimeoutOrNull(AUTH_TIMEOUT_MS) {
                     msgChannel.receive()
-                } ?: throw IOException("Auth response timeout")
+                } ?: throw LanDirectAuthException("Auth response timeout")
 
                 val authResponse = LanDirectAuthResponse.parseFrom(responseBytes)
                 if (authResponse.status != "authenticated") {
-                    throw IOException("Authentication failed: ${authResponse.status}")
+                    throw LanDirectAuthException("Server rejected authentication: ${authResponse.status}")
                 }
 
                 Log.i(TAG, "Authentication successful")
-                return@withContext LanDirectTransport(ws, host, port).apply {
-                    this.messageChannel = msgChannel
-                }
+                return@withContext LanDirectTransport(ws, msgChannel, host, port)
 
+            } catch (e: CancellationException) {
+                ws.cancel()
+                throw e
+            } catch (e: LanDirectAuthException) {
+                ws.cancel()
+                throw e
             } catch (e: Exception) {
                 ws.cancel()
                 throw e
@@ -165,49 +170,59 @@ class LanDirectTransport private constructor(
 
     override val type: TransportType = TransportType.LAN_DIRECT
 
-    @Volatile
-    private var closed = false
-
-    private lateinit var messageChannel: Channel<ByteArray>
+    private val closed = AtomicBoolean(false)
 
     override val isConnected: Boolean
-        get() = !closed
+        get() = !closed.get()
 
-    private var bytesSent: Long = 0
-    private var bytesReceived: Long = 0
-    private var messagesSent: Long = 0
-    private var messagesReceived: Long = 0
+    // Thread-safe stats counters
+    private val bytesSent = AtomicLong(0)
+    private val bytesReceived = AtomicLong(0)
+    private val messagesSent = AtomicLong(0)
+    private val messagesReceived = AtomicLong(0)
     private val connectedAt: Long = System.currentTimeMillis()
+    @Volatile
     private var lastActivity: Long = connectedAt
 
     override suspend fun send(data: ByteArray) {
-        if (closed) throw TransportException("Transport is closed")
+        if (closed.get()) throw TransportException("Transport is closed")
 
         val success = webSocket.send(data.toByteString())
         if (!success) {
             throw TransportException("Send failed - WebSocket buffer full or closed")
         }
 
-        bytesSent += data.size
-        messagesSent++
+        bytesSent.addAndGet(data.size.toLong())
+        messagesSent.incrementAndGet()
         lastActivity = System.currentTimeMillis()
 
         Log.v(TAG, "Sent ${data.size} bytes")
     }
 
     override suspend fun receive(timeoutMs: Long): ByteArray {
-        if (closed) throw TransportException("Transport is closed")
+        if (closed.get()) throw TransportException("Transport is closed")
 
-        val data = if (timeoutMs > 0) {
-            withTimeoutOrNull(timeoutMs) {
+        val data = try {
+            if (timeoutMs > 0) {
+                withTimeoutOrNull(timeoutMs) {
+                    messageChannel.receive()
+                } ?: throw TransportException("Receive timeout", isRecoverable = true)
+            } else {
                 messageChannel.receive()
-            } ?: throw TransportException("Receive timeout", isRecoverable = true)
-        } else {
-            messageChannel.receive()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: TransportException) {
+            throw e
+        } catch (e: Exception) {
+            if (closed.get()) {
+                throw TransportException("Transport closed", e)
+            }
+            throw TransportException("Receive error: ${e.message}", e, isRecoverable = true)
         }
 
-        bytesReceived += data.size
-        messagesReceived++
+        bytesReceived.addAndGet(data.size.toLong())
+        messagesReceived.incrementAndGet()
         lastActivity = System.currentTimeMillis()
 
         Log.v(TAG, "Received ${data.size} bytes")
@@ -215,22 +230,22 @@ class LanDirectTransport private constructor(
     }
 
     override fun close() {
-        if (closed) return
-        closed = true
+        if (closed.getAndSet(true)) return
         Log.d(TAG, "Closing LAN Direct transport")
         try {
             webSocket.close(1000, "Client closing")
         } catch (e: Exception) {
             Log.w(TAG, "Error closing WebSocket", e)
         }
+        messageChannel.close()
     }
 
     override fun getStats(): TransportStats {
         return TransportStats(
-            bytesSent = bytesSent,
-            bytesReceived = bytesReceived,
-            messagesSent = messagesSent,
-            messagesReceived = messagesReceived,
+            bytesSent = bytesSent.get(),
+            bytesReceived = bytesReceived.get(),
+            messagesSent = messagesSent.get(),
+            messagesReceived = messagesReceived.get(),
             connectedAtMs = connectedAt,
             lastActivityMs = lastActivity,
             estimatedLatencyMs = null

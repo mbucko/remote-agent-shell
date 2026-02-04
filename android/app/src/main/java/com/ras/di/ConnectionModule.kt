@@ -65,16 +65,17 @@ object ConnectionModule {
      * Provides LanDirectStrategy for WebSocket connections over LAN.
      *
      * This has the highest priority (5) and is tried first when
-     * both devices are on the same local network.
+     * both devices are on the same local network (detected via mDNS).
      */
     @Provides
     @IntoSet
     @Singleton
     fun provideLanDirectStrategy(
         @ApplicationContext context: Context,
+        mdnsService: MdnsDiscoveryService,
         okHttpClient: OkHttpClient
     ): ConnectionStrategy {
-        return LanDirectStrategy(context, okHttpClient)
+        return LanDirectStrategy(context, mdnsService, okHttpClient)
     }
 
     /**

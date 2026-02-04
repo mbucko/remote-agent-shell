@@ -1,104 +1,89 @@
 package com.ras.data.connection
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.util.Log
+import com.ras.data.discovery.DiscoveredDaemon
+import com.ras.data.discovery.MdnsDiscoveryService
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import javax.inject.Inject
 
 /**
  * Connection strategy using direct WebSocket over LAN.
  *
- * This is the fastest connection option when both devices are on the
- * same local network. It uses WebSocket upgrade on the daemon's existing
- * HTTP port, requiring no additional configuration.
+ * When both devices are on the same local network (detected via mDNS),
+ * we can connect directly via WebSocket without WebRTC overhead.
+ *
+ * This is the fastest option when available (~100ms vs ~5s for WebRTC).
  *
  * Priority: 5 (highest - try before Tailscale and WebRTC)
  *
- * Detection checks:
- * - daemonHost and daemonPort are provided (from QR code or mDNS)
- * - Device has WiFi or Ethernet connectivity
+ * Detection:
+ * - Uses mDNS to discover daemon on local network
+ * - Caches discovery result between detect() and connect()
  *
  * Authentication uses HMAC-SHA256 with derived auth key.
  */
 class LanDirectStrategy @Inject constructor(
     @ApplicationContext private val appContext: Context,
-    private val okHttpClient: OkHttpClient = defaultClient()
+    private val mdnsService: MdnsDiscoveryService,
+    private val okHttpClient: OkHttpClient
 ) : ConnectionStrategy {
 
     companion object {
         private const val TAG = "LanDirectStrategy"
         private const val DEFAULT_PORT = 8765  // Default daemon HTTP port
-
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder().build()
+        private const val MDNS_DETECT_TIMEOUT_MS = 1000L
+        private const val MDNS_CONNECT_TIMEOUT_MS = 500L  // Shorter - should be cached
     }
 
     override val name: String = "LAN Direct"
     override val priority: Int = 5  // Highest priority - fastest when available
 
-    private var detectedHost: String? = null
-    private var detectedPort: Int? = null
+    // Cache mDNS result between detect() and connect() to avoid race condition
+    private var cachedDaemon: DiscoveredDaemon? = null
 
     override suspend fun detect(): DetectionResult {
-        // Check if we have LAN connectivity (WiFi or Ethernet)
-        val connectivityManager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE)
-            as ConnectivityManager
-
-        val network = connectivityManager.activeNetwork
-        val capabilities = network?.let { connectivityManager.getNetworkCapabilities(it) }
-
-        val hasLanConnectivity = capabilities?.let {
-            it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                it.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-        } ?: false
-
-        if (!hasLanConnectivity) {
-            Log.d(TAG, "No LAN connectivity (WiFi/Ethernet)")
-            return DetectionResult.Unavailable("No WiFi or Ethernet connection")
+        // Query mDNS for daemon on local network
+        cachedDaemon = try {
+            mdnsService.getDiscoveredDaemon(timeoutMs = MDNS_DETECT_TIMEOUT_MS)
+        } catch (e: Exception) {
+            Log.w(TAG, "mDNS detection error: ${e.message}")
+            null
         }
 
-        // LAN Direct requires daemon host/port from context
-        // This will be checked in connect() - detection just checks network availability
-        Log.d(TAG, "LAN connectivity available")
-        return DetectionResult.Available("WiFi/Ethernet connected")
+        return if (cachedDaemon != null) {
+            Log.i(TAG, "Daemon found via mDNS: ${cachedDaemon!!.host}:${cachedDaemon!!.port}")
+            DetectionResult.Available("${cachedDaemon!!.host}:${cachedDaemon!!.port}")
+        } else {
+            DetectionResult.Unavailable("Daemon not on local network")
+        }
     }
 
     override suspend fun connect(
         context: ConnectionContext,
         onProgress: (ConnectionStep) -> Unit
     ): ConnectionResult {
-        // Get daemon host/port from context
-        val host = context.daemonHost
-        val port = context.daemonPort ?: DEFAULT_PORT
-
-        if (host == null) {
-            Log.d(TAG, "Daemon host not provided in context")
-            return ConnectionResult.Failed(
-                "Daemon LAN address unknown",
+        // Use cached daemon from detect(), with fallback query
+        val daemon = cachedDaemon
+            ?: mdnsService.getDiscoveredDaemon(timeoutMs = MDNS_CONNECT_TIMEOUT_MS)
+            ?: return ConnectionResult.Failed(
+                error = "Daemon no longer on local network",
                 canRetry = false
             )
-        }
-
-        // Treat port 0 as "use default"
-        val effectivePort = if (port > 0) port else DEFAULT_PORT
-
-        Log.i(TAG, "Attempting LAN Direct connection to $host:$effectivePort")
 
         try {
-            // Step 1: Check connectivity
-            onProgress(ConnectionStep("Checking", "Verifying LAN connectivity"))
+            // Step 1: Build WebSocket URL
+            onProgress(ConnectionStep("Connecting", "Opening WebSocket to ${daemon.host}"))
+            val wsUrl = "ws://${daemon.host}:${daemon.port}/ws/${context.deviceId}"
+            Log.i(TAG, "Connecting to $wsUrl")
 
-            // Step 2: Connect via WebSocket
-            onProgress(ConnectionStep(
-                "Connecting",
-                "WebSocket to $host:$effectivePort"
-            ))
-
+            // Step 2: Connect and authenticate
+            onProgress(ConnectionStep("Authenticating", "Verifying connection"))
             val transport = LanDirectTransport.connect(
-                host = host,
-                port = effectivePort,
+                host = daemon.host,
+                port = daemon.port,
                 deviceId = context.deviceId,
                 masterSecret = context.authToken,
                 client = okHttpClient
@@ -107,13 +92,31 @@ class LanDirectStrategy @Inject constructor(
             Log.i(TAG, "LAN Direct connection established!")
             return ConnectionResult.Success(transport)
 
+        } catch (e: CancellationException) {
+            // CRITICAL: Never swallow CancellationException
+            throw e
+        } catch (e: LanDirectAuthException) {
+            Log.w(TAG, "LAN Direct auth failed: ${e.message}")
+            return ConnectionResult.Failed(
+                error = "Authentication failed",
+                exception = e,
+                canRetry = false  // Don't retry auth failures
+            )
         } catch (e: Exception) {
             Log.e(TAG, "LAN Direct connection failed", e)
             return ConnectionResult.Failed(
                 error = e.message ?: "Connection failed",
                 exception = e,
-                canRetry = true  // Allow retry - network conditions may change
+                canRetry = false  // Fall back to next strategy
             )
+        } finally {
+            // Clear cache after connect attempt
+            cachedDaemon = null
         }
     }
 }
+
+/**
+ * Exception thrown when LAN Direct authentication fails.
+ */
+class LanDirectAuthException(message: String, cause: Throwable? = null) : Exception(message, cause)

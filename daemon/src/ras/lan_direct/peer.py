@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Any, Callable, Optional, Protocol
 
+from aiohttp import WSMsgType
+
 from ras.protocols import PeerOwnership
 
 logger = logging.getLogger(__name__)
@@ -207,12 +209,8 @@ class LanDirectPeer:
                 if self._closed:
                     break
 
-                # Check message type - aiohttp uses WSMsgType enum
-                # WSMsgType.BINARY = 2, WSMsgType.CLOSE = 8, WSMsgType.ERROR = 256
-                msg_type = getattr(msg, "type", None)
-
                 # Handle binary messages
-                if msg_type == 2:  # WSMsgType.BINARY
+                if msg.type == WSMsgType.BINARY:
                     if self._message_handler:
                         try:
                             result = self._message_handler(msg.data)
@@ -222,12 +220,12 @@ class LanDirectPeer:
                             logger.error(f"Error in message handler: {e}")
 
                 # Handle close
-                elif msg_type == 8:  # WSMsgType.CLOSE
+                elif msg.type == WSMsgType.CLOSE:
                     logger.debug("WebSocket closed by remote")
                     break
 
                 # Handle error
-                elif msg_type == 256:  # WSMsgType.ERROR
+                elif msg.type == WSMsgType.ERROR:
                     logger.error(f"WebSocket error: {self._ws.exception()}")
                     break
 
