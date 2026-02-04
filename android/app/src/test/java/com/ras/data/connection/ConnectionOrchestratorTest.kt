@@ -405,4 +405,88 @@ class ConnectionOrchestratorTest {
         assertNotNull(result)
         coVerify(exactly = 0) { mockCredentialRepository.updateTailscaleInfo(any(), any(), any()) }
     }
+
+    @Tag("unit")
+    @Test
+    fun `handles getActivePath exception gracefully`() = runTest {
+        // Local Tailscale is available
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.1.1", "tailscale0")
+
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No VPN")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        // getActivePath throws an exception (e.g., WebRTC stats API failure)
+        coEvery { mockWebRTCClient.getActivePath() } throws RuntimeException("Stats collection failed")
+
+        val mockWebRTCTransport = WebRTCTransport(mockWebRTCClient)
+        coEvery { webRTCStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockWebRTCTransport)
+
+        val orchestrator = createOrchestrator()
+        // Should not throw - exception should be caught and logged
+        val result = orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
+
+        assertNotNull(result)
+        coVerify(exactly = 0) { mockCredentialRepository.updateTailscaleInfo(any(), any(), any()) }
+    }
+
+    @Tag("unit")
+    @Test
+    fun `handles updateTailscaleInfo exception gracefully`() = runTest {
+        // Local Tailscale is available
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.1.1", "tailscale0")
+
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No VPN")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        val tailscalePath = ConnectionPath(
+            local = CandidateInfo("host", "100.64.1.1", 12345, false),
+            remote = CandidateInfo("host", "100.64.2.2", 54321, false),
+            type = PathType.TAILSCALE
+        )
+        coEvery { mockWebRTCClient.getActivePath() } returns tailscalePath
+
+        val mockWebRTCTransport = WebRTCTransport(mockWebRTCClient)
+        coEvery { webRTCStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockWebRTCTransport)
+
+        // Database write fails
+        coEvery { mockCredentialRepository.updateTailscaleInfo(any(), any(), any()) } throws RuntimeException("DB write failed")
+
+        val orchestrator = createOrchestrator()
+        // Should not throw - exception should be caught and logged
+        val result = orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
+
+        // Connection should still succeed even if caching fails
+        assertNotNull(result)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `uses fixed port 9876 regardless of ICE candidate port`() = runTest {
+        // This test explicitly verifies that ephemeral ICE ports are ignored
+        // and the fixed daemon listening port (9876) is always cached
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.1.1", "tailscale0")
+
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No daemon IP")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        // ICE candidate has port 0 (common for some ICE implementations)
+        val pathWithZeroPort = ConnectionPath(
+            local = CandidateInfo("host", "100.64.1.1", 12345, false),
+            remote = CandidateInfo("host", "100.64.2.2", 0, false),  // Port 0 from ICE
+            type = PathType.TAILSCALE
+        )
+        coEvery { mockWebRTCClient.getActivePath() } returns pathWithZeroPort
+
+        val mockWebRTCTransport = WebRTCTransport(mockWebRTCClient)
+        coEvery { webRTCStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockWebRTCTransport)
+
+        val orchestrator = createOrchestrator()
+        orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
+
+        // Should cache with fixed port 9876, NOT the ICE port 0
+        coVerify { mockCredentialRepository.updateTailscaleInfo("test-device", "100.64.2.2", 9876) }
+    }
 }
