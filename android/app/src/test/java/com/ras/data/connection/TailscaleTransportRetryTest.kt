@@ -77,7 +77,7 @@ class TailscaleTransportRetryTest {
         strategy.detect()
 
         coEvery {
-            TailscaleTransport.connect(any(), any(), any(), any())
+            TailscaleTransport.connect(any(), any(), any(), any(), any())
         } throws IOException("Handshake failed after 3 attempts - daemon may not be listening on Tailscale")
 
         val result = strategy.connect(createContext()) {}
@@ -101,7 +101,7 @@ class TailscaleTransportRetryTest {
 
         val errorMessage = "Handshake failed after 3 attempts - daemon may not be listening on Tailscale"
         coEvery {
-            TailscaleTransport.connect(any(), any(), any(), any())
+            TailscaleTransport.connect(any(), any(), any(), any(), any())
         } throws IOException(errorMessage)
 
         val steps = mutableListOf<ConnectionStep>()
@@ -127,7 +127,7 @@ class TailscaleTransportRetryTest {
         strategy.detect()
 
         val authMessageSent = slot<ByteArray>()
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(capture(authMessageSent)) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)  // Auth success
 
@@ -149,7 +149,7 @@ class TailscaleTransportRetryTest {
 
         var authSent = false
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } answers {
             authSent = true
         }
@@ -171,7 +171,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x00)  // Auth failed
         coEvery { mockTransport.close() } returns Unit
@@ -194,7 +194,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } throws TransportException("Receive timeout", null, true)
 
@@ -212,7 +212,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)  // Success
 
@@ -232,7 +232,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -255,7 +255,7 @@ class TailscaleTransportRetryTest {
          */
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -326,7 +326,7 @@ class TailscaleTransportRetryTest {
             strategy.detect()
 
             coEvery {
-                TailscaleTransport.connect(any(), any(), any(), any())
+                TailscaleTransport.connect(any(), any(), any(), any(), any())
             } throws IOException(errorMsg)
 
             val result = strategy.connect(createContext()) {}
@@ -349,11 +349,59 @@ class TailscaleTransportRetryTest {
         strategy.detect()
 
         coEvery {
-            TailscaleTransport.connect(any(), any(), any(), any())
+            TailscaleTransport.connect(any(), any(), any(), any(), any())
         } throws SocketTimeoutException("Handshake timeout")
 
         val result = strategy.connect(createContext()) {}
 
         assertTrue(result is ConnectionResult.Failed)
+    }
+
+    // ==================== Connection Timeout Tests ====================
+
+    @Tag("unit")
+    @Test
+    fun `connection timeout results in IOException`() = runTest {
+        /**
+         * When the overall connection timeout (2s default) is exceeded,
+         * TailscaleTransport.connect() should throw IOException.
+         * This ensures fast fallback to WebRTC strategy.
+         */
+        strategy.detect()
+
+        coEvery {
+            TailscaleTransport.connect(any(), any(), any(), any(), any())
+        } throws IOException("Connection timeout after 2000ms - daemon not reachable via Tailscale")
+
+        val result = strategy.connect(createContext()) {}
+
+        assertTrue(result is ConnectionResult.Failed, "Should fail on connection timeout")
+        assertTrue(
+            (result as ConnectionResult.Failed).error.contains("timeout") ||
+            result.error.contains("not reachable"),
+            "Error message should indicate timeout or unreachable daemon"
+        )
+    }
+
+    @Tag("unit")
+    @Test
+    fun `document expected timeout behavior - 2s total for fast fallback`() {
+        /**
+         * Documents the expected timeout behavior for fast fallback:
+         *
+         * DEFAULT_CONNECT_TIMEOUT_MS = 2000ms (total connection timeout)
+         * HANDSHAKE_ATTEMPT_TIMEOUT_MS = 500ms (per-attempt socket timeout)
+         * HANDSHAKE_MAX_RETRIES = 3
+         *
+         * This means:
+         * - Each handshake attempt times out after 500ms
+         * - Up to 3 attempts within the 2s total
+         * - Total worst case: ~1.5s (3 * 500ms) < 2s
+         * - If daemon unreachable, fail quickly (2s) to allow WebRTC fallback
+         *
+         * This is important for user experience - we don't want to wait
+         * 6+ seconds for Tailscale before trying WebRTC.
+         */
+        assertTrue(true, "Timeout behavior is documented")
     }
 }

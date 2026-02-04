@@ -102,6 +102,10 @@ class CredentialRepositoryImpl @Inject constructor(
         dao.updateDeviceStatus(deviceId, DeviceStatus.UNPAIRED_BY_USER.name)
     }
 
+    override suspend fun updateTailscaleInfo(deviceId: String, ip: String?, port: Int?) {
+        dao.updateTailscaleInfo(deviceId, ip, port)
+    }
+
     // Private helpers
 
     /**

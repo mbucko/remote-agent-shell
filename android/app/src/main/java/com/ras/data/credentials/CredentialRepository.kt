@@ -90,4 +90,13 @@ interface CredentialRepository {
      * @param deviceId The device to unpair
      */
     suspend fun unpairDevice(deviceId: String)
+
+    /**
+     * Update Tailscale connection info for a device.
+     * Used to cache discovered Tailscale IPs for faster reconnection.
+     * @param deviceId The device identifier
+     * @param ip The Tailscale IP address (100.x.x.x IPv4 or fd7a:115c:a1e0:: IPv6)
+     * @param port The Tailscale port
+     */
+    suspend fun updateTailscaleInfo(deviceId: String, ip: String?, port: Int?)
 }

@@ -96,4 +96,14 @@ interface PairedDeviceDao {
      */
     @Query("DELETE FROM paired_devices WHERE status != 'PAIRED'")
     suspend fun deleteUnpairedDevices()
+
+    /**
+     * Update Tailscale connection info for a device.
+     * Used to cache discovered Tailscale IPs for faster reconnection.
+     * @param deviceId The device identifier
+     * @param ip The Tailscale IP address (100.x.x.x or fd7a:115c:a1e0::/48)
+     * @param port The Tailscale port
+     */
+    @Query("UPDATE paired_devices SET daemon_tailscale_ip = :ip, daemon_tailscale_port = :port WHERE device_id = :deviceId")
+    suspend fun updateTailscaleInfo(deviceId: String, ip: String?, port: Int?)
 }

@@ -171,17 +171,26 @@ object VpnCandidateInjector {
     }
 
     /**
-     * Check if an IP is in the Tailscale range (100.64.0.0/10).
-     * This is CGNAT space that Tailscale uses for its addresses.
+     * Check if an IP is in the Tailscale range.
+     * - IPv4: 100.64.0.0/10 (CGNAT space that Tailscale uses)
+     * - IPv6: fd7a:115c:a1e0::/48 (Tailscale's ULA range)
      */
     fun isTailscaleIp(ip: String): Boolean {
+        // IPv4: 100.64.0.0/10
         val parts = ip.split(".")
-        if (parts.size != 4) return false
+        if (parts.size == 4) {
+            val firstOctet = parts[0].toIntOrNull() ?: return false
+            val secondOctet = parts[1].toIntOrNull() ?: return false
+            // 100.64.0.0/10 means first octet is 100, second octet is 64-127
+            return firstOctet == 100 && secondOctet in 64..127
+        }
 
-        val firstOctet = parts[0].toIntOrNull() ?: return false
-        val secondOctet = parts[1].toIntOrNull() ?: return false
+        // IPv6: fd7a:115c:a1e0::/48 (Tailscale's ULA range)
+        val lowerIp = ip.lowercase()
+        if (lowerIp.startsWith("fd7a:115c:a1e0:")) {
+            return true
+        }
 
-        // 100.64.0.0/10 means first octet is 100, second octet is 64-127
-        return firstOctet == 100 && secondOctet in 64..127
+        return false
     }
 }

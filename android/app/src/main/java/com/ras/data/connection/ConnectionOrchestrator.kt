@@ -1,6 +1,7 @@
 package com.ras.data.connection
 
 import android.util.Log
+import com.ras.data.credentials.CredentialRepository
 import com.ras.util.GlobalConnectionTimer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
@@ -29,7 +30,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class ConnectionOrchestrator @Inject constructor(
-    private val strategies: Set<@JvmSuppressWildcards ConnectionStrategy>
+    private val strategies: Set<@JvmSuppressWildcards ConnectionStrategy>,
+    private val credentialRepository: CredentialRepository
 ) {
     companion object {
         private const val TAG = "ConnectionOrchestrator"
@@ -146,6 +148,20 @@ class ConnectionOrchestrator @Inject constructor(
             ))
             Log.i(TAG, "Daemon capabilities: tailscale=${daemonCapabilities.tailscaleIp}:${daemonCapabilities.tailscalePort}")
 
+            // Persist daemon's Tailscale IP for future fast reconnection
+            if (!daemonCapabilities.tailscaleIp.isNullOrEmpty()) {
+                try {
+                    credentialRepository.updateTailscaleInfo(
+                        context.deviceId,
+                        daemonCapabilities.tailscaleIp,
+                        daemonCapabilities.tailscalePort
+                    )
+                    Log.i(TAG, "Cached daemon Tailscale IP from capability exchange: ${daemonCapabilities.tailscaleIp}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to cache Tailscale IP: ${e.message}")
+                }
+            }
+
             // Enrich context with fresh daemon Tailscale info and local Tailscale status
             context.copy(
                 daemonTailscaleIp = daemonCapabilities.tailscaleIp,
@@ -233,6 +249,15 @@ class ConnectionOrchestrator @Inject constructor(
                         _state.value = ConnectionState.CONNECTED
                         _currentTransport.value = result.transport
                         onProgress(ConnectionProgress.Connected(strategy.name, result.transport, duration))
+
+                        // Extract and cache Tailscale IP from WebRTC ICE candidates
+                        // This enables fast Tailscale Direct on subsequent connections
+                        extractAndCacheTailscaleIp(
+                            result.transport,
+                            enrichedContext.deviceId,
+                            enrichedContext.localTailscaleAvailable
+                        )
+
                         return@coroutineScope result.transport
                     }
                     is ConnectionResult.Failed -> {
@@ -290,5 +315,61 @@ class ConnectionOrchestrator @Inject constructor(
         connectionJob?.cancel()
         connectionJob = null
         _state.value = ConnectionState.CANCELLED
+    }
+
+    /**
+     * Extract Tailscale IP from WebRTC ICE candidates and cache it for future connections.
+     *
+     * This enables fast Tailscale Direct connections on subsequent reconnects.
+     * Only caches if:
+     * - Transport is WebRTC (has ICE candidates)
+     * - Local Tailscale is available (we can route to Tailscale IPs)
+     * - Remote candidate is in Tailscale IP range
+     *
+     * @param transport The connected transport
+     * @param deviceId The device ID to update credentials for
+     * @param localTailscaleAvailable Whether local Tailscale is detected
+     */
+    private suspend fun extractAndCacheTailscaleIp(
+        transport: Transport,
+        deviceId: String,
+        localTailscaleAvailable: Boolean
+    ) {
+        // Only extract from WebRTC transport (has ICE candidates)
+        if (transport !is WebRTCTransport) {
+            Log.d(TAG, "Not extracting Tailscale IP - not WebRTC transport")
+            return
+        }
+
+        // Only cache if local Tailscale is available
+        // (otherwise we can't use the cached IP anyway)
+        if (!localTailscaleAvailable) {
+            Log.d(TAG, "Not caching Tailscale IP - local Tailscale not available")
+            return
+        }
+
+        try {
+            val path = transport.client.getActivePath()
+            if (path == null) {
+                Log.d(TAG, "No active path available from WebRTC stats")
+                return
+            }
+
+            // Check if remote candidate is a Tailscale IP
+            if (!path.remote.isTailscaleIp()) {
+                Log.d(TAG, "Remote candidate is not Tailscale IP: ${path.remote.ip}")
+                return
+            }
+
+            // Cache the daemon's Tailscale IP for future fast reconnection
+            Log.i(TAG, "Caching daemon Tailscale IP from ICE: ${path.remote.ip}:${path.remote.port}")
+            credentialRepository.updateTailscaleInfo(
+                deviceId,
+                path.remote.ip,
+                path.remote.port
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract/cache Tailscale IP from ICE: ${e.message}")
+        }
     }
 }

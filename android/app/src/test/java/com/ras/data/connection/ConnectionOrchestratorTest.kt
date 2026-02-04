@@ -1,10 +1,17 @@
 package com.ras.data.connection
 
 import android.content.Context
+import com.ras.data.credentials.CredentialRepository
+import com.ras.data.webrtc.WebRTCClient
 import io.mockk.coEvery
+import io.mockk.coJustRun
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -22,6 +29,8 @@ import org.junit.jupiter.api.Tag
  * - WebRTCStrategy is used as fallback (priority 20)
  * - Progress callbacks are invoked correctly
  * - Failed strategies result in fallback to next
+ * - Tailscale IP is cached from capability exchange
+ * - Tailscale IP is extracted and cached from WebRTC ICE candidates
  */
 class ConnectionOrchestratorTest {
 
@@ -30,6 +39,7 @@ class ConnectionOrchestratorTest {
     private lateinit var mockTransport: Transport
     private lateinit var mockSignaling: SignalingChannel
     private lateinit var mockContext: Context
+    private lateinit var mockCredentialRepository: CredentialRepository
 
     @BeforeEach
     fun setup() {
@@ -38,6 +48,10 @@ class ConnectionOrchestratorTest {
         webRTCStrategy = mockk(relaxed = true)
         mockTransport = mockk(relaxed = true)
         mockSignaling = mockk(relaxed = true)
+        mockCredentialRepository = mockk(relaxed = true)
+
+        // Mock TailscaleDetector for consistent test behavior
+        mockkObject(TailscaleDetector)
 
         // Set up strategy names and priorities
         coEvery { tailscaleStrategy.name } returns "Tailscale Direct"
@@ -45,15 +59,32 @@ class ConnectionOrchestratorTest {
 
         coEvery { webRTCStrategy.name } returns "WebRTC P2P"
         coEvery { webRTCStrategy.priority } returns 20
+
+        // Default: no Tailscale IP caching
+        coJustRun { mockCredentialRepository.updateTailscaleInfo(any(), any(), any()) }
+
+        // Default: no local Tailscale
+        every { TailscaleDetector.detect(any()) } returns null
     }
 
-    private fun createContext() = ConnectionContext(
+    @AfterEach
+    fun tearDown() {
+        unmockkObject(TailscaleDetector)
+    }
+
+    private fun createContext(localTailscaleAvailable: Boolean = false) = ConnectionContext(
         androidContext = mockContext,
         deviceId = "test-device",
         daemonHost = "192.168.1.100",
         daemonPort = 8765,
         signaling = mockSignaling,
-        authToken = ByteArray(32)
+        authToken = ByteArray(32),
+        localTailscaleAvailable = localTailscaleAvailable
+    )
+
+    private fun createOrchestrator() = ConnectionOrchestrator(
+        setOf(tailscaleStrategy, webRTCStrategy),
+        mockCredentialRepository
     )
 
     @Tag("unit")
@@ -67,7 +98,7 @@ class ConnectionOrchestratorTest {
         coEvery { tailscaleStrategy.connect(any(), any()) } returns
                 ConnectionResult.Success(mockTransport)
 
-        val orchestrator = ConnectionOrchestrator(setOf(webRTCStrategy, tailscaleStrategy))
+        val orchestrator = createOrchestrator()
         val progressSteps = mutableListOf<ConnectionProgress>()
 
         val result = orchestrator.connect(createContext()) { progress ->
@@ -97,7 +128,7 @@ class ConnectionOrchestratorTest {
         coEvery { webRTCStrategy.connect(any(), any()) } returns
                 ConnectionResult.Success(mockTransport)
 
-        val orchestrator = ConnectionOrchestrator(setOf(tailscaleStrategy, webRTCStrategy))
+        val orchestrator = createOrchestrator()
         val progressSteps = mutableListOf<ConnectionProgress>()
 
         val result = orchestrator.connect(createContext()) { progress ->
@@ -128,7 +159,7 @@ class ConnectionOrchestratorTest {
         coEvery { webRTCStrategy.connect(any(), any()) } returns
                 ConnectionResult.Success(mockTransport)
 
-        val orchestrator = ConnectionOrchestrator(setOf(tailscaleStrategy, webRTCStrategy))
+        val orchestrator = createOrchestrator()
         val progressSteps = mutableListOf<ConnectionProgress>()
 
         val result = orchestrator.connect(createContext()) { progress ->
@@ -159,7 +190,7 @@ class ConnectionOrchestratorTest {
         coEvery { webRTCStrategy.connect(any(), any()) } returns
                 ConnectionResult.Failed("WebRTC error")
 
-        val orchestrator = ConnectionOrchestrator(setOf(tailscaleStrategy, webRTCStrategy))
+        val orchestrator = createOrchestrator()
         val progressSteps = mutableListOf<ConnectionProgress>()
 
         val result = orchestrator.connect(createContext()) { progress ->
@@ -184,7 +215,7 @@ class ConnectionOrchestratorTest {
         coEvery { tailscaleStrategy.connect(any(), any()) } returns
                 ConnectionResult.Success(mockTransport)
 
-        val orchestrator = ConnectionOrchestrator(setOf(tailscaleStrategy, webRTCStrategy))
+        val orchestrator = createOrchestrator()
         val progressSteps = mutableListOf<ConnectionProgress>()
 
         orchestrator.connect(createContext()) { progress ->
@@ -206,7 +237,7 @@ class ConnectionOrchestratorTest {
         coEvery { webRTCStrategy.connect(any(), any()) } returns
                 ConnectionResult.Success(mockTransport)
 
-        val orchestrator = ConnectionOrchestrator(setOf(tailscaleStrategy, webRTCStrategy))
+        val orchestrator = createOrchestrator()
         val progressSteps = mutableListOf<ConnectionProgress>()
 
         orchestrator.connect(createContext()) { progress ->
@@ -217,5 +248,160 @@ class ConnectionOrchestratorTest {
         val connected = progressSteps.filterIsInstance<ConnectionProgress.Connected>()
         assertEquals(1, connected.size)
         assertEquals("WebRTC P2P", connected[0].strategyName)
+    }
+
+    // ==================== Tailscale IP Caching Tests ====================
+
+    @Tag("unit")
+    @Test
+    fun `caches Tailscale IP from WebRTC ICE candidates when local Tailscale available`() = runTest {
+        // Setup: Local Tailscale is available (phone is on Tailscale network)
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.1.1", "tailscale0")
+
+        // Tailscale strategy fails (no daemon IP), WebRTC succeeds
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No daemon IP")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        // Create mock WebRTC transport with Tailscale IP in remote candidate
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        val tailscalePath = ConnectionPath(
+            local = CandidateInfo("host", "100.64.1.1", 12345, false),
+            remote = CandidateInfo("host", "100.64.2.2", 9876, false),  // Daemon's Tailscale IP
+            type = PathType.TAILSCALE
+        )
+        coEvery { mockWebRTCClient.getActivePath() } returns tailscalePath
+
+        val mockWebRTCTransport = WebRTCTransport(mockWebRTCClient)
+        coEvery { webRTCStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockWebRTCTransport)
+
+        val orchestrator = createOrchestrator()
+        orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
+
+        // Should have cached the daemon's Tailscale IP
+        coVerify { mockCredentialRepository.updateTailscaleInfo("test-device", "100.64.2.2", 9876) }
+    }
+
+    @Tag("unit")
+    @Test
+    fun `does not cache Tailscale IP when local Tailscale not available`() = runTest {
+        // Setup: WebRTC succeeds but local Tailscale is NOT available
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No VPN")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        val tailscalePath = ConnectionPath(
+            local = CandidateInfo("host", "192.168.1.100", 12345, true),
+            remote = CandidateInfo("host", "100.64.2.2", 9876, false),  // Daemon has Tailscale
+            type = PathType.LAN_DIRECT
+        )
+        coEvery { mockWebRTCClient.getActivePath() } returns tailscalePath
+
+        val mockWebRTCTransport = WebRTCTransport(mockWebRTCClient)
+        coEvery { webRTCStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockWebRTCTransport)
+
+        val orchestrator = createOrchestrator()
+        orchestrator.connect(createContext(localTailscaleAvailable = false)) {}
+
+        // Should NOT cache because local Tailscale is not available
+        coVerify(exactly = 0) { mockCredentialRepository.updateTailscaleInfo(any(), any(), any()) }
+    }
+
+    @Tag("unit")
+    @Test
+    fun `does not cache when remote candidate is not Tailscale IP`() = runTest {
+        // Local Tailscale is available
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.1.1", "tailscale0")
+
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No VPN")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        // Remote is a regular LAN IP, not Tailscale
+        val lanPath = ConnectionPath(
+            local = CandidateInfo("host", "100.64.1.1", 12345, false),
+            remote = CandidateInfo("host", "192.168.1.50", 9876, true),  // LAN IP, not Tailscale
+            type = PathType.LAN_DIRECT
+        )
+        coEvery { mockWebRTCClient.getActivePath() } returns lanPath
+
+        val mockWebRTCTransport = WebRTCTransport(mockWebRTCClient)
+        coEvery { webRTCStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockWebRTCTransport)
+
+        val orchestrator = createOrchestrator()
+        orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
+
+        // Should NOT cache because remote is not a Tailscale IP
+        coVerify(exactly = 0) { mockCredentialRepository.updateTailscaleInfo(any(), any(), any()) }
+    }
+
+    @Tag("unit")
+    @Test
+    fun `does not cache when transport is not WebRTC`() = runTest {
+        // Local Tailscale is available
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.1.1", "tailscale0")
+
+        // Tailscale Direct succeeds (non-WebRTC transport)
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Available("100.64.1.1")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        // mockTransport is not a WebRTCTransport
+        coEvery { tailscaleStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockTransport)
+
+        val orchestrator = createOrchestrator()
+        orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
+
+        // Should NOT cache because transport is not WebRTC (no ICE candidates)
+        coVerify(exactly = 0) { mockCredentialRepository.updateTailscaleInfo(any(), any(), any()) }
+    }
+
+    @Tag("unit")
+    @Test
+    fun `caches IPv6 Tailscale IP from ICE candidates`() = runTest {
+        // Local Tailscale is available (using IPv6 address)
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("fd7a:115c:a1e0::1", "tailscale0")
+
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No daemon IP")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        // Use IPv6 Tailscale address
+        val ipv6TailscalePath = ConnectionPath(
+            local = CandidateInfo("host", "fd7a:115c:a1e0::1", 12345, false),
+            remote = CandidateInfo("host", "fd7a:115c:a1e0:ab12::2", 9876, false),  // IPv6 Tailscale
+            type = PathType.TAILSCALE
+        )
+        coEvery { mockWebRTCClient.getActivePath() } returns ipv6TailscalePath
+
+        val mockWebRTCTransport = WebRTCTransport(mockWebRTCClient)
+        coEvery { webRTCStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockWebRTCTransport)
+
+        val orchestrator = createOrchestrator()
+        orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
+
+        // Should cache the IPv6 Tailscale IP
+        coVerify { mockCredentialRepository.updateTailscaleInfo("test-device", "fd7a:115c:a1e0:ab12::2", 9876) }
+    }
+
+    @Tag("unit")
+    @Test
+    fun `handles null path gracefully`() = runTest {
+        // Local Tailscale is available
+        every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.1.1", "tailscale0")
+
+        coEvery { tailscaleStrategy.detect() } returns DetectionResult.Unavailable("No VPN")
+        coEvery { webRTCStrategy.detect() } returns DetectionResult.Available()
+
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        coEvery { mockWebRTCClient.getActivePath() } returns null  // No path available
+
+        val mockWebRTCTransport = WebRTCTransport(mockWebRTCClient)
+        coEvery { webRTCStrategy.connect(any(), any()) } returns ConnectionResult.Success(mockWebRTCTransport)
+
+        val orchestrator = createOrchestrator()
+        // Should not throw
+        val result = orchestrator.connect(createContext(localTailscaleAvailable = true)) {}
+
+        assertNotNull(result)
+        coVerify(exactly = 0) { mockCredentialRepository.updateTailscaleInfo(any(), any(), any()) }
     }
 }

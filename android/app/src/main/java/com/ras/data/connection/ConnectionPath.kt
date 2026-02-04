@@ -78,10 +78,22 @@ data class CandidateInfo(
     val isLocal: Boolean
 ) {
     /**
-     * Check if this is a Tailscale IP (100.64.0.0/10 range)
+     * Check if this is a Tailscale IP.
+     * - IPv4: 100.64.0.0/10 range (100.64.0.0 - 100.127.255.255)
+     * - IPv6: fd7a:115c:a1e0::/48 (Tailscale's ULA range)
      */
     fun isTailscaleIp(): Boolean {
-        return ip.startsWith("100.") && ip.split(".")[1].toIntOrNull()?.let { it in 64..127 } == true
+        // IPv4: 100.64.0.0/10
+        val parts = ip.split(".")
+        if (parts.size == 4 && ip.startsWith("100.")) {
+            return parts[1].toIntOrNull()?.let { it in 64..127 } == true
+        }
+        // IPv6: fd7a:115c:a1e0::/48 (Tailscale's ULA range)
+        val lowerIp = ip.lowercase()
+        if (lowerIp.startsWith("fd7a:115c:a1e0:")) {
+            return true
+        }
+        return false
     }
 
     /**

@@ -49,7 +49,28 @@ class VpnCandidateInjectorTest {
         assertFalse(VpnCandidateInjector.isTailscaleIp("not-an-ip"))
         assertFalse(VpnCandidateInjector.isTailscaleIp(""))
         assertFalse(VpnCandidateInjector.isTailscaleIp("100.64"))
-        assertFalse(VpnCandidateInjector.isTailscaleIp("::1"))
+    }
+
+    // ==================== Tailscale IPv6 Detection Tests ====================
+
+    @Tag("unit")
+    @Test
+    fun `isTailscaleIp returns true for Tailscale IPv6 ULA range`() {
+        // Tailscale's IPv6 ULA range: fd7a:115c:a1e0::/48
+        assertTrue(VpnCandidateInjector.isTailscaleIp("fd7a:115c:a1e0::1"))
+        assertTrue(VpnCandidateInjector.isTailscaleIp("fd7a:115c:a1e0:ab12:4843:cd96:6258:b240"))
+        assertTrue(VpnCandidateInjector.isTailscaleIp("FD7A:115C:A1E0::1")) // Case insensitive
+    }
+
+    @Tag("unit")
+    @Test
+    fun `isTailscaleIp returns false for non-Tailscale IPv6`() {
+        // Other IPv6 addresses
+        assertFalse(VpnCandidateInjector.isTailscaleIp("::1")) // Loopback
+        assertFalse(VpnCandidateInjector.isTailscaleIp("fe80::1")) // Link-local
+        assertFalse(VpnCandidateInjector.isTailscaleIp("2001:db8::1")) // Documentation range
+        assertFalse(VpnCandidateInjector.isTailscaleIp("fd7a:115d:a1e0::1")) // Different /48 (115d not 115c)
+        assertFalse(VpnCandidateInjector.isTailscaleIp("fd7b:115c:a1e0::1")) // Different ULA (fd7b not fd7a)
     }
 
     // ==================== SDP Filtering Tests ====================

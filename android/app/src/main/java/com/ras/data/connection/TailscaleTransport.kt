@@ -34,7 +34,8 @@ class TailscaleTransport private constructor(
         private const val MAX_PACKET_SIZE = 65507  // Max UDP payload
         private const val HEADER_SIZE = 4  // Length prefix
         private const val DEFAULT_PORT = 9876
-        private const val HANDSHAKE_TIMEOUT_MS = 2000  // Per-attempt timeout
+        private const val DEFAULT_CONNECT_TIMEOUT_MS = 2000L  // Total connection timeout for fast fallback
+        private const val HANDSHAKE_ATTEMPT_TIMEOUT_MS = 500  // Per-attempt timeout (allows retries within total)
         private const val HANDSHAKE_MAX_RETRIES = 3
         private const val HANDSHAKE_MAGIC = 0x52415354  // "RAST" in hex
 
@@ -47,76 +48,87 @@ class TailscaleTransport private constructor(
          * @param localIp Our Tailscale IP (to bind to)
          * @param remoteIp Remote device's Tailscale IP
          * @param remotePort Remote device's listening port
+         * @param connectionTimeoutMs Total connection timeout in milliseconds (default: 2000ms for fast fallback)
          * @param socketFactory Factory for creating DatagramSocket instances (for DI/testing)
          * @return Connected transport
-         * @throws IOException if connection fails after all retries
+         * @throws IOException if connection fails after timeout or all retries
          */
         suspend fun connect(
             localIp: String,
             remoteIp: String,
             remotePort: Int = DEFAULT_PORT,
+            connectionTimeoutMs: Long = DEFAULT_CONNECT_TIMEOUT_MS,
             socketFactory: DatagramSocketFactory = DefaultDatagramSocketFactory()
         ): TailscaleTransport = withContext(Dispatchers.IO) {
-            Log.i(TAG, "Connecting to $remoteIp:$remotePort from $localIp")
+            Log.i(TAG, "Connecting to $remoteIp:$remotePort from $localIp (timeout: ${connectionTimeoutMs}ms)")
 
             // Create socket and connect to remote (connected UDP socket)
             // This helps Android route packets correctly on VPN interfaces
             val remoteAddress = InetSocketAddress(InetAddress.getByName(remoteIp), remotePort)
             val socket = socketFactory.createConnected(remoteAddress)
             Log.d(TAG, "Socket connected: local=${socket.localAddress}:${socket.localPort} -> remote=$remoteAddress")
-            socket.soTimeout = HANDSHAKE_TIMEOUT_MS
+            socket.soTimeout = HANDSHAKE_ATTEMPT_TIMEOUT_MS
 
             try {
-                var lastException: Exception? = null
+                // Wrap handshake attempts in overall timeout for fast fallback
+                val result = withTimeoutOrNull(connectionTimeoutMs) {
+                    var lastException: Exception? = null
 
-                // Handshake packet (same for all attempts)
-                val handshake = ByteBuffer.allocate(8)
-                    .putInt(HANDSHAKE_MAGIC)
-                    .putInt(0)  // Reserved
-                    .array()
-                val handshakePacket = DatagramPacket(handshake, handshake.size, remoteAddress)
+                    // Handshake packet (same for all attempts)
+                    val handshake = ByteBuffer.allocate(8)
+                        .putInt(HANDSHAKE_MAGIC)
+                        .putInt(0)  // Reserved
+                        .array()
+                    val handshakePacket = DatagramPacket(handshake, handshake.size, remoteAddress)
 
-                // Response buffer
-                val responseBuffer = ByteArray(8)
-                val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
+                    // Response buffer
+                    val responseBuffer = ByteArray(8)
+                    val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
 
-                repeat(HANDSHAKE_MAX_RETRIES) { attempt ->
-                    try {
-                        // Send handshake
-                        socket.send(handshakePacket)
-                        Log.d(TAG, "Sent handshake to $remoteIp:$remotePort (attempt ${attempt + 1})")
+                    repeat(HANDSHAKE_MAX_RETRIES) { attempt ->
+                        try {
+                            // Send handshake
+                            socket.send(handshakePacket)
+                            Log.d(TAG, "Sent handshake to $remoteIp:$remotePort (attempt ${attempt + 1})")
 
-                        // Wait for response
-                        socket.receive(responsePacket)
-                        val response = ByteBuffer.wrap(responseBuffer)
-                        val magic = response.int
+                            // Wait for response
+                            socket.receive(responsePacket)
+                            val response = ByteBuffer.wrap(responseBuffer)
+                            val magic = response.int
 
-                        if (magic != HANDSHAKE_MAGIC) {
-                            throw IOException("Invalid handshake response: $magic")
-                        }
+                            if (magic != HANDSHAKE_MAGIC) {
+                                throw IOException("Invalid handshake response: $magic")
+                            }
 
-                        Log.i(TAG, "Handshake successful with $remoteIp:$remotePort")
-                        socket.soTimeout = 0  // Clear timeout for normal operation
+                            Log.i(TAG, "Handshake successful with $remoteIp:$remotePort")
+                            socket.soTimeout = 0  // Clear timeout for normal operation
 
-                        return@withContext TailscaleTransport(socket, remoteAddress, localIp)
+                            return@withTimeoutOrNull TailscaleTransport(socket, remoteAddress, localIp)
 
-                    } catch (e: SocketTimeoutException) {
-                        lastException = e
-                        if (attempt < HANDSHAKE_MAX_RETRIES - 1) {
-                            Log.w(TAG, "Handshake timeout (attempt ${attempt + 1}/$HANDSHAKE_MAX_RETRIES), retrying...")
-                        }
-                    } catch (e: Exception) {
-                        lastException = e
-                        if (attempt < HANDSHAKE_MAX_RETRIES - 1) {
-                            Log.w(TAG, "Handshake error (attempt ${attempt + 1}/$HANDSHAKE_MAX_RETRIES): ${e.message}, retrying...")
+                        } catch (e: SocketTimeoutException) {
+                            lastException = e
+                            if (attempt < HANDSHAKE_MAX_RETRIES - 1) {
+                                Log.w(TAG, "Handshake timeout (attempt ${attempt + 1}/$HANDSHAKE_MAX_RETRIES), retrying...")
+                            }
+                        } catch (e: Exception) {
+                            lastException = e
+                            if (attempt < HANDSHAKE_MAX_RETRIES - 1) {
+                                Log.w(TAG, "Handshake error (attempt ${attempt + 1}/$HANDSHAKE_MAX_RETRIES): ${e.message}, retrying...")
+                            }
                         }
                     }
+
+                    throw IOException(
+                        "Handshake failed after $HANDSHAKE_MAX_RETRIES attempts - daemon may not be listening on Tailscale",
+                        lastException
+                    )
                 }
 
-                throw IOException(
-                    "Handshake failed after $HANDSHAKE_MAX_RETRIES attempts - daemon may not be listening on Tailscale",
-                    lastException
-                )
+                if (result == null) {
+                    throw IOException("Connection timeout after ${connectionTimeoutMs}ms - daemon not reachable via Tailscale")
+                }
+
+                return@withContext result
 
             } catch (e: Exception) {
                 socket.close()

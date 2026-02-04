@@ -135,7 +135,7 @@ class TailscaleStrategyTest {
         strategy.detect()
 
         // Mock TailscaleTransport to succeed
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)  // Auth success
 
@@ -170,7 +170,7 @@ class TailscaleStrategyTest {
         // Verify we got to the "Connecting" step
         assertTrue(steps.any { it.step == "Connecting" })
         // Verify connect was called with default port 9876
-        coVerify { TailscaleTransport.connect(any(), any(), 9876, any()) }
+        coVerify { TailscaleTransport.connect(any(), any(), 9876, any(), any()) }
     }
 
     @Tag("unit")
@@ -198,7 +198,7 @@ class TailscaleStrategyTest {
 
         // Capture the auth message sent
         val capturedMessage = slot<ByteArray>()
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(capture(capturedMessage)) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -246,7 +246,7 @@ class TailscaleStrategyTest {
         strategy.detect()
 
         val capturedMessage = slot<ByteArray>()
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(capture(capturedMessage)) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -282,7 +282,7 @@ class TailscaleStrategyTest {
         strategy.detect()
 
         val capturedMessage = slot<ByteArray>()
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(capture(capturedMessage)) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)
 
@@ -318,7 +318,7 @@ class TailscaleStrategyTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x01)  // Success
 
@@ -335,7 +335,7 @@ class TailscaleStrategyTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf(0x00)  // Failure
         coEvery { mockTransport.close() } returns Unit
@@ -354,7 +354,7 @@ class TailscaleStrategyTest {
         every { TailscaleDetector.detect(any()) } returns TailscaleInfo("100.64.0.1", "tailscale0")
         strategy.detect()
 
-        coEvery { TailscaleTransport.connect(any(), any(), any(), any()) } returns mockTransport
+        coEvery { TailscaleTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
         coEvery { mockTransport.send(any()) } returns Unit
         coEvery { mockTransport.receive(any()) } returns byteArrayOf()  // Empty
         coEvery { mockTransport.close() } returns Unit

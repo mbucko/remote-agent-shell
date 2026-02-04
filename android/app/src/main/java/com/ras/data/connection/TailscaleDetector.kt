@@ -16,15 +16,26 @@ object TailscaleDetector {
     // Interface names vary by platform
     private val VPN_INTERFACE_NAMES = setOf("tun0", "tun1", "tun", "tailscale0")
 
-    // Tailscale IP range: 100.64.0.0 - 100.127.255.255 (100.64.0.0/10)
+    // Tailscale IP ranges:
+    // - IPv4: 100.64.0.0/10 (100.64.0.0 - 100.127.255.255)
+    // - IPv6: fd7a:115c:a1e0::/48 (Tailscale's ULA range)
     private fun isTailscaleIp(ip: String): Boolean {
+        // IPv4: 100.64.0.0/10
         val parts = ip.split(".")
-        if (parts.size != 4) return false
-        val firstOctet = parts[0].toIntOrNull() ?: return false
-        val secondOctet = parts[1].toIntOrNull() ?: return false
+        if (parts.size == 4) {
+            val firstOctet = parts[0].toIntOrNull() ?: return false
+            val secondOctet = parts[1].toIntOrNull() ?: return false
+            // 100.64.0.0/10 means first octet is 100, second octet is 64-127
+            return firstOctet == 100 && secondOctet in 64..127
+        }
 
-        // 100.64.0.0/10 means first octet is 100, second octet is 64-127
-        return firstOctet == 100 && secondOctet in 64..127
+        // IPv6: fd7a:115c:a1e0::/48 (Tailscale's ULA range)
+        val lowerIp = ip.lowercase()
+        if (lowerIp.startsWith("fd7a:115c:a1e0:")) {
+            return true
+        }
+
+        return false
     }
 
     // Check if interface name looks like a VPN interface
