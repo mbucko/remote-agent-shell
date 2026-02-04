@@ -227,7 +227,9 @@ class PairingManager:
         if not session:
             return
 
-        auth_handler = AuthHandler(session.auth_key, session.device_id or "unknown")
+        # Use daemon's device ID (not phone's) - this is what the phone stores
+        from ras.system import get_daemon_device_id
+        auth_handler = AuthHandler(session.auth_key, get_daemon_device_id())
 
         async def send_message(data: bytes) -> None:
             await session.peer_connection.send(data)

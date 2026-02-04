@@ -493,8 +493,10 @@ class UnifiedServer:
 
             session.state = "authenticating"
 
-            # Run auth handshake
-            auth_handler = AuthHandler(session.auth_key, session.device_id or "unknown")
+            # Run auth handshake - use daemon's device ID (not phone's)
+            # The daemon sends its own ID to the phone so the phone can store it
+            from ras.system import get_daemon_device_id
+            auth_handler = AuthHandler(session.auth_key, get_daemon_device_id())
 
             async def send_message(data: bytes) -> None:
                 await session.peer.send(data)
@@ -684,8 +686,9 @@ class UnifiedServer:
             await peer.wait_connected(timeout=30.0)
             logger.info(f"Data channel open for reconnect {device_id[:8]}...")
 
-            # Run auth handshake
-            auth_handler = AuthHandler(auth_key, device_id)
+            # Run auth handshake - use daemon's device ID (not phone's)
+            from ras.system import get_daemon_device_id
+            auth_handler = AuthHandler(auth_key, get_daemon_device_id())
 
             async def send_message(data: bytes) -> None:
                 await peer.send(data)

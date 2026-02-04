@@ -73,3 +73,45 @@ def get_hostname() -> str:
         The system hostname as a string.
     """
     return socket.gethostname()
+
+
+def get_daemon_device_id() -> str:
+    """Get or create a unique daemon device ID.
+
+    The ID is persisted in ~/.config/ras/daemon_id to ensure
+    consistency across restarts. The ID is based on hostname
+    combined with a random component.
+
+    Returns:
+        A unique daemon device identifier string.
+    """
+    import os
+    import secrets
+    from pathlib import Path
+
+    config_dir = Path(os.path.expanduser("~/.config/ras"))
+    id_file = config_dir / "daemon_id"
+
+    # Try to read existing ID
+    if id_file.exists():
+        try:
+            device_id = id_file.read_text().strip()
+            if device_id:
+                return device_id
+        except Exception:
+            pass
+
+    # Generate new ID: hostname-random8chars
+    hostname = get_hostname().split(".")[0]  # Use short hostname
+    random_suffix = secrets.token_hex(4)  # 8 hex chars
+    device_id = f"{hostname}-{random_suffix}"
+
+    # Save for persistence
+    try:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        id_file.write_text(device_id)
+        os.chmod(id_file, 0o600)  # Secure permissions
+    except Exception:
+        pass  # Best effort
+
+    return device_id

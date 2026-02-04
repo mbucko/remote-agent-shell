@@ -240,9 +240,10 @@ class NtfyReconnectionManager:
             await peer.close()
             return
 
-        # Run authentication handshake
+        # Run authentication handshake - use daemon's device ID
         from ras.pairing.auth_handler import AuthHandler
-        auth_handler = AuthHandler(auth_key, device_id)
+        from ras.system import get_daemon_device_id
+        auth_handler = AuthHandler(auth_key, get_daemon_device_id())
 
         async def send_message(data: bytes) -> None:
             await peer.send(data)
