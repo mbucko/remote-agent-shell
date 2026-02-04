@@ -39,7 +39,7 @@ interface CredentialRepository {
 
     /**
      * Add a new device.
-     * @param deviceId Device identifier
+     * @param deviceId Device identifier (daemon's ID, used as primary key for multi-device UI)
      * @param masterSecret Master secret for authentication
      * @param deviceName Device hostname or name
      * @param deviceType Type of device
@@ -50,6 +50,7 @@ interface CredentialRepository {
      * @param daemonTailscalePort Optional Tailscale port
      * @param daemonVpnIp Optional VPN IP
      * @param daemonVpnPort Optional VPN port
+     * @param phoneDeviceId Phone's own device ID (sent to daemon during pairing, used for reconnection)
      */
     suspend fun addDevice(
         deviceId: String,
@@ -62,7 +63,8 @@ interface CredentialRepository {
         daemonTailscaleIp: String? = null,
         daemonTailscalePort: Int? = null,
         daemonVpnIp: String? = null,
-        daemonVpnPort: Int? = null
+        daemonVpnPort: Int? = null,
+        phoneDeviceId: String? = null
     )
 
     /**

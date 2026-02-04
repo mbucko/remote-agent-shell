@@ -84,9 +84,11 @@ class ReconnectionServiceImpl @Inject constructor(
             return ReconnectionResult.Success
         }
 
-        // If connected to a DIFFERENT device, we'll disconnect and reconnect (handled by ConnectionManager)
+        // If connected to a DIFFERENT device, disconnect first before connecting to new device
+        // This prevents race condition where orchestrator returns old transport that gets closed
         if (connectionManager.isConnected.value && connectedTo != null) {
-            Log.i(TAG, "Switching from device ${connectedTo.take(8)} to ${selectedDevice.deviceId.take(8)}")
+            Log.i(TAG, "Switching from device ${connectedTo.take(8)} to ${selectedDevice.deviceId.take(8)} - disconnecting first")
+            connectionManager.disconnect()
         }
 
         // Build credentials from selected device
@@ -100,7 +102,8 @@ class ReconnectionServiceImpl @Inject constructor(
             daemonTailscaleIp = selectedDevice.daemonTailscaleIp,
             daemonTailscalePort = selectedDevice.daemonTailscalePort,
             daemonVpnIp = selectedDevice.daemonVpnIp,
-            daemonVpnPort = selectedDevice.daemonVpnPort
+            daemonVpnPort = selectedDevice.daemonVpnPort,
+            phoneDeviceId = selectedDevice.phoneDeviceId
         )
 
         Log.d(TAG, "Attempting reconnection to ${credentials.daemonHost ?: "unknown"}:${credentials.daemonPort ?: 0}")
@@ -140,12 +143,16 @@ class ReconnectionServiceImpl @Inject constructor(
                 ntfyClient = ntfyClient
             )
 
+            // Use phoneDeviceId for reconnection (what daemon expects)
+            // Fall back to deviceId for backward compatibility with existing pairings
+            val reconnectDeviceId = credentials.phoneDeviceId ?: credentials.deviceId
+
             val signalingChannel = NtfySignalingChannel(
                 signaler = signaler,
                 host = daemonHost,  // Use discovered or cached host
                 port = daemonPort,  // Use discovered or cached port
                 masterSecret = credentials.masterSecret,
-                deviceId = credentials.deviceId,
+                deviceId = reconnectDeviceId,
                 deviceName = android.os.Build.MODEL ?: "Unknown Device",
                 vpnHost = credentials.daemonVpnIp,
                 vpnPort = credentials.daemonVpnPort
@@ -154,7 +161,7 @@ class ReconnectionServiceImpl @Inject constructor(
             // 4. Create connection context
             val context = ConnectionContext(
                 androidContext = appContext,
-                deviceId = credentials.deviceId,
+                deviceId = reconnectDeviceId,  // Use phoneDeviceId for reconnection
                 daemonHost = daemonHost,  // Use discovered or cached host
                 daemonPort = daemonPort,  // Use discovered or cached port
                 daemonTailscaleIp = credentials.daemonTailscaleIp,

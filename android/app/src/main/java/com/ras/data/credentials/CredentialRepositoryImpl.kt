@@ -60,7 +60,8 @@ class CredentialRepositoryImpl @Inject constructor(
         daemonTailscaleIp: String?,
         daemonTailscalePort: Int?,
         daemonVpnIp: String?,
-        daemonVpnPort: Int?
+        daemonVpnPort: Int?,
+        phoneDeviceId: String?
     ) {
         // Encrypt master secret
         val (encrypted, iv) = encryptionHelper.encrypt(masterSecret)
@@ -80,7 +81,8 @@ class CredentialRepositoryImpl @Inject constructor(
             daemonTailscaleIp = daemonTailscaleIp,
             daemonTailscalePort = daemonTailscalePort,
             daemonVpnIp = daemonVpnIp,
-            daemonVpnPort = daemonVpnPort
+            daemonVpnPort = daemonVpnPort,
+            phoneDeviceId = phoneDeviceId
         )
 
         dao.insertDevice(entity)
@@ -131,7 +133,8 @@ class CredentialRepositoryImpl @Inject constructor(
             daemonTailscaleIp = daemonTailscaleIp,
             daemonTailscalePort = daemonTailscalePort,
             daemonVpnIp = daemonVpnIp,
-            daemonVpnPort = daemonVpnPort
+            daemonVpnPort = daemonVpnPort,
+            phoneDeviceId = phoneDeviceId
         )
     }
 }

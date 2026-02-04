@@ -76,7 +76,8 @@ class ReconnectionServiceImplTest {
         isSelected = true,
         pairedAt = Instant.now(),
         daemonHost = "192.168.1.100",
-        daemonPort = 8765
+        daemonPort = 8765,
+        phoneDeviceId = "phone-device-456"  // Phone's own ID for reconnection
     )
 
     // Helper to build StoredCredentials from PairedDevice
@@ -90,7 +91,8 @@ class ReconnectionServiceImplTest {
             daemonTailscaleIp = daemonTailscaleIp,
             daemonTailscalePort = daemonTailscalePort,
             daemonVpnIp = daemonVpnIp,
-            daemonVpnPort = daemonVpnPort
+            daemonVpnPort = daemonVpnPort,
+            phoneDeviceId = phoneDeviceId
         )
     }
 
@@ -102,6 +104,7 @@ class ReconnectionServiceImplTest {
         httpClient = mockk()
         connectionManager = mockk(relaxed = true)
         every { connectionManager.isConnected } returns kotlinx.coroutines.flow.MutableStateFlow(false)
+        every { connectionManager.connectedDeviceId } returns kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
         ntfyClient = mockk(relaxed = true)
         orchestrator = mockk()
         mdnsDiscoveryService = mockk(relaxed = true)
@@ -177,7 +180,9 @@ class ReconnectionServiceImplTest {
 
         val context = contextSlot.captured
         val expectedCredentials = testDevice.toStoredCredentials()
-        assertEquals(expectedCredentials.deviceId, context.deviceId)
+        // Context should use phoneDeviceId for reconnection (what daemon expects)
+        val expectedDeviceId = expectedCredentials.phoneDeviceId ?: expectedCredentials.deviceId
+        assertEquals(expectedDeviceId, context.deviceId)
         assertEquals(expectedCredentials.daemonHost, context.daemonHost)
         assertEquals(expectedCredentials.daemonPort, context.daemonPort)
         assertNotNull(context.authToken, "Auth token should not be null")

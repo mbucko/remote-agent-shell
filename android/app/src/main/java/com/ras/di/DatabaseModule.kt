@@ -28,7 +28,9 @@ object DatabaseModule {
             context,
             DeviceDatabase::class.java,
             "ras_devices.db"
-        ).build()
+        )
+            .addMigrations(DeviceDatabase.MIGRATION_1_2)
+            .build()
     }
 
     /**

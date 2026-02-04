@@ -71,7 +71,15 @@ data class PairedDeviceEntity(
 
     /** Daemon VPN port */
     @ColumnInfo(name = "daemon_vpn_port")
-    val daemonVpnPort: Int? = null
+    val daemonVpnPort: Int? = null,
+
+    /**
+     * Phone's own device ID sent during pairing.
+     * This is the ID the daemon stores and expects during reconnection.
+     * Different from deviceId (primary key) which is the daemon's ID for multi-device UI.
+     */
+    @ColumnInfo(name = "phone_device_id")
+    val phoneDeviceId: String? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -94,6 +102,7 @@ data class PairedDeviceEntity(
         if (daemonTailscalePort != other.daemonTailscalePort) return false
         if (daemonVpnIp != other.daemonVpnIp) return false
         if (daemonVpnPort != other.daemonVpnPort) return false
+        if (phoneDeviceId != other.phoneDeviceId) return false
 
         return true
     }
@@ -114,6 +123,7 @@ data class PairedDeviceEntity(
         result = 31 * result + (daemonTailscalePort ?: 0)
         result = 31 * result + (daemonVpnIp?.hashCode() ?: 0)
         result = 31 * result + (daemonVpnPort ?: 0)
+        result = 31 * result + (phoneDeviceId?.hashCode() ?: 0)
         return result
     }
 }

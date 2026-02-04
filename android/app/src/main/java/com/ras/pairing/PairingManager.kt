@@ -192,6 +192,8 @@ class PairingManager @Inject constructor(
                 currentPayload?.let { payload ->
                     // Use the daemon's device ID from auth result (not phone's device ID)
                     val daemonDeviceId = result.deviceId
+                    // Phone's own device ID (what was sent to daemon during pairing)
+                    val phoneDeviceId = keyManager.getOrCreateDeviceId()
 
                     // Add device to multi-device storage
                     credentialRepository.addDevice(
@@ -204,7 +206,8 @@ class PairingManager @Inject constructor(
                         daemonTailscaleIp = payload.tailscaleIp,
                         daemonTailscalePort = payload.tailscalePort,
                         daemonVpnIp = payload.vpnIp,
-                        daemonVpnPort = payload.vpnPort
+                        daemonVpnPort = payload.vpnPort,
+                        phoneDeviceId = phoneDeviceId
                     )
 
                     // Set this device as selected (active)
