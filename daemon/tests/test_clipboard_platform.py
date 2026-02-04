@@ -182,9 +182,13 @@ class TestGetClipboardBackend:
         backend = get_clipboard_backend(info)
         assert isinstance(backend, MacOSClipboard)
 
-    def test_get_linux_x11_backend_not_implemented(self):
-        """Linux X11 backend raises NotImplementedError."""
-        from ras.clipboard_platform import get_clipboard_backend, PlatformInfo
+    def test_get_linux_x11_backend(self):
+        """Returns LinuxClipboard for Linux X11."""
+        from ras.clipboard_platform import (
+            get_clipboard_backend,
+            PlatformInfo,
+            LinuxClipboard,
+        )
 
         info = PlatformInfo(
             system="Linux",
@@ -193,14 +197,16 @@ class TestGetClipboardBackend:
             paste_keystroke="C-v",
         )
 
-        with pytest.raises(NotImplementedError) as exc_info:
-            get_clipboard_backend(info)
+        backend = get_clipboard_backend(info)
+        assert isinstance(backend, LinuxClipboard)
 
-        assert "Linux" in str(exc_info.value)
-
-    def test_get_linux_wayland_backend_not_implemented(self):
-        """Linux Wayland backend raises NotImplementedError."""
-        from ras.clipboard_platform import get_clipboard_backend, PlatformInfo
+    def test_get_linux_wayland_backend(self):
+        """Returns LinuxClipboard for Linux Wayland."""
+        from ras.clipboard_platform import (
+            get_clipboard_backend,
+            PlatformInfo,
+            LinuxClipboard,
+        )
 
         info = PlatformInfo(
             system="Linux",
@@ -209,10 +215,8 @@ class TestGetClipboardBackend:
             paste_keystroke="C-v",
         )
 
-        with pytest.raises(NotImplementedError) as exc_info:
-            get_clipboard_backend(info)
-
-        assert "Linux" in str(exc_info.value)
+        backend = get_clipboard_backend(info)
+        assert isinstance(backend, LinuxClipboard)
 
 
 # ============================================================================
@@ -433,6 +437,173 @@ class TestClipboardBackendProtocol:
         assert hasattr(backend, "set_text")
         assert callable(backend.set_image)
         assert callable(backend.set_text)
+
+
+# ============================================================================
+# PlatformInfo Tests
+# ============================================================================
+
+
+# ============================================================================
+# LinuxClipboard Tests (with mocked subprocess)
+# ============================================================================
+
+
+class TestLinuxClipboard:
+    """Test LinuxClipboard backend."""
+
+    @pytest.fixture
+    def x11_info(self):
+        from ras.clipboard_platform import PlatformInfo
+
+        return PlatformInfo(
+            system="Linux",
+            display_server="x11",
+            clipboard_tool="xclip",
+            paste_keystroke="C-v",
+        )
+
+    @pytest.fixture
+    def wayland_info(self):
+        from ras.clipboard_platform import PlatformInfo
+
+        return PlatformInfo(
+            system="Linux",
+            display_server="wayland",
+            clipboard_tool="wl-copy",
+            paste_keystroke="C-v",
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_text_calls_xclip(self, x11_info):
+        """set_text uses xclip for X11."""
+        from ras.clipboard_platform import LinuxClipboard
+
+        backend = LinuxClipboard(x11_info)
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            await backend.set_text("Hello, world!")
+
+        mock_exec.assert_called_once()
+        call_args = mock_exec.call_args[0]
+        assert "xclip" in call_args
+        assert "-selection" in call_args
+        assert "clipboard" in call_args
+
+        # Verify text was passed to stdin
+        mock_proc.communicate.assert_called_once()
+        input_data = mock_proc.communicate.call_args[1]["input"]
+        assert input_data == b"Hello, world!"
+
+    @pytest.mark.asyncio
+    async def test_set_text_calls_wl_copy(self, wayland_info):
+        """set_text uses wl-copy for Wayland."""
+        from ras.clipboard_platform import LinuxClipboard
+
+        backend = LinuxClipboard(wayland_info)
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            await backend.set_text("Test")
+
+        call_args = mock_exec.call_args[0]
+        assert "wl-copy" in call_args
+
+    @pytest.mark.asyncio
+    async def test_set_text_with_unicode(self, x11_info):
+        """set_text handles unicode correctly."""
+        from ras.clipboard_platform import LinuxClipboard
+
+        backend = LinuxClipboard(x11_info)
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            await backend.set_text("Hello, 世界! 🎉")
+
+        input_data = mock_proc.communicate.call_args[1]["input"]
+        assert input_data == "Hello, 世界! 🎉".encode("utf-8")
+
+    @pytest.mark.asyncio
+    async def test_set_text_failure(self, x11_info):
+        """set_text raises on xclip failure."""
+        from ras.clipboard_platform import LinuxClipboard, ClipboardUnavailableError
+
+        backend = LinuxClipboard(x11_info)
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(return_value=(b"", b"xclip error"))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with pytest.raises(ClipboardUnavailableError) as exc_info:
+                await backend.set_text("test")
+
+        assert "xclip failed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_set_image_uses_xclip_with_mime(self, x11_info):
+        """set_image uses xclip with -t for MIME type."""
+        from ras.clipboard_platform import LinuxClipboard
+
+        backend = LinuxClipboard(x11_info)
+        image_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            await backend.set_image(image_data, ImageFormat.PNG)
+
+        call_args = mock_exec.call_args[0]
+        assert "xclip" in call_args
+        assert "-t" in call_args
+        assert "image/png" in call_args
+
+    @pytest.mark.asyncio
+    async def test_set_image_uses_wl_copy_with_type(self, wayland_info):
+        """set_image uses wl-copy with --type for MIME type."""
+        from ras.clipboard_platform import LinuxClipboard
+
+        backend = LinuxClipboard(wayland_info)
+        image_data = b"\xff\xd8\xff" + b"\x00" * 100  # JPEG magic
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            await backend.set_image(image_data, ImageFormat.JPEG)
+
+        call_args = mock_exec.call_args[0]
+        assert "wl-copy" in call_args
+        assert "--type" in call_args
+        assert "image/jpeg" in call_args
+
+    @pytest.mark.asyncio
+    async def test_set_image_failure(self, x11_info):
+        """set_image raises on failure."""
+        from ras.clipboard_platform import LinuxClipboard, ClipboardUnavailableError
+
+        backend = LinuxClipboard(x11_info)
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(return_value=(b"", b"clipboard error"))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with pytest.raises(ClipboardUnavailableError):
+                await backend.set_image(b"data", ImageFormat.PNG)
 
 
 # ============================================================================

@@ -1,7 +1,6 @@
 """Platform-specific clipboard handling.
 
-Provides platform detection and clipboard backends for macOS.
-Linux backends are not yet implemented (raise NotImplementedError).
+Provides platform detection and clipboard backends for macOS and Linux.
 """
 
 import asyncio
@@ -223,6 +222,81 @@ class MacOSClipboard(ClipboardBackend):
                 pass
 
 
+class LinuxClipboard(ClipboardBackend):
+    """Linux clipboard using xclip (X11) or wl-copy (Wayland)."""
+
+    def __init__(self, platform_info: PlatformInfo) -> None:
+        self._info = platform_info
+        self._logger = logging.getLogger(__name__)
+
+    async def set_text(self, text: str) -> None:
+        """Set text using xclip or wl-copy."""
+        self._logger.debug(
+            "Setting text to clipboard (%d bytes)", len(text.encode("utf-8"))
+        )
+
+        if self._info.clipboard_tool == "xclip":
+            cmd = ["xclip", "-selection", "clipboard"]
+        elif self._info.clipboard_tool == "wl-copy":
+            cmd = ["wl-copy"]
+        else:
+            raise ClipboardUnavailableError(
+                f"Unknown clipboard tool: {self._info.clipboard_tool}"
+            )
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate(input=text.encode("utf-8"))
+
+        if proc.returncode != 0:
+            raise ClipboardUnavailableError(f"{cmd[0]} failed: {stderr.decode()}")
+
+        self._logger.debug("Text copied to clipboard successfully")
+
+    async def set_image(self, data: bytes, format: ImageFormat) -> None:
+        """Set image using xclip or wl-copy with MIME type."""
+        self._logger.debug(
+            "Setting image to clipboard (%d bytes, format=%s)",
+            len(data),
+            format.name,
+        )
+
+        # Map proto enum to MIME type
+        mime_map = {
+            ImageFormat.JPEG: "image/jpeg",
+            ImageFormat.PNG: "image/png",
+            ImageFormat.GIF: "image/gif",
+            ImageFormat.WEBP: "image/webp",
+        }
+        mime_type = mime_map.get(format, "image/png")
+
+        if self._info.clipboard_tool == "xclip":
+            cmd = ["xclip", "-selection", "clipboard", "-t", mime_type]
+        elif self._info.clipboard_tool == "wl-copy":
+            cmd = ["wl-copy", "--type", mime_type]
+        else:
+            raise ClipboardUnavailableError(
+                f"Unknown clipboard tool: {self._info.clipboard_tool}"
+            )
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate(input=data)
+
+        if proc.returncode != 0:
+            raise ClipboardUnavailableError(f"{cmd[0]} failed: {stderr.decode()}")
+
+        self._logger.debug("Image copied to clipboard successfully")
+
+
 class MockClipboard(ClipboardBackend):
     """Mock clipboard backend for testing."""
 
@@ -279,16 +353,12 @@ def get_clipboard_backend(info: PlatformInfo) -> ClipboardBackend:
         ClipboardBackend implementation.
 
     Raises:
-        NotImplementedError: If platform is not yet implemented.
         ClipboardUnavailableError: If clipboard tool is unknown.
     """
     if info.clipboard_tool == "pbcopy":
         return MacOSClipboard()
     elif info.clipboard_tool in ("xclip", "wl-copy"):
-        raise NotImplementedError(
-            f"Linux clipboard support not yet implemented. "
-            f"Platform: {info.system}, display: {info.display_server}"
-        )
+        return LinuxClipboard(info)
     else:
         raise ClipboardUnavailableError(
             f"Unknown clipboard tool: {info.clipboard_tool}"
