@@ -102,16 +102,14 @@ class SessionRepository @Inject constructor(
                 stateMutex.withLock {
                     Log.i(TAG, "Received InitialState: ${initialState.sessionsCount} sessions, ${initialState.agentsCount} agents")
 
-                    // Update sessions
-                    if (initialState.sessionsCount > 0) {
-                        try {
-                            val sessions = initialState.sessionsList.map { it.toDomain() }
-                            Log.i(TAG, "Mapped ${sessions.size} sessions, updating _sessions")
-                            _sessions.value = sessions
-                            Log.i(TAG, "_sessions updated, now has ${_sessions.value.size} sessions")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error mapping sessions", e)
-                        }
+                    // Update sessions (always update, even if empty, to clear stale data)
+                    try {
+                        val sessions = initialState.sessionsList.map { it.toDomain() }
+                        Log.i(TAG, "Mapped ${sessions.size} sessions, updating _sessions")
+                        _sessions.value = sessions
+                        Log.i(TAG, "_sessions updated, now has ${_sessions.value.size} sessions")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error mapping sessions", e)
                     }
 
                     // Update agents
