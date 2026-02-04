@@ -29,10 +29,14 @@ from ras.crypto import (
     derive_session_id,
     generate_master_secret,
 )
+from ras.ip_provider import IpProvider
+from ras.lan_direct import LanDirectPeer
 from ras.ntfy_signaling import NtfySignalingSubscriber
 from ras.pairing.auth_handler import AuthHandler
 from ras.peer import PeerConnection
 from ras.proto.ras import (
+    LanDirectAuthRequest,
+    LanDirectAuthResponse,
     PairRequest,
     PairResponse,
     SignalError,
@@ -198,6 +202,9 @@ class UnifiedServer:
 
         # Capability exchange (for paired phone, before connection)
         self.app.router.add_post("/capabilities/{device_id}", self._handle_capabilities)
+
+        # LAN Direct WebSocket (for paired phone on same network)
+        self.app.router.add_get("/ws/{device_id}", self._handle_websocket)
 
     # =========================================================================
     # Health
@@ -942,6 +949,144 @@ class UnifiedServer:
             supports_turn=False,
             protocol_version=1,
         )
+
+    # =========================================================================
+    # LAN Direct WebSocket
+    # =========================================================================
+
+    async def _handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
+        """Handle WebSocket connection for LAN direct.
+
+        This provides a fast connection path when both devices are on the
+        same local network. Uses the same HTTP port via WebSocket upgrade.
+        """
+        device_id = request.match_info["device_id"]
+        client_ip = request.remote or "unknown"
+
+        # Rate limiting (same as reconnect endpoint)
+        if not self._ip_limiter.is_allowed(client_ip):
+            logger.warning(f"WebSocket: Rate limited IP {client_ip}")
+            return web.Response(status=429)
+
+        if not self._device_limiter.is_allowed(device_id):
+            logger.warning(f"WebSocket: Rate limited device {device_id[:8]}...")
+            return web.Response(status=429)
+
+        # Validate device exists
+        device = self.device_store.get(device_id)
+        if device is None:
+            logger.warning(f"WebSocket: Unknown device {device_id[:8]}...")
+            return web.Response(status=404)
+
+        # Derive auth key
+        auth_key = derive_key(device.master_secret, "auth")
+
+        # Upgrade to WebSocket
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+
+        try:
+            # Receive and validate auth message (binary protobuf)
+            try:
+                auth_msg = await asyncio.wait_for(ws.receive_bytes(), timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"WebSocket: Auth timeout for {device_id[:8]}...")
+                await ws.close(code=4002, message=b"Auth timeout")
+                return ws
+
+            # Parse and validate auth
+            if not self._validate_ws_auth(auth_msg, device_id, auth_key):
+                logger.warning(f"WebSocket: Auth failed for {device_id[:8]}...")
+                await ws.close(code=4001, message=b"Authentication failed")
+                return ws
+
+            # Send auth success response
+            response = LanDirectAuthResponse(status="authenticated")
+            await ws.send_bytes(bytes(response))
+
+            logger.info(f"WebSocket: Device {device_id[:8]}... authenticated via LAN Direct")
+
+            # Create peer with ownership tracking
+            from ras.protocols import PeerOwnership
+            peer = LanDirectPeer(ws, owner=PeerOwnership.SignalingHandler)
+
+            # Transfer ownership BEFORE calling on_device_connected
+            peer.transfer_ownership(PeerOwnership.ConnectionManager)
+
+            # Hand off to connection manager
+            if self._on_device_connected:
+                await self._on_device_connected(device_id, device.name, peer, auth_key)
+
+            # Keep WebSocket alive - wait for peer to close
+            # (peer's message loop is driven by on_message callback, not blocking here)
+            await peer.wait_closed()
+
+        except Exception as e:
+            logger.error(f"WebSocket error for {device_id[:8]}...: {e}")
+            if not ws.closed:
+                await ws.close(code=4003, message=b"Internal error")
+
+        return ws
+
+    def _validate_ws_auth(
+        self,
+        auth_msg: bytes,
+        device_id: str,
+        auth_key: bytes,
+    ) -> bool:
+        """Validate WebSocket authentication message.
+
+        Args:
+            auth_msg: Raw protobuf bytes of LanDirectAuthRequest
+            device_id: Expected device ID
+            auth_key: Derived auth key for HMAC validation
+
+        Returns:
+            True if authentication is valid, False otherwise.
+        """
+        try:
+            request = LanDirectAuthRequest().parse(auth_msg)
+        except Exception:
+            logger.warning("WebSocket: Failed to parse auth message")
+            return False
+
+        # Verify device_id matches
+        if request.device_id != device_id:
+            logger.warning(
+                f"WebSocket: device_id mismatch: got {request.device_id[:8]}..., "
+                f"expected {device_id[:8]}..."
+            )
+            return False
+
+        # Validate timestamp
+        now = int(time.time())
+        if abs(now - request.timestamp) > self.TIMESTAMP_TOLERANCE:
+            logger.warning(
+                f"WebSocket: Timestamp out of range for {device_id[:8]}... "
+                f"(diff={now - request.timestamp}s)"
+            )
+            return False
+
+        # Validate HMAC signature
+        try:
+            signature = bytes.fromhex(request.signature)
+        except ValueError:
+            logger.warning(f"WebSocket: Invalid signature hex for {device_id[:8]}...")
+            return False
+
+        # Compute expected HMAC: HMAC-SHA256(auth_key, device_id || timestamp_bytes)
+        expected_hmac = compute_signaling_hmac(
+            auth_key,
+            device_id,
+            request.timestamp,
+            b"",  # Empty body for WebSocket auth
+        )
+
+        if not hmac_module.compare_digest(signature, expected_hmac):
+            logger.warning(f"WebSocket: HMAC verification failed for {device_id[:8]}...")
+            return False
+
+        return True
 
     # =========================================================================
     # Helpers
