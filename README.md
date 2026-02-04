@@ -351,10 +351,22 @@ implementations are compatible:
 - `ntfy_signaling.json` - ntfy signaling relay encryption
 - `sessions.json` - Session management protocol
 
+## Platform Support
+
+| Platform | Status |
+|----------|--------|
+| **macOS** | ✅ Fully supported |
+| **Linux** | ✅ Fully supported (requires `xclip` or `wl-clipboard` for clipboard sync) |
+| **Windows** | 🚧 Not implemented |
+
+## Current Limitations
+
+- **Single connection**: The app connects to one device at a time. Connecting to a different device disconnects the current one.
+
 ## Roadmap
 
-- [ ] Support multiple paired devices (currently one device at a time)
-- [ ] Linux daemon support
+- [ ] **Multi-connection support** - Connect to multiple devices simultaneously
+- [ ] TURN relay fallback for restrictive networks
 
 ## License
 
