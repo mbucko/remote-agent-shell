@@ -342,8 +342,11 @@ class ConnectionManager @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                // ClosedReceiveChannelException is expected when connection closes gracefully
-                val isExpectedClose = e is kotlinx.coroutines.channels.ClosedReceiveChannelException
+                // These exceptions are expected when connection closes gracefully:
+                // - ClosedReceiveChannelException: WebRTC channel closed
+                // - SocketException "Socket is closed": TailscaleTransport socket closed
+                val isExpectedClose = e is kotlinx.coroutines.channels.ClosedReceiveChannelException ||
+                    (e is java.net.SocketException && e.message?.contains("Socket is closed") == true)
                 if (isExpectedClose) {
                     Log.i(TAG, "Transport connection closed")
                 } else {

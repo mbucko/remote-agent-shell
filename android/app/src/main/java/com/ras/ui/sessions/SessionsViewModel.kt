@@ -248,8 +248,12 @@ class SessionsViewModel @Inject constructor(
      */
     fun disconnect(onNavigate: () -> Unit) {
         viewModelScope.launch {
-            connectionManager.disconnectGracefully("user_request")
+            // Set disconnected flag BEFORE closing transport to prevent reconnection race.
+            // When transport closes, it triggers ConnectionError which ReconnectionController
+            // reacts to after a 1 second delay. If we set the flag after disconnecting,
+            // the flag check races with the reconnection attempt.
             keyManager.setDisconnected(true)
+            connectionManager.disconnectGracefully("user_request")
             onNavigate()
         }
     }
