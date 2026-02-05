@@ -7,6 +7,7 @@ import com.ras.data.model.DeviceType
 import com.ras.proto.NtfySignalMessage
 import com.ras.proto.PairRequest
 import com.ras.proto.PairResponse
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -26,6 +27,7 @@ import java.security.SecureRandom
  * 2. Test intercepts the published message, decrypts it, reads the nonce
  * 3. Test builds a valid PAIR_RESPONSE with correct auth_proof and delivers it
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class PairExchangerTest {
 
     private lateinit var mockNtfyClient: MockNtfyClient
@@ -163,9 +165,7 @@ class PairExchangerTest {
 
         val publishedMessages = mockNtfyClient.getPublishedMessages()
         val crypto = NtfySignalingCrypto(signalingKey.copyOf())
-        val decryptedBytes = crypto.decryptFromBase64(publishedMessages[0])
-        val requestMsg = NtfySignalMessage.parseFrom(decryptedBytes)
-        val pairNonce = requestMsg.pairRequest.nonce.toByteArray()
+        crypto.decryptFromBase64(publishedMessages[0])
 
         // Build response with WRONG auth_proof (use garbage bytes)
         val wrongAuthProof = ByteArray(32) { 0xFF.toByte() }
