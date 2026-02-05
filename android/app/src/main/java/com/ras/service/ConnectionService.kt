@@ -13,6 +13,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ras.MainActivity
 import com.ras.R
+import android.util.Log
 import dagger.hilt.android.AndroidEntryPoint
 
 /**
@@ -61,7 +62,8 @@ class ConnectionService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // TODO: Clean up WebRTC connection
+        Log.d(TAG, "ConnectionService destroyed")
+        // WebRTC cleanup is handled by ConnectionManager, not this service
     }
 
     /**
@@ -117,6 +119,7 @@ class ConnectionService : Service() {
     }
 
     companion object {
+        private const val TAG = "ConnectionService"
         const val CHANNEL_ID = "connection_status"
         const val NOTIFICATION_ID = 1
     }

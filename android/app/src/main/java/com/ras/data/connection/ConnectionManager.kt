@@ -822,8 +822,8 @@ class ConnectionManager @Inject constructor(
                 Log.e(TAG, "Error from daemon: ${event.error.errorCode} - ${event.error.message}")
             }
             RasEvent.EventCase.CLIPBOARD -> {
-                Log.d(TAG, "Clipboard message received")
-                // TODO: Handle clipboard events
+                // Clipboard is phone-to-daemon only; ignore daemon-to-phone messages
+                Log.d(TAG, "Ignoring clipboard message from daemon (not supported)")
             }
             RasEvent.EventCase.HEARTBEAT -> {
                 // Heartbeat received from daemon - connection is alive
