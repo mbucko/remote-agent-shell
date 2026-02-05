@@ -4,7 +4,8 @@
 .PHONY: help install install-dev test test-daemon test-pairing test-crypto \
         test-cov lint format proto clean build \
         android-build android-install android-deploy android-test android-test-unit \
-        android-test-integration android-test-e2e android-clean daemon-restart
+        android-test-integration android-test-e2e android-clean daemon-restart \
+        server-deploy server-pull server-restart
 
 # Default target
 help:
@@ -47,6 +48,11 @@ help:
 	@echo ""
 	@echo "Daemon:"
 	@echo "  make daemon-restart   Restart daemon with logs at /tmp/ras-logs/daemon.log"
+	@echo ""
+	@echo "Server:"
+	@echo "  make server-deploy    Pull latest code and restart daemon on server"
+	@echo "  make server-pull      Pull latest code on server"
+	@echo "  make server-restart   Restart daemon on server"
 	@echo ""
 	@echo "Development:"
 	@echo "  make run-pair       Run pairing command (for testing)"
@@ -217,6 +223,27 @@ android-test-e2e:
 
 android-clean:
 	@cd android && ./gradlew clean
+
+# =============================================================================
+# Server (remote)
+# =============================================================================
+
+REMOTE_REPO := ~/repos/remote-agent-shell
+
+server-deploy: server-pull server-restart
+	@echo "Server deploy complete"
+
+server-pull:
+	@echo "Pulling latest code on server..."
+	ssh server "cd $(REMOTE_REPO) && git pull"
+
+server-restart:
+	@echo "Stopping daemon on server..."
+	-ssh server "pkill -f 'ras daemon [s]tart'" 2>/dev/null; true
+	@sleep 2
+	@echo "Starting daemon on server..."
+	ssh server "cd $(REMOTE_REPO) && nohup /root/.local/bin/uv run --project daemon ras daemon start > /tmp/ras-daemon.log 2>&1 < /dev/null &"
+	@echo "Daemon restarted. Logs: ssh server 'tail -f /tmp/ras-daemon.log'"
 
 # =============================================================================
 # CI/CD helpers
