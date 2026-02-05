@@ -29,7 +29,6 @@ from ras.crypto import (
     derive_session_id,
     generate_master_secret,
 )
-from ras.ip_provider import IpProvider
 from ras.lan_direct import LanDirectPeer
 from ras.ntfy_signaling import NtfySignalingSubscriber
 from ras.pairing.auth_handler import AuthHandler

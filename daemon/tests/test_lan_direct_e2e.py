@@ -88,12 +88,10 @@ class TestLanDirectE2E(AioHTTPTestCase):
     async def get_application(self):
         """Set up test application with UnifiedServer."""
         self.device_store = MockDeviceStore()
-        self.ip_provider = MockIpProvider()
         self.on_device_connected = AsyncMock()
 
         self.ras_server = UnifiedServer(
             device_store=self.device_store,
-            ip_provider=self.ip_provider,
             on_device_connected=self.on_device_connected,
         )
         return self.ras_server.app

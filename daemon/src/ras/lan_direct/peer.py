@@ -171,8 +171,12 @@ class LanDirectPeer:
         """Wait for the peer to close.
 
         This is useful for keeping the WebSocket handler alive
-        while the connection is active.
+        while the connection is active. If no receive loop is running
+        (e.g. on_message() was never called), one is started automatically
+        so that WebSocket closure is still detected.
         """
+        if self._receive_task is None and not self._closed:
+            self._receive_task = asyncio.create_task(self._receive_loop())
         await self._close_event.wait()
 
     async def _do_close(self) -> None:

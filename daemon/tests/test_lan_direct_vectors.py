@@ -155,7 +155,6 @@ class TestFullFlow:
         # We need to mock time since the vector uses a fixed timestamp
         server = UnifiedServer(
             device_store=MockDeviceStore(),
-            ip_provider=MockIpProvider(),
         )
 
         # Patch time.time to return the vector's timestamp
@@ -210,7 +209,6 @@ class TestDoubleDerivationBug:
         auth_key = derive_key(master_secret, "auth")
         server = UnifiedServer(
             device_store=MockDeviceStore(),
-            ip_provider=MockIpProvider(),
         )
 
         import unittest.mock
