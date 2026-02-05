@@ -187,13 +187,11 @@ class OpenSourcePatternsCoverageTest {
         // Verify all state types exist
         val idle = PairingState.Idle
         val scanning = PairingState.Scanning
-        val connecting = PairingState.Connecting
-        val authenticating = PairingState.Authenticating
+        val exchanging = PairingState.ExchangingCredentials
 
         assertNotNull(idle, "Idle state should exist")
         assertNotNull(scanning, "Scanning state should exist")
-        assertNotNull(connecting, "Connecting state should exist")
-        assertNotNull(authenticating, "Authenticating state should exist")
+        assertNotNull(exchanging, "ExchangingCredentials state should exist")
     }
 
     @Tag("unit")
@@ -206,7 +204,7 @@ class OpenSourcePatternsCoverageTest {
         val failureReasons = PairingState.FailureReason.values()
 
         assertTrue(failureReasons.contains(PairingState.FailureReason.QR_PARSE_ERROR), "Should have QR_PARSE_ERROR")
-        assertTrue(failureReasons.contains(PairingState.FailureReason.CONNECTION_FAILED), "Should have CONNECTION_FAILED")
+        assertTrue(failureReasons.contains(PairingState.FailureReason.SIGNALING_FAILED), "Should have SIGNALING_FAILED")
         assertTrue(failureReasons.contains(PairingState.FailureReason.AUTH_FAILED), "Should have AUTH_FAILED")
         assertTrue(failureReasons.contains(PairingState.FailureReason.TIMEOUT), "Should have TIMEOUT")
     }

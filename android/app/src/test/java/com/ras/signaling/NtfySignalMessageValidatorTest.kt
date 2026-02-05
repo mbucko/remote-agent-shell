@@ -387,6 +387,124 @@ class NtfySignalMessageValidatorTest {
         assertTrue(result.isValid, "First nonce should be evicted and accepted again")
     }
 
+    // ==================== PAIR_RESPONSE Validation Tests ====================
+
+    @Tag("unit")
+    @Test
+    fun `PAIR_RESPONSE type accepted when expected`() {
+        val pairResponseValidator = NtfySignalMessageValidator(
+            pendingSessionId = "abc123",
+            expectedType = NtfySignalMessage.MessageType.PAIR_RESPONSE,
+            timestampWindowSeconds = 30
+        )
+
+        val msg = NtfySignalMessage.newBuilder()
+            .setType(NtfySignalMessage.MessageType.PAIR_RESPONSE)
+            .setSessionId("abc123")
+            .setTimestamp(currentTimestamp())
+            .setNonce(ByteString.copyFrom(ByteArray(16) { it.toByte() }))
+            .build()
+
+        val result = pairResponseValidator.validate(msg)
+        assertTrue(result.isValid, "PAIR_RESPONSE should be accepted")
+    }
+
+    @Tag("unit")
+    @Test
+    fun `PAIR_RESPONSE skips SDP validation`() {
+        val pairResponseValidator = NtfySignalMessageValidator(
+            pendingSessionId = "abc123",
+            expectedType = NtfySignalMessage.MessageType.PAIR_RESPONSE,
+            timestampWindowSeconds = 30
+        )
+
+        // No SDP set at all - should still pass (no SDP in pairing)
+        val msg = NtfySignalMessage.newBuilder()
+            .setType(NtfySignalMessage.MessageType.PAIR_RESPONSE)
+            .setSessionId("abc123")
+            .setTimestamp(currentTimestamp())
+            .setNonce(ByteString.copyFrom(ByteArray(16) { (it + 10).toByte() }))
+            .build()
+
+        val result = pairResponseValidator.validate(msg)
+        assertTrue(result.isValid, "PAIR_RESPONSE should skip SDP validation")
+    }
+
+    @Tag("unit")
+    @Test
+    fun `PAIR_RESPONSE still checks session ID`() {
+        val pairResponseValidator = NtfySignalMessageValidator(
+            pendingSessionId = "abc123",
+            expectedType = NtfySignalMessage.MessageType.PAIR_RESPONSE,
+            timestampWindowSeconds = 30
+        )
+
+        val msg = NtfySignalMessage.newBuilder()
+            .setType(NtfySignalMessage.MessageType.PAIR_RESPONSE)
+            .setSessionId("wrong-session")
+            .setTimestamp(currentTimestamp())
+            .setNonce(ByteString.copyFrom(ByteArray(16) { (it + 20).toByte() }))
+            .build()
+
+        val result = pairResponseValidator.validate(msg)
+        assertFalse(result.isValid)
+        assertEquals(ValidationError.INVALID_SESSION, result.error)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `PAIR_RESPONSE still checks timestamp`() {
+        val pairResponseValidator = NtfySignalMessageValidator(
+            pendingSessionId = "abc123",
+            expectedType = NtfySignalMessage.MessageType.PAIR_RESPONSE,
+            timestampWindowSeconds = 30
+        )
+
+        val msg = NtfySignalMessage.newBuilder()
+            .setType(NtfySignalMessage.MessageType.PAIR_RESPONSE)
+            .setSessionId("abc123")
+            .setTimestamp(currentTimestamp() - 31)
+            .setNonce(ByteString.copyFrom(ByteArray(16) { (it + 30).toByte() }))
+            .build()
+
+        val result = pairResponseValidator.validate(msg)
+        assertFalse(result.isValid)
+        assertEquals(ValidationError.INVALID_TIMESTAMP, result.error)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `PAIR_RESPONSE still checks nonce replay`() {
+        val pairResponseValidator = NtfySignalMessageValidator(
+            pendingSessionId = "abc123",
+            expectedType = NtfySignalMessage.MessageType.PAIR_RESPONSE,
+            timestampWindowSeconds = 30
+        )
+
+        val nonce = ByteArray(16) { (it + 40).toByte() }
+
+        val msg1 = NtfySignalMessage.newBuilder()
+            .setType(NtfySignalMessage.MessageType.PAIR_RESPONSE)
+            .setSessionId("abc123")
+            .setTimestamp(currentTimestamp())
+            .setNonce(ByteString.copyFrom(nonce))
+            .build()
+
+        assertTrue(pairResponseValidator.validate(msg1).isValid)
+
+        // Same nonce rejected
+        val msg2 = NtfySignalMessage.newBuilder()
+            .setType(NtfySignalMessage.MessageType.PAIR_RESPONSE)
+            .setSessionId("abc123")
+            .setTimestamp(currentTimestamp())
+            .setNonce(ByteString.copyFrom(nonce))
+            .build()
+
+        val result = pairResponseValidator.validate(msg2)
+        assertFalse(result.isValid)
+        assertEquals(ValidationError.NONCE_REPLAY, result.error)
+    }
+
     // ==================== Device Name Sanitization Tests ====================
 
     @Tag("unit")

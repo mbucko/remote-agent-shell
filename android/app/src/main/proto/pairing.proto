@@ -1,0 +1,37 @@
+// Pairing credential exchange messages
+// Used for instant pairing without WebRTC
+// Transported via ntfy (inside NtfySignalMessage) or direct HTTP
+// Shared between: Python daemon, Android app, iOS app
+
+syntax = "proto3";
+
+package ras;
+
+option java_package = "com.ras.proto";
+option java_multiple_files = true;
+option swift_prefix = "RAS";
+
+import "auth.proto";
+
+// Phone -> Daemon: Request to pair
+message PairRequest {
+  string device_id = 1;
+  string device_name = 2;
+  // HMAC(auth_key, "pair-request" || session_id || device_id || nonce)
+  // Proves phone knows auth_key (derived from master_secret in QR)
+  bytes auth_proof = 3;
+  // 32-byte random nonce — prevents replay, daemon uses to prove knowledge back
+  bytes nonce = 4;
+  // session_id included so daemon can look up the pairing session
+  string session_id = 5;
+}
+
+// Daemon -> Phone: Pairing response
+message PairResponse {
+  string daemon_device_id = 1;
+  string hostname = 2;
+  DeviceType device_type = 3;
+  // HMAC(auth_key, "pair-response" || nonce)
+  // Proves daemon knows auth_key
+  bytes auth_proof = 4;
+}

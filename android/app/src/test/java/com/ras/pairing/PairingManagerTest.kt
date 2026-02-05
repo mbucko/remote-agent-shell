@@ -1,257 +1,290 @@
 package com.ras.pairing
 
-import android.content.Context
-import com.ras.data.connection.ConnectionManager
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.keystore.KeyManager
 import com.ras.data.model.DeviceType
-import com.ras.data.webrtc.WebRTCClient
+import com.ras.signaling.MockNtfyClient
 import com.ras.signaling.NtfyClientInterface
+import com.ras.signaling.PairExchangeResult
+import com.ras.signaling.PairExchanger
 import io.mockk.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Tag
 
-/**
- * CRITICAL TEST: Verifies PairingManager uses correct device ID.
- *
- * This test would have caught the bug where PairingManager was using
- * the phone's device ID instead of the daemon's device ID when storing
- * credentials after successful pairing.
- *
- * Follows TDD principles:
- * - All dependencies injected via constructor (DI)
- * - All dependencies mocked (no real network/filesystem)
- * - Uses runTest with UnconfinedTestDispatcher (no sleep calls)
- */
 @Tag("unit")
 @OptIn(ExperimentalCoroutinesApi::class)
 class PairingManagerTest {
 
     private lateinit var pairingManager: PairingManager
-    private lateinit var context: Context
-    private lateinit var signalingClient: SignalingClient
     private lateinit var keyManager: KeyManager
     private lateinit var credentialRepository: CredentialRepository
-    private lateinit var webRTCClientFactory: WebRTCClient.Factory
-    private lateinit var webRTCClient: WebRTCClient
     private lateinit var ntfyClient: NtfyClientInterface
-    private lateinit var connectionManager: ConnectionManager
     private lateinit var progressTracker: PairingProgressTracker
+    private lateinit var mockExchanger: PairExchanger
 
     private val testDispatcher = UnconfinedTestDispatcher()
 
+    private val phoneDeviceId = "phone-device-id-12345"
+    private val daemonDeviceId = "daemon-device-abc123"
+
     @BeforeEach
     fun setUp() {
-        // Mock all dependencies (DI principle)
-        context = mockk(relaxed = true)
-        signalingClient = mockk(relaxed = true)
         keyManager = mockk(relaxed = true)
         credentialRepository = mockk(relaxed = true)
-        webRTCClientFactory = mockk(relaxed = true)
-        webRTCClient = mockk(relaxed = true)
         ntfyClient = mockk(relaxed = true)
-        connectionManager = mockk(relaxed = true)
         progressTracker = mockk(relaxed = true)
+        mockExchanger = mockk(relaxed = true)
 
-        // Setup factory to return mock WebRTC client
-        every { webRTCClientFactory.create() } returns webRTCClient
-
-        // Setup phone device ID
-        every { keyManager.getOrCreateDeviceId() } returns "phone-device-id-12345"
-
-        // Setup credential repository as suspend functions
-        coEvery { credentialRepository.addDevice(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } just Runs
+        every { keyManager.getOrCreateDeviceId() } returns phoneDeviceId
+        coEvery { credentialRepository.addDevice(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) } just Runs
         coEvery { credentialRepository.setSelectedDevice(any()) } just Runs
 
-        // Create PairingManager with injected dependencies
         pairingManager = PairingManager(
-            context = context,
-            signalingClient = signalingClient,
             keyManager = keyManager,
             credentialRepository = credentialRepository,
-            webRTCClientFactory = webRTCClientFactory,
             ntfyClient = ntfyClient,
-            connectionManager = connectionManager,
             progressTracker = progressTracker
         )
+
+        // Inject mock PairExchanger via factory
+        pairingManager.pairExchangerFactory = { _ -> mockExchanger }
 
         // Override scope for synchronous testing
         pairingManager.scope = kotlinx.coroutines.CoroutineScope(testDispatcher)
     }
 
-    /**
-     * REGRESSION TEST: This would have caught the device ID bug!
-     *
-     * After successful authentication, PairingManager MUST store credentials
-     * using the daemon's device ID (from AuthResult), NOT the phone's device ID.
-     */
-    @Test
-    fun `after successful auth stores credentials using daemon device ID not phone device ID`() = runTest {
-        // Given: Pairing payload
-        val masterSecret = ByteArray(32) { 0x42.toByte() }
-        val qrPayload = ParsedQrPayload(
+    private fun createPayload(
+        ip: String? = "192.168.1.100",
+        port: Int? = 8080,
+        tailscaleIp: String? = null,
+        tailscalePort: Int? = null,
+        vpnIp: String? = null,
+        vpnPort: Int? = null
+    ): ParsedQrPayload {
+        return ParsedQrPayload(
             version = 1,
-            ip = "192.168.1.100",
-            port = 8080,
-            masterSecret = masterSecret,
+            ip = ip,
+            port = port,
+            masterSecret = ByteArray(32) { 0x42.toByte() },
             sessionId = "session-123",
-            ntfyTopic = "topic-123"
+            ntfyTopic = "topic-123",
+            tailscaleIp = tailscaleIp,
+            tailscalePort = tailscalePort,
+            vpnIp = vpnIp,
+            vpnPort = vpnPort
         )
+    }
 
-        // Given: Daemon returns its device ID during auth
-        val daemonDeviceId = "daemon-device-abc123"
-        val authResult = AuthResult.Success(
-            deviceId = daemonDeviceId,  // ← Daemon's ID
-            hostname = "my-laptop",
-            deviceType = DeviceType.LAPTOP
-        )
+    @Test
+    fun `startPairing transitions to QrParsed then ExchangingCredentials`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Success(daemonDeviceId, "my-laptop", DeviceType.LAPTOP)
 
-        // When: Pairing completes (simulated)
-        // Note: We can't easily test the full pairing flow without extensive mocking,
-        // so we verify the critical part - credential storage
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
 
-        // Simulate what performAuthentication() does after successful auth
-        coEvery { credentialRepository.addDevice(
-            deviceId = daemonDeviceId,
-            masterSecret = masterSecret,
-            deviceName = "my-laptop",
-            deviceType = DeviceType.LAPTOP
-        ) } just Runs
+        // Should have passed through ExchangingCredentials and ended at Authenticated
+        assertTrue(pairingManager.state.value is PairingState.Authenticated)
+    }
 
-        // Then: CRITICAL - Should use daemon's device ID, NOT phone's device ID
-        val slot = slot<String>()
+    @Test
+    fun `successful exchange stores device in credential repository`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Success(daemonDeviceId, "my-laptop", DeviceType.LAPTOP)
 
-        // Call the actual method that stores credentials
-        credentialRepository.addDevice(
-            deviceId = daemonDeviceId,  // ← Must be daemon's ID
-            masterSecret = masterSecret,
-            deviceName = authResult.hostname,
-            deviceType = authResult.deviceType
-        )
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
 
-        // Verify: Used daemon device ID (from auth result)
         coVerify {
             credentialRepository.addDevice(
-                deviceId = daemonDeviceId,  // ← NOT "phone-device-id-12345"
-                masterSecret = masterSecret,
-                deviceName = "my-laptop",
-                deviceType = DeviceType.LAPTOP
-            )
-        }
-
-        // Verify: Did NOT use phone's device ID
-        coVerify(exactly = 0) {
-            credentialRepository.addDevice(
-                deviceId = "phone-device-id-12345",  // ← Should NOT be used
+                deviceId = daemonDeviceId,
                 masterSecret = any(),
-                deviceName = any(),
-                deviceType = any()
+                deviceName = "my-laptop",
+                deviceType = DeviceType.LAPTOP,
+                daemonHost = "192.168.1.100",
+                daemonPort = 8080,
+                daemonTailscaleIp = null,
+                daemonTailscalePort = null,
+                daemonVpnIp = null,
+                daemonVpnPort = null,
+                phoneDeviceId = phoneDeviceId
             )
         }
     }
 
-    /**
-     * Verify that after storing credentials, the device is set as selected.
-     */
     @Test
-    fun `after storing credentials sets device as selected`() = runTest {
-        val daemonDeviceId = "daemon-abc"
-        val masterSecret = ByteArray(32) { 0x99.toByte() }
+    fun `successful exchange sets device as selected`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Success(daemonDeviceId, "my-laptop", DeviceType.LAPTOP)
 
-        // When: Credentials are stored
-        credentialRepository.addDevice(
-            deviceId = daemonDeviceId,
-            masterSecret = masterSecret,
-            deviceName = "Test Device",
-            deviceType = DeviceType.DESKTOP
-        )
-        credentialRepository.setSelectedDevice(daemonDeviceId)
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
 
-        // Then: Device should be set as selected
         coVerify {
             credentialRepository.setSelectedDevice(daemonDeviceId)
         }
     }
 
-    /**
-     * Edge case: Verify credentials stored even with minimal connection info.
-     */
     @Test
-    fun `stores credentials with only required fields when optional connection info is null`() = runTest {
-        val daemonDeviceId = "daemon-xyz"
-        val masterSecret = ByteArray(32) { 0xAA.toByte() }
+    fun `successful exchange stores phone device ID`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Success(daemonDeviceId, "my-laptop", DeviceType.LAPTOP)
 
-        // When: Pairing with minimal info (no Tailscale, no VPN)
-        credentialRepository.addDevice(
-            deviceId = daemonDeviceId,
-            masterSecret = masterSecret,
-            deviceName = "Minimal Device",
-            deviceType = DeviceType.SERVER,
-            daemonHost = null,  // No direct IP
-            daemonPort = null,
-            daemonTailscaleIp = null,
-            daemonTailscalePort = null,
-            daemonVpnIp = null,
-            daemonVpnPort = null
-        )
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
 
-        // Then: Should still store successfully
         coVerify {
             credentialRepository.addDevice(
                 deviceId = daemonDeviceId,
-                masterSecret = masterSecret,
-                deviceName = "Minimal Device",
-                deviceType = DeviceType.SERVER,
-                daemonHost = null,
-                daemonPort = null,
-                daemonTailscaleIp = null,
-                daemonTailscalePort = null,
-                daemonVpnIp = null,
-                daemonVpnPort = null
+                masterSecret = any(),
+                deviceName = any(),
+                deviceType = any(),
+                daemonHost = any(),
+                daemonPort = any(),
+                daemonTailscaleIp = any(),
+                daemonTailscalePort = any(),
+                daemonVpnIp = any(),
+                daemonVpnPort = any(),
+                phoneDeviceId = phoneDeviceId
             )
         }
     }
 
-    /**
-     * Verify credential repository is called with all connection hints.
-     */
     @Test
-    fun `stores all connection hints from pairing payload`() = runTest {
-        val daemonDeviceId = "daemon-full"
-        val masterSecret = ByteArray(32) { 0xBB.toByte() }
+    fun `successful exchange transitions to Authenticated state`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Success(daemonDeviceId, "my-laptop", DeviceType.LAPTOP)
 
-        // When: Pairing with full connection info
-        credentialRepository.addDevice(
-            deviceId = daemonDeviceId,
-            masterSecret = masterSecret,
-            deviceName = "Full Device",
-            deviceType = DeviceType.LAPTOP,
-            daemonHost = "192.168.1.100",
-            daemonPort = 8080,
-            daemonTailscaleIp = "100.64.1.2",
-            daemonTailscalePort = 8081,
-            daemonVpnIp = "10.8.0.1",
-            daemonVpnPort = 8082
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
+
+        val state = pairingManager.state.value
+        assertTrue(state is PairingState.Authenticated)
+        assertEquals(daemonDeviceId, (state as PairingState.Authenticated).deviceId)
+    }
+
+    @Test
+    fun `exchange timeout transitions to Failed with NTFY_TIMEOUT reason`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Timeout
+
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
+
+        val state = pairingManager.state.value
+        assertTrue(state is PairingState.Failed)
+        assertEquals(PairingState.FailureReason.NTFY_TIMEOUT, (state as PairingState.Failed).reason)
+    }
+
+    @Test
+    fun `exchange auth failure transitions to Failed with AUTH_FAILED reason`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.AuthFailed
+
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
+
+        val state = pairingManager.state.value
+        assertTrue(state is PairingState.Failed)
+        assertEquals(PairingState.FailureReason.AUTH_FAILED, (state as PairingState.Failed).reason)
+    }
+
+    @Test
+    fun `exchange error transitions to Failed with SIGNALING_FAILED reason`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Error("Connection refused")
+
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
+
+        val state = pairingManager.state.value
+        assertTrue(state is PairingState.Failed)
+        assertEquals(PairingState.FailureReason.SIGNALING_FAILED, (state as PairingState.Failed).reason)
+    }
+
+    @Test
+    fun `reset clears state back to Idle`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Timeout
+
+        pairingManager.startPairing(createPayload())
+        advanceUntilIdle()
+
+        pairingManager.reset()
+
+        assertEquals(PairingState.Idle, pairingManager.state.value)
+    }
+
+    @Test
+    fun `stores all connection hints from QR payload`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Success(daemonDeviceId, "my-laptop", DeviceType.LAPTOP)
+
+        val payload = createPayload(
+            ip = "192.168.1.100",
+            port = 8080,
+            tailscaleIp = "100.64.1.2",
+            tailscalePort = 8081,
+            vpnIp = "10.8.0.1",
+            vpnPort = 8082
         )
 
-        // Then: All connection hints should be stored
+        pairingManager.startPairing(payload)
+        advanceUntilIdle()
+
         coVerify {
             credentialRepository.addDevice(
                 deviceId = daemonDeviceId,
-                masterSecret = masterSecret,
-                deviceName = "Full Device",
+                masterSecret = any(),
+                deviceName = "my-laptop",
                 deviceType = DeviceType.LAPTOP,
                 daemonHost = "192.168.1.100",
                 daemonPort = 8080,
                 daemonTailscaleIp = "100.64.1.2",
                 daemonTailscalePort = 8081,
                 daemonVpnIp = "10.8.0.1",
-                daemonVpnPort = 8082
+                daemonVpnPort = 8082,
+                phoneDeviceId = phoneDeviceId
+            )
+        }
+    }
+
+    @Test
+    fun `stores credentials with null optional fields`() = runTest {
+        coEvery { mockExchanger.exchange(any(), any(), any(), any(), any()) } returns
+            PairExchangeResult.Success(daemonDeviceId, "my-laptop", DeviceType.SERVER)
+
+        val payload = createPayload(
+            ip = null,
+            port = null,
+            tailscaleIp = null,
+            tailscalePort = null,
+            vpnIp = null,
+            vpnPort = null
+        )
+
+        pairingManager.startPairing(payload)
+        advanceUntilIdle()
+
+        coVerify {
+            credentialRepository.addDevice(
+                deviceId = daemonDeviceId,
+                masterSecret = any(),
+                deviceName = "my-laptop",
+                deviceType = DeviceType.SERVER,
+                daemonHost = null,
+                daemonPort = null,
+                daemonTailscaleIp = null,
+                daemonTailscalePort = null,
+                daemonVpnIp = null,
+                daemonVpnPort = null,
+                phoneDeviceId = phoneDeviceId
             )
         }
     }

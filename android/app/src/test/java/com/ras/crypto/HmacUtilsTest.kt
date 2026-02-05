@@ -1,5 +1,6 @@
 package com.ras.crypto
 
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -118,5 +119,156 @@ class HmacUtilsTest {
         val result = HmacUtils.computeSignalingHmac(authKey, sessionId, timestamp, body)
 
         assertTrue(expectedHmac.contentEquals(result))
+    }
+
+    // --- Pairing HMAC tests ---
+
+    @Tag("unit")
+    @Test
+    fun `computePairRequestHmac is deterministic`() {
+        val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val sessionId = "session-42"
+        val deviceId = "device-abc"
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        val result1 = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId, nonce)
+        val result2 = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId, nonce)
+
+        assertArrayEquals(result1, result2)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `computePairRequestHmac different keys produce different HMACs`() {
+        val key1 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val key2 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210".hexToBytes()
+        val sessionId = "session-42"
+        val deviceId = "device-abc"
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        val result1 = HmacUtils.computePairRequestHmac(key1, sessionId, deviceId, nonce)
+        val result2 = HmacUtils.computePairRequestHmac(key2, sessionId, deviceId, nonce)
+
+        assertFalse(result1.contentEquals(result2))
+    }
+
+    @Tag("unit")
+    @Test
+    fun `computePairRequestHmac different nonces produce different HMACs`() {
+        val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val sessionId = "session-42"
+        val deviceId = "device-abc"
+        val nonce1 = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+        val nonce2 = "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff".hexToBytes()
+
+        val result1 = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId, nonce1)
+        val result2 = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId, nonce2)
+
+        assertFalse(result1.contentEquals(result2))
+    }
+
+    @Tag("unit")
+    @Test
+    fun `computePairRequestHmac different device IDs produce different HMACs`() {
+        val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val sessionId = "session-42"
+        val deviceId1 = "device-abc"
+        val deviceId2 = "device-xyz"
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        val result1 = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId1, nonce)
+        val result2 = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId2, nonce)
+
+        assertFalse(result1.contentEquals(result2))
+    }
+
+    @Tag("unit")
+    @Test
+    fun `computePairRequestHmac different session IDs produce different HMACs`() {
+        val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val sessionId1 = "session-42"
+        val sessionId2 = "session-99"
+        val deviceId = "device-abc"
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        val result1 = HmacUtils.computePairRequestHmac(authKey, sessionId1, deviceId, nonce)
+        val result2 = HmacUtils.computePairRequestHmac(authKey, sessionId2, deviceId, nonce)
+
+        assertFalse(result1.contentEquals(result2))
+    }
+
+    @Tag("unit")
+    @Test
+    fun `computePairRequestHmac output is 32 bytes`() {
+        val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val sessionId = "session-42"
+        val deviceId = "device-abc"
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        val result = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId, nonce)
+
+        assertEquals(32, result.size)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `computePairResponseHmac is deterministic`() {
+        val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        val result1 = HmacUtils.computePairResponseHmac(authKey, nonce)
+        val result2 = HmacUtils.computePairResponseHmac(authKey, nonce)
+
+        assertArrayEquals(result1, result2)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `computePairResponseHmac different keys produce different HMACs`() {
+        val key1 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val key2 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210".hexToBytes()
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        val result1 = HmacUtils.computePairResponseHmac(key1, nonce)
+        val result2 = HmacUtils.computePairResponseHmac(key2, nonce)
+
+        assertFalse(result1.contentEquals(result2))
+    }
+
+    @Tag("unit")
+    @Test
+    fun `request and response HMACs are different`() {
+        val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val sessionId = "session-42"
+        val deviceId = "device-abc"
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        val requestHmac = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId, nonce)
+        val responseHmac = HmacUtils.computePairResponseHmac(authKey, nonce)
+
+        assertFalse(requestHmac.contentEquals(responseHmac))
+    }
+
+    @Tag("unit")
+    @Test
+    fun `mutual verification round trip`() {
+        val authKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".hexToBytes()
+        val sessionId = "session-42"
+        val deviceId = "device-abc"
+        val nonce = "aabbccddee00112233445566778899aabbccddee00112233445566778899aabb".hexToBytes()
+
+        // Phone computes request HMAC and sends it
+        val requestHmac = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId, nonce)
+
+        // Daemon recomputes and verifies the request HMAC
+        val daemonRequestHmac = HmacUtils.computePairRequestHmac(authKey, sessionId, deviceId, nonce)
+        assertTrue(HmacUtils.constantTimeEquals(requestHmac, daemonRequestHmac))
+
+        // Daemon computes response HMAC and sends it back
+        val responseHmac = HmacUtils.computePairResponseHmac(authKey, nonce)
+
+        // Phone recomputes and verifies the response HMAC
+        val phoneResponseHmac = HmacUtils.computePairResponseHmac(authKey, nonce)
+        assertTrue(HmacUtils.constantTimeEquals(responseHmac, phoneResponseHmac))
     }
 }

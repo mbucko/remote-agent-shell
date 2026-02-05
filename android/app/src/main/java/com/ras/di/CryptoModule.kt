@@ -1,9 +1,7 @@
 package com.ras.di
 
 import android.content.Context
-import com.ras.data.connection.ConnectionManager
 import com.ras.data.keystore.KeyManager
-import com.ras.data.webrtc.WebRTCClient
 import com.ras.pairing.PairingManager
 import com.ras.pairing.PairingProgressTracker
 import com.ras.pairing.SignalingClient
@@ -73,15 +71,11 @@ object CryptoModule {
     @Provides
     @Singleton
     fun providePairingManager(
-        @ApplicationContext context: Context,
-        signalingClient: SignalingClient,
         keyManager: KeyManager,
         credentialRepository: com.ras.data.credentials.CredentialRepository,
-        webRTCClientFactory: WebRTCClient.Factory,
         ntfyClient: NtfyClientInterface,
-        connectionManager: ConnectionManager,
         progressTracker: PairingProgressTracker
     ): PairingManager {
-        return PairingManager(context, signalingClient, keyManager, credentialRepository, webRTCClientFactory, ntfyClient, connectionManager, progressTracker)
+        return PairingManager(keyManager, credentialRepository, ntfyClient, progressTracker)
     }
 }

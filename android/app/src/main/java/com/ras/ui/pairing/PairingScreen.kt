@@ -114,13 +114,7 @@ fun PairingScreen(
                 }
 
                 is PairingState.QrParsed,
-                PairingState.Signaling,
-                PairingState.TryingDirect,
-                PairingState.DirectSignaling,
-                PairingState.NtfySubscribing,
-                PairingState.NtfyWaitingForAnswer,
-                PairingState.Connecting,
-                PairingState.Authenticating -> {
+                PairingState.ExchangingCredentials -> {
                     ProgressSection(
                         progress = progress,
                         modifier = Modifier.weight(1f)
@@ -291,17 +285,17 @@ private fun ProgressSection(
             color = MaterialTheme.colorScheme.primary,
             strokeWidth = 4.dp
         )
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         Text(
             text = progress.currentMessage,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
+
         Spacer(modifier = Modifier.height(24.dp))
-        
+
         // Step list
         PairingStepList(
             steps = progress.steps,
@@ -332,7 +326,7 @@ private fun SuccessSection(
             style = MaterialTheme.typography.headlineSmall
         )
         Spacer(modifier = Modifier.height(24.dp))
-        
+
         // Show completed step list
         PairingStepList(
             steps = progress.steps,
@@ -358,27 +352,27 @@ private fun FailureSection(
             steps = progress.steps,
             modifier = Modifier.fillMaxWidth()
         )
-        
+
         Spacer(modifier = Modifier.height(24.dp))
-        
+
         Icon(
             imageVector = Icons.Default.Error,
             contentDescription = null,
             modifier = Modifier.size(48.dp),
             tint = MaterialTheme.colorScheme.error
         )
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         Text(
             text = getFailureReasonMessage(reason),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.error,
             textAlign = TextAlign.Center
         )
-        
+
         Spacer(modifier = Modifier.height(24.dp))
-        
+
         Button(onClick = onRetry) {
             Text("Try Again")
         }
@@ -400,10 +394,7 @@ private fun getFailureReasonMessage(reason: PairingState.FailureReason): String 
     return when (reason) {
         PairingState.FailureReason.QR_PARSE_ERROR -> "Invalid QR code"
         PairingState.FailureReason.SIGNALING_FAILED -> "Could not reach host.\nMake sure you're on the same network."
-        PairingState.FailureReason.DIRECT_TIMEOUT -> "Direct connection timed out.\nTrying relay..."
-        PairingState.FailureReason.NTFY_SUBSCRIBE_FAILED -> "Could not connect to relay.\nPlease check your internet connection."
-        PairingState.FailureReason.NTFY_TIMEOUT -> "Relay connection timed out.\nMake sure the host is running."
-        PairingState.FailureReason.CONNECTION_FAILED -> "Connection failed.\nPlease try again."
+        PairingState.FailureReason.NTFY_TIMEOUT -> "Connection timed out.\nMake sure the host is running."
         PairingState.FailureReason.AUTH_FAILED -> "Authentication failed.\nPlease scan a new QR code."
         PairingState.FailureReason.TIMEOUT -> "Connection timed out.\nPlease try again."
     }
