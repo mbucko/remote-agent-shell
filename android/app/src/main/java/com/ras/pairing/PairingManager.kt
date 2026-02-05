@@ -14,12 +14,21 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Provides the device name for pairing.
+ * Abstracted for testability (avoids direct android.os.Build reference).
+ */
+fun interface DeviceNameProvider {
+    fun getDeviceName(): String
+}
+
 @Singleton
 class PairingManager @Inject constructor(
     private val keyManager: KeyManager,
     private val credentialRepository: CredentialRepository,
     private val ntfyClient: NtfyClientInterface,
-    private val progressTracker: PairingProgressTracker
+    private val progressTracker: PairingProgressTracker,
+    private val deviceNameProvider: DeviceNameProvider
 ) {
     // Internal scope that can be overridden for testing
     private var _scope: CoroutineScope? = null
@@ -59,7 +68,7 @@ class PairingManager @Inject constructor(
         _state.value = PairingState.ExchangingCredentials
 
         val deviceId = keyManager.getOrCreateDeviceId()
-        val deviceName = android.os.Build.MODEL ?: "Unknown Device"
+        val deviceName = deviceNameProvider.getDeviceName()
         val ntfyTopic = payload.ntfyTopic
 
         val exchanger = pairExchangerFactory(ntfyClient)

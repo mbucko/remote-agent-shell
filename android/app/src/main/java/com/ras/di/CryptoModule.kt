@@ -2,6 +2,7 @@ package com.ras.di
 
 import android.content.Context
 import com.ras.data.keystore.KeyManager
+import com.ras.pairing.DeviceNameProvider
 import com.ras.pairing.PairingManager
 import com.ras.pairing.PairingProgressTracker
 import com.ras.pairing.SignalingClient
@@ -70,12 +71,19 @@ object CryptoModule {
 
     @Provides
     @Singleton
+    fun provideDeviceNameProvider(): DeviceNameProvider {
+        return DeviceNameProvider { android.os.Build.MODEL ?: "Unknown Device" }
+    }
+
+    @Provides
+    @Singleton
     fun providePairingManager(
         keyManager: KeyManager,
         credentialRepository: com.ras.data.credentials.CredentialRepository,
         ntfyClient: NtfyClientInterface,
-        progressTracker: PairingProgressTracker
+        progressTracker: PairingProgressTracker,
+        deviceNameProvider: DeviceNameProvider
     ): PairingManager {
-        return PairingManager(keyManager, credentialRepository, ntfyClient, progressTracker)
+        return PairingManager(keyManager, credentialRepository, ntfyClient, progressTracker, deviceNameProvider)
     }
 }

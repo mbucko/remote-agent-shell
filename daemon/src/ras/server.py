@@ -360,18 +360,17 @@ class UnifiedServer:
             content_type="application/x-protobuf",
         )
 
-    async def _complete_pairing_exchange(
+    async def _store_and_finalize_pairing(
         self,
         session: PairingSession,
         device_id: str,
         device_name: str,
-        nonce: bytes,
-    ) -> PairResponse:
-        """Complete pairing: store device, build response, notify callbacks.
+    ) -> None:
+        """Store device, notify callbacks, and clean up session.
 
-        Shared by both HTTP and ntfy pairing paths.
+        Shared by both HTTP (_complete_pairing_exchange) and ntfy
+        (_on_ntfy_pair_complete) pairing paths.
         """
-        session.state = "verifying"
         session.device_id = device_id
         session.device_name = device_name
 
@@ -386,19 +385,6 @@ class UnifiedServer:
         if self._on_pairing_complete:
             await self._on_pairing_complete(device_id, device_name)
 
-        # Build PairResponse with daemon's auth_proof
-        from ras.proto.ras import DeviceType as ProtoDeviceType
-        from ras.system import detect_device_type, get_daemon_device_id, get_hostname
-
-        response_hmac = compute_pair_response_hmac(session.auth_key, nonce)
-
-        pair_response = PairResponse(
-            daemon_device_id=get_daemon_device_id(),
-            hostname=get_hostname(),
-            device_type=ProtoDeviceType(detect_device_type()),
-            auth_proof=response_hmac,
-        )
-
         # Stop ntfy subscriber (no longer needed)
         if session._ntfy_subscriber:
             await session._ntfy_subscriber.close()
@@ -408,7 +394,33 @@ class UnifiedServer:
 
         logger.info(f"Pairing completed: {device_name} ({device_id[:8]}...)")
 
-        return pair_response
+    async def _complete_pairing_exchange(
+        self,
+        session: PairingSession,
+        device_id: str,
+        device_name: str,
+        nonce: bytes,
+    ) -> PairResponse:
+        """Complete pairing: store device, build response, notify callbacks.
+
+        Used by the HTTP pair-complete endpoint.
+        """
+        session.state = "verifying"
+
+        await self._store_and_finalize_pairing(session, device_id, device_name)
+
+        # Build PairResponse with daemon's auth_proof
+        from ras.proto.ras import DeviceType as ProtoDeviceType
+        from ras.system import detect_device_type, get_daemon_device_id, get_hostname
+
+        response_hmac = compute_pair_response_hmac(session.auth_key, nonce)
+
+        return PairResponse(
+            daemon_device_id=get_daemon_device_id(),
+            hostname=get_hostname(),
+            device_type=ProtoDeviceType(detect_device_type()),
+            auth_proof=response_hmac,
+        )
 
     async def _handle_remove_device(self, request: web.Request) -> web.Response:
         """Remove a paired device (called by CLI)."""
@@ -1013,33 +1025,14 @@ class UnifiedServer:
         Called by the ntfy subscriber after a PAIR_REQUEST was validated
         and PAIR_RESPONSE was sent back. The handler already validated
         the HMAC and built the response. We just need to store the device.
+
+        Reuses _store_and_finalize_pairing for the store/notify/cleanup logic.
         """
         if session.is_expired() or session.state not in ("pending",):
             logger.debug(f"Ignoring ntfy pair-complete for session {session.session_id[:8]}... (state={session.state})")
             return
 
-        session.device_id = device_id
-        session.device_name = device_name
-
-        # Store device
-        await self.device_store.add_device(
-            device_id=device_id,
-            device_name=device_name,
-            master_secret=session.master_secret,
-        )
-
-        # Notify callbacks
-        if self._on_pairing_complete:
-            await self._on_pairing_complete(device_id, device_name)
-
-        # Stop ntfy subscriber (no longer needed)
-        if session._ntfy_subscriber:
-            await session._ntfy_subscriber.close()
-            session._ntfy_subscriber = None
-
-        session.state = "completed"
-
-        logger.info(f"Pairing completed via ntfy: {device_name} ({device_id[:8]}...)")
+        await self._store_and_finalize_pairing(session, device_id, device_name)
 
     # =========================================================================
     # Pairing completion (called by Daemon after external auth)

@@ -32,6 +32,7 @@ class PairingManagerTest {
 
     private val phoneDeviceId = "phone-device-id-12345"
     private val daemonDeviceId = "daemon-device-abc123"
+    private val testDeviceName = "Test Phone"
 
     @BeforeEach
     fun setUp() {
@@ -49,7 +50,8 @@ class PairingManagerTest {
             keyManager = keyManager,
             credentialRepository = credentialRepository,
             ntfyClient = ntfyClient,
-            progressTracker = progressTracker
+            progressTracker = progressTracker,
+            deviceNameProvider = DeviceNameProvider { testDeviceName }
         )
 
         // Inject mock PairExchanger via factory

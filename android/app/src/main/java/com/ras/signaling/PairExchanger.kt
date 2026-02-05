@@ -112,6 +112,9 @@ class PairExchanger(
                 expectedType = NtfySignalMessage.MessageType.PAIR_RESPONSE
             )
 
+            // Capture the parsed message from the filter to avoid double decryption
+            var parsedResponse: NtfySignalMessage? = null
+
             val result = try {
                 withTimeout(timeoutMs) {
                     messageFlow.firstOrNull { ntfyMsg ->
@@ -131,6 +134,7 @@ class PairExchanger(
                             return@firstOrNull false
                         }
 
+                        parsedResponse = response
                         true
                     }
                 }
@@ -142,13 +146,11 @@ class PairExchanger(
 
             ntfyClient.unsubscribe()
 
-            if (result == null) {
+            val responseMsg = parsedResponse
+            if (result == null || responseMsg == null) {
                 return PairExchangeResult.Error("No valid response received")
             }
 
-            // Decrypt and parse the response again to extract PairResponse
-            val decrypted = crypto.decryptFromBase64(result.message)
-            val responseMsg = NtfySignalMessage.parseFrom(decrypted)
             val pairResponse = responseMsg.pairResponse
 
             // Validate daemon's auth_proof
