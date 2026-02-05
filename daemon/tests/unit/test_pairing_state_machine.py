@@ -35,13 +35,6 @@ class MockDeviceStore:
         return self.devices.get(device_id)
 
 
-class MockIpProvider:
-    """Mock IP provider for testing."""
-
-    async def get_ip(self):
-        return "127.0.0.1"
-
-
 class TestPairingStateOrder:
     """Tests for pairing state transition ordering."""
 
@@ -55,7 +48,6 @@ class TestPairingStateOrder:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         # Track the order of operations
         operations = []
@@ -92,7 +84,6 @@ class TestPairingStateOrder:
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
             on_device_connected=on_device_connected,
         )
 
@@ -141,14 +132,12 @@ class TestPairingStateOrder:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         async def on_device_connected(device_id, device_name, peer, auth_key):
             pass
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
             on_device_connected=on_device_connected,
         )
 
@@ -194,11 +183,9 @@ class TestPairingStateOrder:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
         )
 
         session = PairingSession(
@@ -242,11 +229,9 @@ class TestConcurrentCleanup:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
         )
 
         # Create session with peer that was transferred
@@ -284,11 +269,9 @@ class TestConcurrentCleanup:
         from ras.protocols import PeerOwnership
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
         )
 
         # Create session with peer that was NOT transferred (failure case)
@@ -328,7 +311,6 @@ class TestConcurrentCleanup:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         handed_off_peer = None
 
@@ -339,7 +321,6 @@ class TestConcurrentCleanup:
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
             on_device_connected=slow_on_connected,
         )
 

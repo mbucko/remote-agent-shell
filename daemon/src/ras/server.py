@@ -26,7 +26,6 @@ from ras.crypto import (
     derive_session_id,
     generate_master_secret,
 )
-from ras.ip_provider import IpProvider
 from ras.ntfy_signaling import NtfySignalingSubscriber
 from ras.pairing.auth_handler import AuthHandler
 from ras.peer import PeerConnection
@@ -113,7 +112,6 @@ class UnifiedServer:
     def __init__(
         self,
         device_store: "JsonDeviceStore",
-        ip_provider: IpProvider,
         stun_servers: list[str] | None = None,
         pairing_timeout: float = 300.0,  # 5 minutes
         max_pairing_sessions: int = 10,
@@ -133,7 +131,6 @@ class UnifiedServer:
 
         Args:
             device_store: Store for paired devices.
-            ip_provider: Provider for discovering IP address for QR codes.
             stun_servers: STUN servers for WebRTC.
             pairing_timeout: How long pairing sessions are valid.
             max_pairing_sessions: Maximum concurrent pairing sessions.
@@ -144,7 +141,6 @@ class UnifiedServer:
             tailscale_capabilities_provider: Callable that returns Tailscale info dict.
         """
         self.device_store = device_store
-        self.ip_provider = ip_provider
         self.stun_servers = stun_servers or []
         self.pairing_timeout = pairing_timeout
         self.max_pairing_sessions = max_pairing_sessions
@@ -241,44 +237,11 @@ class UnifiedServer:
 
         logger.info(f"Pairing session started: {session_id[:8]}...")
 
-        # Get IP from provider (fails fast if IP can't be determined)
-        try:
-            public_ip = await self.ip_provider.get_ip()
-            logger.info(f"Using IP for pairing: {public_ip}")
-        except Exception as e:
-            logger.error(f"Failed to determine IP for pairing: {e}")
-            # Clean up the session we just created
-            await self._cleanup_session(session)
-            del self._pairing_sessions[session_id]
-            return web.json_response(
-                {"error": f"Cannot determine IP address: {e}"},
-                status=500,
-            )
-
-        # Get Tailscale info if available
-        tailscale_ip = ""
-        tailscale_port = 0
-        if self.tailscale_capabilities_provider:
-            ts_caps = self.tailscale_capabilities_provider()
-            tailscale_ip = ts_caps.get("tailscale_ip", "")
-            tailscale_port = ts_caps.get("tailscale_port", 0)
-
-        # Get VPN IP separately (non-Tailscale VPN)
-        vpn_ip = ""
-        vpn_port = 0
-        if hasattr(self.ip_provider, "get_all_ips"):
-            all_ips = self.ip_provider.get_all_ips()
-            detected_vpn_ip = all_ips.get("vpn")
-            if detected_vpn_ip and detected_vpn_ip != public_ip:
-                vpn_ip = detected_vpn_ip
-                vpn_port = self._port
-                logger.info(f"Including VPN IP: {vpn_ip}")
-
         # QR code contains ONLY the master_secret.
         # Everything else is derived from it:
         # - session_id: derived via HKDF
         # - ntfy_topic: derived via SHA256
-        # - daemon IP/port: discovered via mDNS or ntfy DISCOVER
+        # Daemon IP/port are discovered at connection time via mDNS or ntfy DISCOVER.
         return web.json_response({
             "session_id": session_id,
             "expires_at": session.expires_at,

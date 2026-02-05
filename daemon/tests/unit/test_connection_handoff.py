@@ -35,13 +35,6 @@ class MockDeviceStore:
         return self.devices.get(device_id)
 
 
-class MockIpProvider:
-    """Mock IP provider for testing."""
-
-    async def get_ip(self):
-        return "127.0.0.1"
-
-
 class TestPeerHandoff:
     """Test peer connection handoff during pairing."""
 
@@ -52,7 +45,6 @@ class TestPeerHandoff:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         # Track if on_device_connected was called with peer
         connected_peer = None
@@ -63,7 +55,6 @@ class TestPeerHandoff:
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
             on_device_connected=on_device_connected,
         )
 
@@ -115,14 +106,12 @@ class TestPeerHandoff:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         async def on_device_connected(device_id, device_name, peer, auth_key):
             pass  # Just accept the peer
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
             on_device_connected=on_device_connected,
         )
 
@@ -171,7 +160,6 @@ class TestPeerHandoff:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         # Track the peer that was handed off
         active_peer = None
@@ -182,7 +170,6 @@ class TestPeerHandoff:
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
             on_device_connected=on_device_connected,
         )
 
@@ -236,7 +223,6 @@ class TestPeerHandoff:
         from ras.server import PairingSession, UnifiedServer
 
         device_store = MockDeviceStore()
-        ip_provider = MockIpProvider()
 
         # Track if on_device_connected was called
         callback_called = False
@@ -247,7 +233,6 @@ class TestPeerHandoff:
 
         server = UnifiedServer(
             device_store=device_store,
-            ip_provider=ip_provider,
             on_device_connected=on_device_connected,
         )
 

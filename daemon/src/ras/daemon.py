@@ -18,7 +18,7 @@ from ras.crypto import BytesCodec, derive_key
 from ras.pairing.auth_handler import AuthHandler
 from ras.device_store import JsonDeviceStore, PairedDevice
 from ras.heartbeat import HeartbeatConfig, HeartbeatManager
-from ras.ip_provider import IpProvider, LocalNetworkIpProvider
+from ras.ip_provider import LocalNetworkIpProvider
 from ras.mdns import MdnsService
 from ras.message_dispatcher import MessageDispatcher
 from ras.ntfy_signaling.reconnection_manager import NtfyReconnectionManager
@@ -281,13 +281,8 @@ class Daemon:
         """Start unified HTTP server for pairing and reconnection."""
         # Create unified server if not injected (injection is for testing)
         if self._unified_server is None:
-            # Create IP provider - uses local network IP by default
-            # Could be configured to use STUN for public IP in the future
-            ip_provider: IpProvider = LocalNetworkIpProvider()
-
             self._unified_server = UnifiedServer(
                 device_store=self._device_store,
-                ip_provider=ip_provider,
                 stun_servers=self._config.stun_servers,
                 pairing_timeout=self._config.daemon.pairing_timeout,
                 max_pairing_sessions=self._config.daemon.max_pairing_sessions,
