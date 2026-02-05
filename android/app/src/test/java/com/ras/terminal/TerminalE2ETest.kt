@@ -190,13 +190,14 @@ class TerminalE2ETest {
         testDispatcher.scheduler.advanceUntilIdle()
         assertEquals(100L, repository.state.value.lastSequence)
 
-        // Simulate disconnection
-        terminalEventsFlow.emit(createDetachedEvent("abc123def456", "connection_lost"))
+        // Simulate disconnection (transport dies - no detach event delivered)
+        isConnectedFlow.value = false
         testDispatcher.scheduler.advanceUntilIdle()
         assertFalse(repository.state.value.isAttached)
 
         // Reconnect with last sequence
         sentCommands.clear()
+        isConnectedFlow.value = true
         launch { repository.attach("abc123def456", fromSequence = 100) }
         testDispatcher.scheduler.runCurrent()
 
@@ -490,17 +491,15 @@ class TerminalE2ETest {
         testDispatcher.scheduler.advanceUntilIdle()
         assertEquals(50L, repository.state.value.lastSequence)
 
-        // Connection lost
+        // Connection lost (transport dies - no detach event delivered)
         isConnectedFlow.value = false
-        terminalEventsFlow.emit(createDetachedEvent("abc123def456", "network_error"))
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertFalse(repository.state.value.isAttached)
-        assertNotNull(repository.state.value.error)
+        assertNull(repository.state.value.error) // Connection drop is not an error
 
         // Connection restored
         isConnectedFlow.value = true
-        repository.clearError()
 
         // Reconnect from last sequence
         sentCommands.clear()
@@ -1437,6 +1436,414 @@ class TerminalE2ETest {
             assertEquals(43, event.rows)
             assertEquals(100L, event.bufferStartSeq)
             assertEquals(500L, event.currentSeq)
+        }
+    }
+
+    // ==========================================================================
+    // Category A: onConnectionLost() Tests
+    // ==========================================================================
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - connection drop without detach clears attachment and enables re-attach`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+
+        // Build up output history for sequence resumption
+        terminalEventsFlow.emit(createOutputEvent("abc123def456", "output", sequence = 50))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Connection drops - NO detach event (transport is dead)
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // isAttached must be false, but sessionId + lastSequence preserved for re-attach
+        assertFalse(repository.state.value.isAttached)
+        assertEquals("abc123def456", repository.state.value.sessionId)
+        assertEquals(50L, repository.state.value.lastSequence)
+        assertNull(repository.state.value.error) // Not an error, just disconnected
+
+        // Re-attach should work (not blocked by stale "Already attached")
+        sentCommands.clear()
+        isConnectedFlow.value = true
+        launch { repository.attach("abc123def456", fromSequence = 50) }
+        testDispatcher.scheduler.runCurrent()
+
+        // Verify attach command actually sent
+        assertTrue(sentCommands.any { it.hasAttach() })
+        assertEquals(50L, sentCommands.last().attach.fromSequence)
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - pending attach cancelled on connection drop`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        // Start attach but don't let daemon respond
+        launch {
+            try {
+                repository.attach("abc123def456")
+            } catch (e: java.util.concurrent.CancellationException) {
+                // Expected - connection dropped
+            }
+        }
+        testDispatcher.scheduler.runCurrent()
+        assertTrue(repository.state.value.isAttaching)
+
+        // Connection drops before daemon responds
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should NOT be stuck in isAttaching state
+        assertFalse(repository.state.value.isAttaching)
+        assertFalse(repository.state.value.isAttached)
+        // sessionId preserved for re-attach
+        assertEquals("abc123def456", repository.state.value.sessionId)
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - connection drop while not attached is no-op`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        // Never attached - fresh state
+        val stateBefore = repository.state.value
+        assertFalse(stateBefore.isAttached)
+        assertFalse(stateBefore.isAttaching)
+
+        // Connection drops
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // State should be completely unchanged
+        assertEquals(stateBefore, repository.state.value)
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - canSendInput becomes false after connection drop`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+        assertTrue(repository.state.value.canSendInput)
+
+        // Connection drops
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // canSendInput must be false (isAttached is now false)
+        assertFalse(repository.state.value.canSendInput)
+        // But no error set
+        assertNull(repository.state.value.error)
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - connection flapping leaves consistent state`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+
+        // Rapid connection flapping
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+        isConnectedFlow.value = true
+        testDispatcher.scheduler.advanceUntilIdle()
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Should be cleanly not-attached
+        assertFalse(repository.state.value.isAttached)
+        assertFalse(repository.state.value.isAttaching)
+        assertNull(repository.state.value.error)
+        // sessionId preserved through all flaps
+        assertEquals("abc123def456", repository.state.value.sessionId)
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - connection drop preserves rawMode and outputSkipped`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+        repository.setRawMode(true)
+        terminalEventsFlow.emit(createSkippedEvent("abc123def456", 10, 20, 5000))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(repository.state.value.isRawMode)
+        assertNotNull(repository.state.value.outputSkipped)
+
+        // Connection drops
+        isConnectedFlow.value = false
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // rawMode and outputSkipped preserved
+        assertTrue(repository.state.value.isRawMode)
+        assertNotNull(repository.state.value.outputSkipped)
+        // But not attached
+        assertFalse(repository.state.value.isAttached)
+    }
+
+    // ==========================================================================
+    // Category B: handleError() NOT_ATTACHED Fix
+    // ==========================================================================
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - NOT_ATTACHED error clears isAttached for self-healing`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+        assertTrue(repository.state.value.isAttached)
+
+        // Daemon sends NOT_ATTACHED (stale state scenario)
+        terminalEventsFlow.emit(
+            createErrorEvent("abc123def456", "NOT_ATTACHED", "Not attached to session"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // isAttached must now be false (self-healing)
+        assertFalse(repository.state.value.isAttached)
+
+        // Re-attach should now work
+        repository.clearError()
+        sentCommands.clear()
+        launch { repository.attach("abc123def456") }
+        testDispatcher.scheduler.runCurrent()
+
+        assertTrue(sentCommands.any { it.hasAttach() })
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - RATE_LIMITED error does NOT clear isAttached`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+        assertTrue(repository.state.value.isAttached)
+
+        // Daemon sends RATE_LIMITED while attached
+        terminalEventsFlow.emit(
+            createErrorEvent("abc123def456", "RATE_LIMITED", "Too many requests"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // isAttached must STILL be true (only NOT_ATTACHED clears it)
+        assertTrue(repository.state.value.isAttached)
+        assertNotNull(repository.state.value.error)
+        assertEquals("RATE_LIMITED", repository.state.value.error?.code)
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - error while not attaching does not complete pendingAttach`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+        assertFalse(repository.state.value.isAttaching)
+
+        // Error arrives while attached (not attaching)
+        terminalEventsFlow.emit(
+            createErrorEvent("abc123def456", "PIPE_ERROR", "Terminal pipe broken"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Error state set but still technically attached (for non-NOT_ATTACHED errors)
+        assertTrue(repository.state.value.isAttached)
+        assertNotNull(repository.state.value.error)
+        // No crash from trying to complete null pendingAttach
+    }
+
+    // ==========================================================================
+    // Category C: attach() Untested Paths
+    // ==========================================================================
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - attach timeout when daemon does not respond`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        repository.events.test {
+            // Attach but daemon never responds (100ms test timeout)
+            launch {
+                try {
+                    repository.attach("abc123def456")
+                    fail("Should throw TimeoutCancellationException")
+                } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                    // Expected
+                }
+            }
+            testDispatcher.scheduler.runCurrent()
+            assertTrue(repository.state.value.isAttaching)
+
+            // Advance past timeout
+            testDispatcher.scheduler.advanceTimeBy(200)
+            testDispatcher.scheduler.runCurrent()
+
+            // State should show timeout error
+            assertFalse(repository.state.value.isAttaching)
+            assertFalse(repository.state.value.isAttached)
+            assertEquals("ATTACH_TIMEOUT", repository.state.value.error?.code)
+
+            // Error event emitted
+            val event = awaitItem() as TerminalEvent.Error
+            assertEquals("ATTACH_TIMEOUT", event.code)
+        }
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - sendTerminalCommand failure during attach sets ATTACH_FAILED`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        // Make sendTerminalCommand throw
+        coEvery { connectionManager.sendTerminalCommand(any()) } throws
+            RuntimeException("Connection dead")
+
+        repository.events.test {
+            launch {
+                try {
+                    repository.attach("abc123def456")
+                    fail("Should throw")
+                } catch (e: RuntimeException) {
+                    assertEquals("Connection dead", e.message)
+                }
+            }
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            assertFalse(repository.state.value.isAttaching)
+            assertEquals("ATTACH_FAILED", repository.state.value.error?.code)
+
+            val event = awaitItem() as TerminalEvent.Error
+            assertEquals("ATTACH_FAILED", event.code)
+        }
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - session switch continues even if detach send fails`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+
+        // Make sendTerminalCommand fail once (for detach), then succeed (for attach)
+        var callCount = 0
+        coEvery { connectionManager.sendTerminalCommand(any()) } answers {
+            callCount++
+            if (callCount == 1) throw RuntimeException("Send failed")
+            sentCommands.add(firstArg())
+        }
+
+        sentCommands.clear()
+        launch { repository.attach("xyz789uvw012") }
+        testDispatcher.scheduler.runCurrent()
+
+        // Attach command should still be sent despite detach failure
+        assertTrue(sentCommands.any { it.hasAttach() })
+        assertEquals("xyz789uvw012", sentCommands.last().attach.sessionId)
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - attach with Long MAX_VALUE fromSequence`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        launch { repository.attach("abc123def456", fromSequence = Long.MAX_VALUE) }
+        testDispatcher.scheduler.runCurrent()
+
+        assertTrue(sentCommands.any { it.hasAttach() })
+        assertEquals(Long.MAX_VALUE, sentCommands.last().attach.fromSequence)
+
+        // Complete attach
+        terminalEventsFlow.emit(createAttachedEvent("abc123def456", currentSeq = 999))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(repository.state.value.isAttached)
+    }
+
+    // ==========================================================================
+    // Category D: Other Untested Repository Paths
+    // ==========================================================================
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - resize while not attached throws`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        // Never attached
+        try {
+            repository.resize(80, 24)
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message?.contains("attached") == true)
+        }
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - sendSpecialKey while not attached throws`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        try {
+            repository.sendSpecialKey(KeyType.KEY_CTRL_C)
+            fail("Should throw IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message?.contains("attached") == true)
+        }
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - output skipped with zero bytes is ignored`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+
+        repository.events.test {
+            // Send skipped event with 0 bytes
+            terminalEventsFlow.emit(createSkippedEvent("abc123def456", 10, 20, 0))
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            // No outputSkipped set in state
+            assertNull(repository.state.value.outputSkipped)
+            // No event emitted (would timeout)
+            expectNoEvents()
+        }
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - empty byte array input is sent`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+
+        sentCommands.clear()
+        repository.sendInput(ByteArray(0))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Empty input should still be sent (daemon decides what to do)
+        assertTrue(sentCommands.isNotEmpty())
+        assertEquals(0, sentCommands.last().input.data.size())
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - input at exact 64KB boundary`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+
+        // Exactly 65536 bytes should succeed
+        val exactLimit = ByteArray(65536)
+        repository.sendInput(exactLimit)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(65536, sentCommands.last().input.data.size())
+
+        // 65537 bytes should fail
+        val overLimit = ByteArray(65537)
+        try {
+            repository.sendInput(overLimit)
+            fail("Should throw IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message?.contains("large") == true)
+        }
+    }
+
+    @Tag("e2e")
+    @Test
+    fun `E2E - detach propagates send failure`() =
+        runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttached()
+
+        // Make send fail
+        coEvery { connectionManager.sendTerminalCommand(any()) } throws
+            RuntimeException("Connection dead")
+
+        try {
+            repository.detach()
+            fail("Should throw RuntimeException")
+        } catch (e: RuntimeException) {
+            assertEquals("Connection dead", e.message)
         }
     }
 

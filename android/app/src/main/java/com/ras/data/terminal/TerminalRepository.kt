@@ -17,6 +17,7 @@ import com.ras.proto.TerminalResize
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import com.ras.proto.clipboard.ClipboardMessage
 import com.google.protobuf.ByteString
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.cancel
@@ -90,6 +91,27 @@ class TerminalRepository @Inject constructor(
         connectionManager.terminalEvents
             .onEach { event -> handleEvent(event) }
             .launchIn(scope)
+
+        // Invalidate attachment state when connection drops
+        connectionManager.isConnected
+            .onEach { connected -> if (!connected) onConnectionLost() }
+            .launchIn(scope)
+    }
+
+    private fun onConnectionLost() {
+        val current = _state.value
+        if (!current.isAttached && !current.isAttaching) return
+
+        Log.w(TAG, "Connection lost: clearing attachment state for session ${current.sessionId}")
+
+        // Cancel any pending attach (don't let it hang for timeout duration)
+        pendingAttach?.cancel()
+        pendingAttach = null
+
+        // Clear attachment but keep sessionId + lastSequence for re-attach
+        _state.update {
+            it.copy(isAttached = false, isAttaching = false)
+        }
     }
 
     // ==========================================================================
@@ -195,6 +217,9 @@ class TerminalRepository @Inject constructor(
         _state.update { current ->
             current.copy(
                 isAttaching = false,
+                // NOT_ATTACHED means daemon lost our attachment - clear stale flag
+                isAttached = if (error.errorCode == TerminalErrorCodes.NOT_ATTACHED)
+                    false else current.isAttached,
                 error = TerminalErrorInfo(
                     code = error.errorCode,
                     message = error.message,
@@ -388,6 +413,12 @@ class TerminalRepository @Inject constructor(
                     )
                 )
                 throw e
+            } catch (e: CancellationException) {
+                // Connection dropped while attaching - onConnectionLost handles state
+                Log.d(TAG, "Attach cancelled for session: $sessionId (likely connection lost)")
+                pendingAttach = null
+                _state.update { it.copy(isAttaching = false) }
+                throw e  // Re-throw per coroutine convention
             } catch (e: TerminalAttachException) {
                 Log.e(TAG, "Attach failed for session: $sessionId - ${e.message}")
                 pendingAttach = null

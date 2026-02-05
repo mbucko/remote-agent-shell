@@ -143,7 +143,34 @@ class TerminalViewModel @Inject constructor(
         observeTerminalState()
         observeTerminalEvents()
         observeTerminalOutput()
+        observeConnectionForReattach()
         attach()
+    }
+
+    private fun observeConnectionForReattach() {
+        isConnected
+            .onEach { connected ->
+                if (connected) {
+                    val state = terminalState.value
+                    if (state.sessionId != null && !state.isAttached && !state.isAttaching) {
+                        Log.d(TAG, "Connection restored, re-attaching to ${state.sessionId}")
+                        viewModelScope.launch {
+                            try {
+                                repository.clearError()
+                                terminalEmulator.reset()
+                                repository.attach(sessionId, state.lastSequence)
+                                if (currentCols > 0 && currentRows > 0) {
+                                    repository.resize(currentCols, currentRows)
+                                }
+                            } catch (e: Exception) {
+                                _uiEvents.emit(TerminalUiEvent.ShowError(
+                                    "Failed to reconnect: ${e.message}"))
+                            }
+                        }
+                    }
+                }
+            }
+            .launchIn(viewModelScope)
     }
 
     private fun loadSessionName() {
