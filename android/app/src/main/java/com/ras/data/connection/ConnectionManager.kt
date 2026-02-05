@@ -166,10 +166,43 @@ class ConnectionManager @Inject constructor(
 
     /**
      * Update the connection path by querying the transport for path info.
-     * For WebRTC: queries ICE candidate pair
+     * For LAN Direct: builds path from host/port
      * For Tailscale: builds path from transport IPs
+     * For WebRTC: queries ICE candidate pair
      */
     suspend fun updateConnectionPath(transport: Transport? = this.transport) {
+        // For LAN Direct transport, build path from host/port
+        if (transport is LanDirectTransport) {
+            val localIp = try {
+                java.net.DatagramSocket().use { socket ->
+                    socket.connect(java.net.InetAddress.getByName(transport.host), transport.port)
+                    socket.localAddress.hostAddress ?: "unknown"
+                }
+            } catch (e: Exception) {
+                "unknown"
+            }
+            val localCandidate = CandidateInfo(
+                type = "host",
+                ip = localIp,
+                port = 0,
+                isLocal = true
+            )
+            val remoteCandidate = CandidateInfo(
+                type = "host",
+                ip = transport.host,
+                port = transport.port,
+                isLocal = true
+            )
+            val path = ConnectionPath(
+                local = localCandidate,
+                remote = remoteCandidate,
+                type = PathType.LAN_DIRECT
+            )
+            _connectionPath.value = path
+            Log.i(TAG, "Connection path updated: ${path.label}")
+            return
+        }
+
         // For Tailscale transport, build path manually
         if (transport is TailscaleTransport) {
             val localCandidate = CandidateInfo(

@@ -37,8 +37,8 @@ import java.util.concurrent.atomic.AtomicLong
 class LanDirectTransport private constructor(
     private val webSocket: WebSocket,
     private val messageChannel: Channel<ByteArray>,
-    private val host: String,
-    private val port: Int
+    val host: String,
+    val port: Int
 ) : Transport {
 
     companion object {
