@@ -96,7 +96,7 @@ fun ConnectionDiagram(
 @Composable
 private fun ConnectionTypeBadge(path: ConnectionPath?) {
     val badgeData = when (path?.type) {
-        PathType.LAN_DIRECT -> BadgeData(TerminalGreen, Color.Black, "LAN Direct")
+        PathType.LAN_DIRECT -> BadgeData(TerminalBlue, Color.Black, "LAN Direct")
         PathType.WEBRTC_DIRECT -> BadgeData(TerminalBlue, Color.Black, "WebRTC Direct")
         PathType.TAILSCALE -> BadgeData(TerminalCyan, Color.Black, "Tailscale")
         PathType.RELAY -> BadgeData(TerminalYellow, Color.Black, "Relay")
@@ -175,10 +175,15 @@ private fun ConnectionDiagramCanvas(
     val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
     val primaryColor = MaterialTheme.colorScheme.primary
 
+    val canvasHeightDp = when (path.type) {
+        PathType.LAN_DIRECT -> 110.dp  // No NAT/VPN hub at top - compact layout
+        else -> 160.dp
+    }
+
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(160.dp)
+            .height(canvasHeightDp)
     ) {
         val canvasWidth = size.width
         val canvasHeight = size.height
@@ -200,7 +205,9 @@ private fun ConnectionDiagramCanvas(
             endX = laptopX,
             endY = laptopY,
             color = connectionColor,
-            density = density
+            density = density,
+            phoneRadius = phoneRadius,
+            laptopCircleRadius = laptopWidth * 0.6f
         )
 
         // Draw phone icon (circle with inner details)
@@ -363,17 +370,19 @@ private fun DrawScope.drawConnectionLines(
     endX: Float,
     endY: Float,
     color: Color,
-    density: androidx.compose.ui.unit.Density
+    density: androidx.compose.ui.unit.Density,
+    phoneRadius: Float = 0f,
+    laptopCircleRadius: Float = 0f
 ) {
     val strokeWidth = with(density) { 3.dp.toPx() }
 
     when (path.type) {
         PathType.LAN_DIRECT -> {
-            // Direct straight line
+            // Direct straight line from edge of phone to edge of laptop
             drawLine(
                 color = color,
-                start = Offset(startX, startY),
-                end = Offset(endX, endY),
+                start = Offset(startX + phoneRadius, startY),
+                end = Offset(endX - laptopCircleRadius, endY),
                 strokeWidth = strokeWidth,
                 cap = StrokeCap.Round
             )
@@ -755,7 +764,7 @@ private fun DrawScope.drawCenterLabel(
 
 private fun getConnectionColor(type: PathType): Color {
     return when (type) {
-        PathType.LAN_DIRECT -> TerminalGreen
+        PathType.LAN_DIRECT -> TerminalBlue
         PathType.WEBRTC_DIRECT -> TerminalBlue
         PathType.TAILSCALE -> TerminalCyan
         PathType.RELAY -> TerminalYellow
