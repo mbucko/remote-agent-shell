@@ -85,7 +85,7 @@ class LanDirectStrategy @Inject constructor(
                 host = daemon.host,
                 port = daemon.port,
                 deviceId = context.deviceId,
-                masterSecret = context.authToken,
+                authKey = context.authToken,
                 client = okHttpClient
             )
 

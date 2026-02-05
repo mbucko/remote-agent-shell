@@ -2,7 +2,6 @@ package com.ras.data.connection
 
 import android.util.Log
 import com.ras.crypto.HmacUtils
-import com.ras.crypto.KeyDerivation
 import com.ras.proto.LanDirectAuthRequest
 import com.ras.proto.LanDirectAuthResponse
 import kotlinx.coroutines.CancellationException
@@ -53,7 +52,7 @@ class LanDirectTransport private constructor(
          * @param host Daemon's IP address (e.g., "192.168.1.100")
          * @param port Daemon's HTTP port
          * @param deviceId Device ID for authentication
-         * @param masterSecret 32-byte master secret for auth key derivation
+         * @param authKey 32-byte derived auth key (already derived from master secret)
          * @param client OkHttpClient instance (for DI/testing)
          * @return Connected and authenticated transport
          * @throws LanDirectAuthException if authentication fails
@@ -63,7 +62,7 @@ class LanDirectTransport private constructor(
             host: String,
             port: Int,
             deviceId: String,
-            masterSecret: ByteArray,
+            authKey: ByteArray,
             client: OkHttpClient = defaultClient()
         ): LanDirectTransport = withContext(Dispatchers.IO) {
             Log.i(TAG, "Connecting to ws://$host:$port/ws/$deviceId")
@@ -119,7 +118,6 @@ class LanDirectTransport private constructor(
 
             // Authenticate
             try {
-                val authKey = KeyDerivation.deriveKey(masterSecret, "auth")
                 val timestamp = System.currentTimeMillis() / 1000
                 val signature = HmacUtils.computeSignalingHmac(authKey, deviceId, timestamp, ByteArray(0))
 
@@ -133,9 +131,14 @@ class LanDirectTransport private constructor(
                 ws.send(authRequest.toByteArray().toByteString())
 
                 // Wait for auth response
-                val responseBytes = withTimeoutOrNull(AUTH_TIMEOUT_MS) {
-                    msgChannel.receive()
-                } ?: throw LanDirectAuthException("Auth response timeout")
+                // If server rejects auth, it closes the WebSocket which closes the channel
+                val responseBytes = try {
+                    withTimeoutOrNull(AUTH_TIMEOUT_MS) {
+                        msgChannel.receive()
+                    } ?: throw LanDirectAuthException("Auth response timeout")
+                } catch (e: kotlinx.coroutines.channels.ClosedReceiveChannelException) {
+                    throw LanDirectAuthException("Server rejected authentication")
+                }
 
                 val authResponse = LanDirectAuthResponse.parseFrom(responseBytes)
                 if (authResponse.status != "authenticated") {

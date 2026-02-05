@@ -290,7 +290,7 @@ class LanDirectStrategyTest {
                 host = "10.0.0.5",
                 port = 1234,
                 deviceId = "my-device-id",
-                masterSecret = authToken,
+                authKey = authToken,
                 client = mockOkHttpClient
             )
         }
