@@ -234,6 +234,8 @@ fun TerminalScreen(
                 .imePadding()
         ) {
             // Terminal output area
+            // TerminalRenderer is always mounted so it can measure dimensions
+            // before attach completes. Overlay states are shown on top.
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -241,6 +243,17 @@ fun TerminalScreen(
                     .clipToBounds()
                     .background(TerminalBackground)
             ) {
+                TerminalRenderer(
+                    emulator = viewModel.terminalEmulator,
+                    modifier = Modifier.fillMaxSize(),
+                    fontSize = fontSize,
+                    scrollToBottomTrigger = scrollToBottomTrigger,
+                    onSizeChanged = { cols, rows ->
+                        viewModel.onTerminalSizeChanged(cols, rows)
+                    }
+                )
+
+                // Overlay non-connected states on top of the renderer
                 when (val state = screenState) {
                     is TerminalScreenState.Attaching -> {
                         AttachingContent(
@@ -249,15 +262,7 @@ fun TerminalScreen(
                     }
 
                     is TerminalScreenState.Connected -> {
-                        TerminalRenderer(
-                            emulator = viewModel.terminalEmulator,
-                            modifier = Modifier.fillMaxSize(),
-                            fontSize = fontSize,
-                            scrollToBottomTrigger = scrollToBottomTrigger,
-                            onSizeChanged = { cols, rows ->
-                                viewModel.onTerminalSizeChanged(cols, rows)
-                            }
-                        )
+                        // Renderer is visible underneath, no overlay needed
                     }
 
                     is TerminalScreenState.Disconnected -> {

@@ -14,12 +14,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -49,7 +47,7 @@ private object TerminalRendererConfig {
     const val RESIZE_DEBOUNCE_MS = 150L
 
     /** Delay before scrolling after viewport expand (wait for all debounces to complete) */
-    const val VIEWPORT_EXPAND_SCROLL_DELAY_MS = 500L
+    const val VIEWPORT_EXPAND_SCROLL_DELAY_MS = 200L
 
     /** Consider "at bottom" if within this many items of item 0 */
     const val AT_BOTTOM_THRESHOLD = 3
@@ -114,9 +112,6 @@ fun TerminalRenderer(
     // Use remember instead of rememberLazyListState to prevent scroll position
     // restoration via SaveableStateRegistry - we always want to start at bottom
     val listState = remember { LazyListState() }
-
-    // Track if we've done the initial scroll to bottom
-    var hasInitiallyScrolled by remember { mutableStateOf(false) }
 
     // Track if user is at bottom - updated continuously, captures state BEFORE changes
     var wasAtBottom by remember { mutableStateOf(true) }
@@ -203,7 +198,6 @@ fun TerminalRenderer(
             state = listState,
             reverseLayout = true,  // Bottom-anchored: item 0 at bottom, naturally stays at bottom
             modifier = Modifier
-                .alpha(if (hasInitiallyScrolled || totalRows == 0) 1f else 0f)
                 .clipToBounds()
                 .padding(4.dp)
         ) {
@@ -230,16 +224,6 @@ fun TerminalRenderer(
         }
     }
 
-    // With reverseLayout=true, item 0 is at the bottom and the list naturally stays there.
-    // We only need to wait for initial layout, then mark as scrolled.
-    LaunchedEffect(Unit) {
-        while (listState.layoutInfo.totalItemsCount == 0) {
-            awaitFrame()
-        }
-        awaitFrame()
-        hasInitiallyScrolled = true
-    }
-
     // Scroll to bottom when viewport expands (keyboard hides) and user was at bottom
     LaunchedEffect(Unit) {
         var lastHeight = 0
@@ -249,7 +233,7 @@ fun TerminalRenderer(
                 val expanded = height > lastHeight
                 lastHeight = height
 
-                if (expanded && hasInitiallyScrolled && wasAtBottom) {
+                if (expanded && wasAtBottom) {
                     // Wait for everything to stabilize (resize + totalRows debounces + buffer)
                     delay(TerminalRendererConfig.VIEWPORT_EXPAND_SCROLL_DELAY_MS)
                     if (listState.firstVisibleItemIndex > 0) {
@@ -261,7 +245,7 @@ fun TerminalRenderer(
 
     // Scroll to bottom when triggered by parent (e.g., scroll-to-bottom button)
     LaunchedEffect(scrollToBottomTrigger) {
-        if (scrollToBottomTrigger > 0 && hasInitiallyScrolled) {
+        if (scrollToBottomTrigger > 0) {
             listState.scrollToItem(0)
         }
     }

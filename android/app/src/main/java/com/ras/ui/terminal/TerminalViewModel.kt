@@ -138,13 +138,16 @@ class TerminalViewModel @Inject constructor(
     private val _uiEvents = MutableSharedFlow<TerminalUiEvent>(extraBufferCapacity = 64)
     val uiEvents: SharedFlow<TerminalUiEvent> = _uiEvents.asSharedFlow()
 
+    // Whether we've done the initial attach (deferred until dimensions are known)
+    private var hasInitiallyAttached = false
+
     init {
         loadSessionName()
         observeTerminalState()
         observeTerminalEvents()
         observeTerminalOutput()
         observeConnectionForReattach()
-        attach()
+        // Don't attach here - wait for onTerminalSizeChanged() to provide real dimensions
     }
 
     private fun observeConnectionForReattach() {
@@ -157,7 +160,8 @@ class TerminalViewModel @Inject constructor(
                         viewModelScope.launch {
                             try {
                                 repository.clearError()
-                                terminalEmulator.reset()
+                                // Don't reset emulator - keep existing content visible
+                                // while new data from lastSequence fills in incrementally
                                 repository.attach(sessionId, state.lastSequence)
                                 if (currentCols > 0 && currentRows > 0) {
                                     repository.resize(currentCols, currentRows)
@@ -270,9 +274,9 @@ class TerminalViewModel @Inject constructor(
             try {
                 // Reset terminal emulator to clear any stale state
                 terminalEmulator.reset()
-                // Skip historical output - we'll get current screen via resize/redraw
-                repository.attach(sessionId, Long.MAX_VALUE)
-                // Force a resize after attach to trigger tmux to redraw current screen
+                // Request buffered content from start so user sees current screen immediately
+                repository.attach(sessionId, 0)
+                // Send resize with real phone dimensions (already known from TerminalRenderer)
                 if (currentCols > 0 && currentRows > 0) {
                     repository.resize(currentCols, currentRows)
                 }
@@ -543,6 +547,13 @@ class TerminalViewModel @Inject constructor(
 
         // Resize local emulator
         terminalEmulator.resize(cols, rows)
+
+        // First size report: trigger initial attach with correct dimensions
+        if (!hasInitiallyAttached) {
+            hasInitiallyAttached = true
+            attach()
+            return // attach() will send resize after attaching
+        }
 
         // Send resize to daemon (only if attached)
         if (terminalState.value.isAttached) {
