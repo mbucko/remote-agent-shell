@@ -54,6 +54,9 @@ logger = logging.getLogger(__name__)
 # Callback type: (device_id, device_name, peer, is_reconnection) -> None
 OfferReceivedCallback = Callable[[str, str, Any, bool], Coroutine[Any, Any, None]]
 
+# Callback type for pairing: (device_id, device_name) -> None
+PairCompleteCallback = Callable[[str, str], Coroutine[Any, Any, None]]
+
 
 class NtfySignalingSubscriber:
     """Subscribes to ntfy for signaling messages.
@@ -138,6 +141,10 @@ class NtfySignalingSubscriber:
         # Callback for successful offer processing
         # Signature: (device_id, device_name, peer, is_reconnection) -> None
         self.on_offer_received: Optional[OfferReceivedCallback] = None
+
+        # Callback for pairing completion (PAIR_REQUEST/PAIR_RESPONSE exchange)
+        # Signature: (device_id, device_name) -> None
+        self.on_pair_complete: Optional[PairCompleteCallback] = None
 
         # Health tracking
         self._last_event_time: float = 0.0  # Last time any SSE event was received
@@ -457,13 +464,19 @@ class NtfySignalingSubscriber:
                 # Publish answer
                 success = await self._publish(result.answer_encrypted)
 
-                if (
+                if success and result.is_pair_complete:
+                    # Pairing completed — notify pair callback
+                    if self.on_pair_complete:
+                        await self.on_pair_complete(
+                            result.device_id,
+                            result.device_name,
+                        )
+                elif (
                     success
                     and self.on_offer_received
                     and not result.is_capability_exchange
                 ):
-                    # Notify callback with is_reconnection flag
-                    # (Skip for capability exchange - no peer to authenticate)
+                    # WebRTC offer/answer — notify offer callback
                     await self.on_offer_received(
                         result.device_id,
                         result.device_name,

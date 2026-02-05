@@ -18,12 +18,23 @@ import aiohttp
 import pytest
 
 from ras.config import Config
-from ras.crypto import derive_key, derive_ntfy_topic
+from ras.crypto import (
+    PAIR_NONCE_LENGTH,
+    compute_pair_request_hmac,
+    compute_pair_response_hmac,
+    derive_key,
+    derive_ntfy_topic,
+)
 from ras.device_store import JsonDeviceStore
 from ras.ntfy_signaling import NtfySignalingSubscriber
 from ras.ntfy_signaling.crypto import NtfySignalingCrypto, derive_signaling_key
 from ras.ntfy_signaling.validation import NONCE_SIZE
-from ras.proto.ras.ras import NtfySignalMessage, NtfySignalMessageMessageType
+from ras.proto.ras.ras import (
+    NtfySignalMessage,
+    NtfySignalMessageMessageType,
+    PairRequest,
+    PairResponse,
+)
 from ras.server import UnifiedServer
 
 # Helper to let async tasks process
@@ -56,6 +67,39 @@ def create_encrypted_offer(
         device_name=device_name,
         timestamp=timestamp,
         nonce=nonce,
+    )
+
+    signaling_key = derive_signaling_key(master_secret)
+    crypto = NtfySignalingCrypto(signaling_key)
+    return crypto.encrypt(bytes(msg))
+
+
+def create_encrypted_pair_request(
+    master_secret: bytes,
+    session_id: str,
+    device_id: str = "device-123",
+    device_name: str = "Test Phone",
+) -> str:
+    """Create an encrypted PAIR_REQUEST message."""
+    auth_key = derive_key(master_secret, "auth")
+    nonce = os.urandom(PAIR_NONCE_LENGTH)
+
+    auth_proof = compute_pair_request_hmac(auth_key, session_id, device_id, nonce)
+
+    pair_req = PairRequest(
+        device_id=device_id,
+        device_name=device_name,
+        auth_proof=auth_proof,
+        nonce=nonce,
+        session_id=session_id,
+    )
+
+    msg = NtfySignalMessage(
+        type=NtfySignalMessageMessageType.PAIR_REQUEST,
+        session_id=session_id,
+        timestamp=int(time.time()),
+        nonce=os.urandom(NONCE_SIZE),
+        pair_request=pair_req,
     )
 
     signaling_key = derive_signaling_key(master_secret)
@@ -157,12 +201,12 @@ class TestNtfySignalingServerIntegration:
         assert derived_topic.startswith("ras-")
 
 
-class TestNtfyOfferProcessing:
-    """Tests for processing OFFER messages via ntfy."""
+class TestNtfyPairRequestProcessing:
+    """Tests for processing PAIR_REQUEST messages via ntfy."""
 
     @pytest.mark.asyncio
-    async def test_valid_offer_triggers_signaling_state(self, server):
-        """Valid OFFER via ntfy changes session to signaling state."""
+    async def test_valid_pair_request_completes_pairing(self, server):
+        """Valid PAIR_REQUEST via ntfy completes pairing."""
         # Start pairing
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -174,41 +218,48 @@ class TestNtfyOfferProcessing:
         master_secret = bytes.fromhex(data["qr_data"]["master_secret"])
         pairing_session = server._pairing_sessions.get(session_id)
 
-        # Create encrypted offer
-        encrypted = create_encrypted_offer(
+        # Create encrypted PAIR_REQUEST
+        encrypted = create_encrypted_pair_request(
             master_secret=master_secret,
             session_id=session_id,
             device_id="test-phone-123",
             device_name="Test Phone",
         )
 
-        # Mock peer creation to avoid actual WebRTC
-        mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
-        mock_peer.on_message = Mock()
-        mock_peer.close = AsyncMock()
-        pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
-
-        # Mock publish to capture answer
+        # Mock publish to capture response
         published = []
         pairing_session._ntfy_subscriber._publish = AsyncMock(
             side_effect=lambda data: published.append(data) or True
         )
 
-        # Process offer through subscriber
+        # Process pair request through subscriber
         await pairing_session._ntfy_subscriber._process_message(encrypted)
 
         # Wait for processing
         await yield_to_pending_tasks()
 
-        # Verify answer was published
+        # Verify PAIR_RESPONSE was published
         assert len(published) == 1
 
-        # Verify session state changed (may be signaling or authenticating
-        # depending on timing - auth flow starts immediately after signaling)
-        assert pairing_session.state in ("signaling", "authenticating")
+        # Decrypt and verify response
+        signaling_key = derive_signaling_key(master_secret)
+        crypto = NtfySignalingCrypto(signaling_key)
+        decrypted = crypto.decrypt(published[0])
+        response_msg = NtfySignalMessage().parse(decrypted)
+        assert response_msg.type == NtfySignalMessageMessageType.PAIR_RESPONSE
+        assert response_msg.pair_response.daemon_device_id != ""
+        assert response_msg.pair_response.hostname != ""
+        assert len(response_msg.pair_response.auth_proof) == 32
+
+        # Verify session state is completed
+        assert pairing_session.state == "completed"
         assert pairing_session.device_id == "test-phone-123"
         assert pairing_session.device_name == "Test Phone"
+
+        # Verify device was stored
+        device = server.device_store.get("test-phone-123")
+        assert device is not None
+        assert device.name == "Test Phone"
 
     @pytest.mark.asyncio
     async def test_invalid_offer_silent_reject(self, server):
@@ -602,7 +653,7 @@ class TestNtfyUnicodeDeviceName:
 
     @pytest.mark.asyncio
     async def test_unicode_device_name_preserved_e2e(self, server):
-        """E2E-NTFY-11: Device name with Unicode characters is preserved."""
+        """E2E-NTFY-11: Device name with Unicode characters is preserved via PAIR_REQUEST."""
         # Start pairing
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -617,19 +668,12 @@ class TestNtfyUnicodeDeviceName:
         # Unicode device name with emojis and international characters
         unicode_name = "📱 Téléphone de José 日本語"
 
-        encrypted = create_encrypted_offer(
+        encrypted = create_encrypted_pair_request(
             master_secret=master_secret,
             session_id=session_id,
             device_id="unicode-phone-123",
             device_name=unicode_name,
         )
-
-        # Mock peer
-        mock_peer = AsyncMock()
-        mock_peer.accept_offer = AsyncMock(return_value="v=0\r\nm=application 9\r\n")
-        mock_peer.on_message = Mock()
-        mock_peer.close = AsyncMock()
-        pairing_session._ntfy_subscriber._handler._create_peer = Mock(return_value=mock_peer)
 
         # Track published
         published = []

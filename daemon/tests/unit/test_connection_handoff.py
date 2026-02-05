@@ -293,11 +293,12 @@ class TestOwnershipTransferContract:
         assert "session.peer = None" in content, "Peer should be nulled after handoff"
         assert "on_device_connected" in content, "Should have device connected callback"
 
-        # Check that nulling happens BEFORE state change
-        # Find the section where handoff happens
-        handoff_section = content[
-            content.find("Hand off complete") : content.find('session.state = "completed"')
-        ]
+        # Check that nulling happens BEFORE state change within _run_pairing_auth
+        # Find the section within the WebRTC auth method specifically
+        auth_method_start = content.find("async def _run_pairing_auth")
+        handoff_start = content.find("Hand off complete", auth_method_start)
+        state_completed = content.find('session.state = "completed"', handoff_start)
+        handoff_section = content[handoff_start:state_completed]
         assert (
             "session.peer = None" in handoff_section
         ), "Peer should be nulled BEFORE state is set to completed"

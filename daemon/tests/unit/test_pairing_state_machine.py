@@ -407,7 +407,9 @@ class TestOwnershipTransferContractExtended:
         assert "not session.peer_transferred" in content, "Cleanup should check transferred flag"
 
         # Check that peer_transferred is set BEFORE state = completed
-        handoff_section = content[
-            content.find("peer_transferred = True") : content.find('state = "completed"')
-        ]
+        # within _run_pairing_auth (the WebRTC auth method)
+        auth_method_start = content.find("async def _run_pairing_auth")
+        transfer_pos = content.find("peer_transferred = True", auth_method_start)
+        state_completed_pos = content.find('state = "completed"', transfer_pos)
+        handoff_section = content[transfer_pos:state_completed_pos]
         assert "peer = None" in handoff_section, "Peer should be nulled between transfer flag and state change"

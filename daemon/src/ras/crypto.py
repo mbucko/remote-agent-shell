@@ -368,3 +368,53 @@ def compute_signaling_hmac(
         + body
     )
     return compute_hmac(auth_key, hmac_input)
+
+
+PAIR_NONCE_LENGTH = 32  # 32-byte nonce for pairing
+
+
+def compute_pair_request_hmac(
+    auth_key: bytes,
+    session_id: str,
+    device_id: str,
+    nonce: bytes,
+) -> bytes:
+    """Compute HMAC for PairRequest auth_proof.
+
+    HMAC input: "pair-request" || session_id || device_id || nonce
+
+    Args:
+        auth_key: 32-byte auth key (derived from master_secret).
+        session_id: Pairing session ID.
+        device_id: Phone's device ID.
+        nonce: 32-byte random nonce from phone.
+
+    Returns:
+        32-byte HMAC.
+    """
+    hmac_input = (
+        b"pair-request"
+        + session_id.encode("utf-8")
+        + device_id.encode("utf-8")
+        + nonce
+    )
+    return compute_hmac(auth_key, hmac_input)
+
+
+def compute_pair_response_hmac(
+    auth_key: bytes,
+    nonce: bytes,
+) -> bytes:
+    """Compute HMAC for PairResponse auth_proof.
+
+    HMAC input: "pair-response" || nonce
+
+    Args:
+        auth_key: 32-byte auth key (derived from master_secret).
+        nonce: 32-byte nonce from PairRequest (proves daemon processed it).
+
+    Returns:
+        32-byte HMAC.
+    """
+    hmac_input = b"pair-response" + nonce
+    return compute_hmac(auth_key, hmac_input)

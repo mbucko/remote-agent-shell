@@ -78,12 +78,28 @@ Phone now knows its public address
 - Daemon: `daemon/src/ras/stun.py` - StunClient class
 - Android: Built into WebRTC library
 
-### ntfy (Signaling Relay)
+### ntfy (Signaling and Pairing Relay)
 
-**Purpose:** Exchange SDP offers/answers when peers can't reach each other directly.
+**Purpose:** Exchange pairing credentials and SDP offers/answers when peers can't reach each other directly.
 
-The phone can't send its SDP offer directly to the daemon (daemon is behind NAT, unreachable). ntfy.sh acts as a public mailbox both can access.
+The phone can't reach the daemon directly (daemon is behind NAT). ntfy.sh acts as a public mailbox both can access.
 
+**Pairing flow (credential exchange, no WebRTC):**
+```
+Phone                          ntfy.sh                         Daemon
+  │                               │                               │
+  │  POST encrypted PAIR_REQUEST  │                               │
+  │──────────────────────────────▶│                               │
+  │                               │   SSE/polling receives it     │
+  │                               │──────────────────────────────▶│
+  │                               │                               │
+  │                               │  POST encrypted PAIR_RESPONSE │
+  │                               │◀──────────────────────────────│
+  │   SSE/polling receives it     │                               │
+  │◀──────────────────────────────│                               │
+```
+
+**Connection flow (WebRTC signaling):**
 ```
 Phone                          ntfy.sh                         Daemon
   │                               │                               │
@@ -99,13 +115,14 @@ Phone                          ntfy.sh                         Daemon
 ```
 
 **Security:**
-- SDP messages encrypted with AES-256-GCM
+- All messages encrypted with AES-256-GCM
 - Key derived from shared master secret
 - Timestamp + nonce prevent replay attacks
+- Pairing messages additionally authenticated with HMAC
 
 **Implementation:**
 - Daemon: `daemon/src/ras/ntfy_signaling/`
-- Proto: `proto/ntfy_signaling.proto`
+- Proto: `proto/ntfy_signaling.proto`, `proto/pairing.proto`
 
 ### ICE (Interactive Connectivity Establishment)
 

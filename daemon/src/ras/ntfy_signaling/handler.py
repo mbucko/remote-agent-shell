@@ -33,6 +33,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Protocol
 
+from ras.crypto import (
+    PAIR_NONCE_LENGTH,
+    compute_pair_request_hmac,
+    compute_pair_response_hmac,
+    derive_key,
+)
 from ras.ntfy_signaling.crypto import (
     DecryptionError,
     NtfySignalingCrypto,
@@ -48,6 +54,8 @@ from ras.proto.ras.ras import (
     DiscoveryResponse,
     NtfySignalMessage,
     NtfySignalMessageMessageType,
+    PairRequest,
+    PairResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +80,7 @@ class HandlerResult:
     peer: Optional[Any]  # PeerConnection
     is_reconnection: bool = False  # True if this was a reconnection (not pairing)
     is_capability_exchange: bool = False  # True if this was just a capability exchange
+    is_pair_complete: bool = False  # True if this was a PAIR_REQUEST/PAIR_RESPONSE exchange
     timing_ms: dict[str, float] = field(default_factory=dict)  # Phase timing in ms
 
 
@@ -126,6 +135,12 @@ class NtfySignalingHandler:
 
         # Determine mode
         self._reconnection_mode = pending_session_id == ""
+
+        # For pairing mode, derive auth_key for PAIR_REQUEST HMAC validation
+        if not self._reconnection_mode:
+            self._auth_key = derive_key(master_secret, "auth")
+        else:
+            self._auth_key = None
 
         if self._reconnection_mode:
             # Reconnection mode - will validate device_id dynamically
@@ -190,6 +205,10 @@ class NtfySignalingHandler:
         # Handle DISCOVER messages (IP discovery, no WebRTC)
         if msg.type == NtfySignalMessageMessageType.DISCOVER:
             return await self._handle_discover_message(msg)
+
+        # Handle PAIR_REQUEST messages (pairing without WebRTC)
+        if msg.type == NtfySignalMessageMessageType.PAIR_REQUEST:
+            return await self._handle_pair_request_message(msg)
 
         # Determine if this is a reconnection request (empty session_id)
         is_reconnection_request = not msg.session_id
@@ -455,6 +474,104 @@ class NtfySignalingHandler:
             peer=None,
             is_reconnection=True,
             is_capability_exchange=True,  # Reuse flag for non-WebRTC exchanges
+        )
+
+    async def _handle_pair_request_message(
+        self, msg: NtfySignalMessage
+    ) -> Optional[HandlerResult]:
+        """Handle a PAIR_REQUEST message for instant pairing.
+
+        Validates the phone's auth_proof HMAC, builds a PairResponse
+        with the daemon's auth_proof, and returns it encrypted.
+
+        No WebRTC involved — just credential exchange.
+
+        Args:
+            msg: The parsed NtfySignalMessage containing a PairRequest.
+
+        Returns:
+            HandlerResult with encrypted PAIR_RESPONSE, or None on error.
+        """
+        import hmac as hmac_module
+
+        logger.info("Handling PAIR_REQUEST message")
+
+        # Only allow in pairing mode
+        if self._reconnection_mode:
+            logger.info("Rejecting PAIR_REQUEST in reconnection mode")
+            return None
+
+        if not self._auth_key:
+            logger.warning("PAIR_REQUEST but no auth_key available")
+            return None
+
+        # Extract PairRequest
+        pair_req = msg.pair_request
+        if not pair_req or not pair_req.device_id:
+            logger.info("PAIR_REQUEST missing pair_request or device_id")
+            return None
+
+        # Validate session_id matches
+        if pair_req.session_id != self._session_id:
+            logger.info(f"Session ID mismatch in PAIR_REQUEST: {pair_req.session_id[:8]}... vs {self._session_id[:8]}...")
+            return None
+
+        # Validate nonce length
+        if len(pair_req.nonce) != PAIR_NONCE_LENGTH:
+            logger.info(f"Invalid nonce length in PAIR_REQUEST: {len(pair_req.nonce)}")
+            return None
+
+        # Validate auth_proof HMAC
+        expected_hmac = compute_pair_request_hmac(
+            self._auth_key,
+            pair_req.session_id,
+            pair_req.device_id,
+            pair_req.nonce,
+        )
+
+        if not hmac_module.compare_digest(pair_req.auth_proof, expected_hmac):
+            logger.warning(f"HMAC verification failed for PAIR_REQUEST {pair_req.session_id[:8]}...")
+            return None
+
+        # Build PairResponse with daemon's auth_proof
+        from ras.system import detect_device_type, get_daemon_device_id, get_hostname
+        from ras.proto.ras.ras import DeviceType as ProtoDeviceType
+
+        response_hmac = compute_pair_response_hmac(self._auth_key, pair_req.nonce)
+
+        pair_resp = PairResponse(
+            daemon_device_id=get_daemon_device_id(),
+            hostname=get_hostname(),
+            device_type=ProtoDeviceType(detect_device_type()),
+            auth_proof=response_hmac,
+        )
+
+        # Build NtfySignalMessage with PAIR_RESPONSE
+        response_msg = NtfySignalMessage(
+            type=NtfySignalMessageMessageType.PAIR_RESPONSE,
+            session_id=self._session_id,
+            timestamp=int(time.time()),
+            nonce=os.urandom(NONCE_SIZE),
+            pair_response=pair_resp,
+        )
+
+        # Encrypt response
+        try:
+            response_encrypted = self._crypto.encrypt(bytes(response_msg))
+            logger.info(f"PAIR_RESPONSE encrypted for {pair_req.device_id[:8]}...")
+        except Exception as e:
+            logger.warning(f"Failed to encrypt PAIR_RESPONSE: {e}")
+            return None
+
+        device_name = sanitize_device_name(pair_req.device_name)
+
+        return HandlerResult(
+            should_respond=True,
+            answer_encrypted=response_encrypted,
+            device_id=pair_req.device_id,
+            device_name=device_name,
+            peer=None,
+            is_pair_complete=True,
         )
 
     def _build_discovery_response(self) -> DiscoveryResponse:

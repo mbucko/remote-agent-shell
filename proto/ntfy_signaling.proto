@@ -1,4 +1,4 @@
-// ntfy signaling relay messages for WebRTC connection establishment
+// ntfy signaling relay messages for WebRTC connection establishment and pairing
 // Used when direct HTTP connection fails due to NAT
 // Shared between: Python daemon, Android app, iOS app
 
@@ -9,6 +9,8 @@ package ras;
 option java_package = "com.ras.proto";
 option java_multiple_files = true;
 option swift_prefix = "RAS";
+
+import "pairing.proto";
 
 // Message sent via ntfy for signaling relay
 // Encrypted with signaling_key (AES-256-GCM) before sending
@@ -23,6 +25,8 @@ message NtfySignalMessage {
     CAPABILITIES = 2; // Bidirectional: Exchange connection capabilities
     DISCOVER = 3;     // Phone -> Daemon: Request current IPs
     DISCOVER_RESPONSE = 4;  // Daemon -> Phone: Current IPs
+    PAIR_REQUEST = 5;       // Phone -> Daemon: Pairing credential exchange
+    PAIR_RESPONSE = 6;      // Daemon -> Phone: Pairing credential response
   }
 
   // Session ID from QR code (must match pending session)
@@ -48,6 +52,10 @@ message NtfySignalMessage {
 
   // Discovery response (used with DISCOVER_RESPONSE type)
   DiscoveryResponse discovery = 9;
+
+  // Pairing credential exchange (used with PAIR_REQUEST/PAIR_RESPONSE types)
+  PairRequest pair_request = 10;
+  PairResponse pair_response = 11;
 }
 
 // Connection capabilities for strategy negotiation.

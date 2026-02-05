@@ -20,6 +20,9 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 from aiohttp import web
 
 from ras.crypto import (
+    PAIR_NONCE_LENGTH,
+    compute_pair_request_hmac,
+    compute_pair_response_hmac,
     compute_signaling_hmac,
     derive_key,
     derive_ntfy_topic,
@@ -30,6 +33,8 @@ from ras.ntfy_signaling import NtfySignalingSubscriber
 from ras.pairing.auth_handler import AuthHandler
 from ras.peer import PeerConnection
 from ras.proto.ras import (
+    PairRequest,
+    PairResponse,
     SignalError,
     SignalErrorErrorCode,
     SignalRequest,
@@ -179,10 +184,13 @@ class UnifiedServer:
         self.app.router.add_get("/api/pair/{session_id}", self._handle_pairing_status)
         self.app.router.add_delete("/api/pair/{session_id}", self._handle_cancel_pairing)
 
+        # Pairing completion (for phone)
+        self.app.router.add_post("/api/pair/{session_id}/complete", self._handle_pair_complete)
+
         # Device management API (for CLI)
         self.app.router.add_delete("/api/devices/{device_id}", self._handle_remove_device)
 
-        # Signaling (for phone during pairing)
+        # Signaling (for phone during pairing — legacy, kept for connection-time use)
         self.app.router.add_post("/signal/{session_id}", self._handle_signal)
 
         # Reconnection (for paired phone)
@@ -279,6 +287,128 @@ class UnifiedServer:
         logger.info(f"Pairing session cancelled: {session_id[:8]}...")
 
         return web.json_response({"status": "cancelled"})
+
+    async def _handle_pair_complete(self, request: web.Request) -> web.Response:
+        """Handle pairing completion from phone (direct HTTP path).
+
+        Phone sends PairRequest protobuf with auth_proof HMAC.
+        Daemon validates, stores device, returns PairResponse.
+        No WebRTC involved.
+        """
+        session_id = request.match_info["session_id"]
+        client_ip = request.remote or "unknown"
+
+        # Rate limiting
+        if not self._ip_limiter.is_allowed(client_ip):
+            return self._error_response(SignalErrorErrorCode.RATE_LIMITED, status=429)
+
+        if not self._session_limiter.is_allowed(session_id):
+            return self._error_response(SignalErrorErrorCode.RATE_LIMITED, status=429)
+
+        # Get session
+        session = self._pairing_sessions.get(session_id)
+        if session is None or session.is_expired():
+            logger.warning(f"Invalid pairing session for pair-complete: {session_id[:8]}...")
+            return self._error_response(SignalErrorErrorCode.INVALID_SESSION)
+
+        if session.state not in ("pending",):
+            logger.warning(f"Session {session_id[:8]}... in wrong state for pair-complete: {session.state}")
+            return self._error_response(SignalErrorErrorCode.INVALID_SESSION)
+
+        # Read body
+        try:
+            body = await request.read()
+        except Exception:
+            return self._error_response(SignalErrorErrorCode.INVALID_REQUEST)
+
+        # Parse PairRequest protobuf
+        try:
+            pair_req = PairRequest().parse(body)
+        except Exception:
+            return self._error_response(SignalErrorErrorCode.INVALID_REQUEST)
+
+        # Validate session_id matches
+        if pair_req.session_id != session_id:
+            logger.warning(f"Session ID mismatch in PairRequest: {pair_req.session_id[:8]}... vs {session_id[:8]}...")
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        # Validate nonce length
+        if len(pair_req.nonce) != PAIR_NONCE_LENGTH:
+            logger.warning(f"Invalid nonce length in PairRequest: {len(pair_req.nonce)}")
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        # Validate auth_proof HMAC
+        expected_hmac = compute_pair_request_hmac(
+            session.auth_key,
+            session_id,
+            pair_req.device_id,
+            pair_req.nonce,
+        )
+
+        if not hmac_module.compare_digest(pair_req.auth_proof, expected_hmac):
+            logger.warning(f"HMAC verification failed for pair-complete {session_id[:8]}...")
+            session.state = "failed"
+            return self._error_response(SignalErrorErrorCode.AUTHENTICATION_FAILED)
+
+        # Pairing verified — store device and build response
+        pair_response = await self._complete_pairing_exchange(
+            session, pair_req.device_id, pair_req.device_name, pair_req.nonce
+        )
+
+        return web.Response(
+            body=bytes(pair_response),
+            content_type="application/x-protobuf",
+        )
+
+    async def _complete_pairing_exchange(
+        self,
+        session: PairingSession,
+        device_id: str,
+        device_name: str,
+        nonce: bytes,
+    ) -> PairResponse:
+        """Complete pairing: store device, build response, notify callbacks.
+
+        Shared by both HTTP and ntfy pairing paths.
+        """
+        session.state = "verifying"
+        session.device_id = device_id
+        session.device_name = device_name
+
+        # Store device
+        await self.device_store.add_device(
+            device_id=device_id,
+            device_name=device_name,
+            master_secret=session.master_secret,
+        )
+
+        # Notify callbacks
+        if self._on_pairing_complete:
+            await self._on_pairing_complete(device_id, device_name)
+
+        # Build PairResponse with daemon's auth_proof
+        from ras.proto.ras import DeviceType as ProtoDeviceType
+        from ras.system import detect_device_type, get_daemon_device_id, get_hostname
+
+        response_hmac = compute_pair_response_hmac(session.auth_key, nonce)
+
+        pair_response = PairResponse(
+            daemon_device_id=get_daemon_device_id(),
+            hostname=get_hostname(),
+            device_type=ProtoDeviceType(detect_device_type()),
+            auth_proof=response_hmac,
+        )
+
+        # Stop ntfy subscriber (no longer needed)
+        if session._ntfy_subscriber:
+            await session._ntfy_subscriber.close()
+            session._ntfy_subscriber = None
+
+        session.state = "completed"
+
+        logger.info(f"Pairing completed: {device_name} ({device_id[:8]}...)")
+
+        return pair_response
 
     async def _handle_remove_device(self, request: web.Request) -> web.Response:
         """Remove a paired device (called by CLI)."""
@@ -846,8 +976,8 @@ class UnifiedServer:
     async def _start_ntfy_signaling(self, session: PairingSession) -> None:
         """Start ntfy signaling subscriber for a pairing session.
 
-        Creates subscriber that listens for OFFER messages via ntfy
-        when direct HTTP signaling is not possible (NAT traversal).
+        Creates subscriber that listens for PAIR_REQUEST messages via ntfy
+        for credential exchange without WebRTC.
 
         Args:
             session: Pairing session to start signaling for.
@@ -860,14 +990,11 @@ class UnifiedServer:
             stun_servers=self.stun_servers,
         )
 
-        # Set callback for when offer is received
-        async def on_offer_received(
-            device_id: str, device_name: str, peer: PeerConnection, is_reconnection: bool
-        ) -> None:
-            # Note: is_reconnection will always be False in pairing mode
-            await self._on_ntfy_offer_received(session, device_id, device_name, peer)
+        # Set callback for when pairing completes via ntfy
+        async def on_pair_complete(device_id: str, device_name: str) -> None:
+            await self._on_ntfy_pair_complete(session, device_id, device_name)
 
-        subscriber.on_offer_received = on_offer_received
+        subscriber.on_pair_complete = on_pair_complete
 
         # Store and start subscriber
         session._ntfy_subscriber = subscriber
@@ -875,49 +1002,44 @@ class UnifiedServer:
 
         logger.debug(f"Started ntfy signaling for session {session.session_id[:8]}...")
 
-    async def _on_ntfy_offer_received(
+    async def _on_ntfy_pair_complete(
         self,
         session: PairingSession,
         device_id: str,
         device_name: str,
-        peer: PeerConnection,
     ) -> None:
-        """Handle OFFER received via ntfy signaling.
+        """Handle pairing completed via ntfy.
 
-        This is called when the phone successfully sends an offer via ntfy
-        because direct HTTP signaling was not possible.
-
-        Args:
-            session: The pairing session.
-            device_id: Device ID from the offer.
-            device_name: Device name from the offer.
-            peer: WebRTC peer connection created for this session.
+        Called by the ntfy subscriber after a PAIR_REQUEST was validated
+        and PAIR_RESPONSE was sent back. The handler already validated
+        the HMAC and built the response. We just need to store the device.
         """
-        # Check if session is still valid
-        if session.is_expired() or session.state != "pending":
-            logger.debug(f"Ignoring ntfy offer for invalid session {session.session_id[:8]}...")
-            if peer:
-                await peer.close()
+        if session.is_expired() or session.state not in ("pending",):
+            logger.debug(f"Ignoring ntfy pair-complete for session {session.session_id[:8]}... (state={session.state})")
             return
 
-        # Update session state
-        session.state = "signaling"
         session.device_id = device_id
         session.device_name = device_name
-        session.peer = peer
-        session._auth_queue = asyncio.Queue()
 
-        # Set up message handler for auth
-        async def on_message(message: bytes) -> None:
-            if session._auth_queue:
-                await session._auth_queue.put(message)
+        # Store device
+        await self.device_store.add_device(
+            device_id=device_id,
+            device_name=device_name,
+            master_secret=session.master_secret,
+        )
 
-        peer.on_message(on_message)
+        # Notify callbacks
+        if self._on_pairing_complete:
+            await self._on_pairing_complete(device_id, device_name)
 
-        logger.info(f"Received ntfy offer for session {session.session_id[:8]}... from {device_name}")
+        # Stop ntfy subscriber (no longer needed)
+        if session._ntfy_subscriber:
+            await session._ntfy_subscriber.close()
+            session._ntfy_subscriber = None
 
-        # Start auth flow in background
-        asyncio.create_task(self._run_pairing_auth(session.session_id))
+        session.state = "completed"
+
+        logger.info(f"Pairing completed via ntfy: {device_name} ({device_id[:8]}...)")
 
     # =========================================================================
     # Pairing completion (called by Daemon after external auth)

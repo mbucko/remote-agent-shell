@@ -102,7 +102,7 @@ End-to-end encryption and authentication.
 
 ```
 1. Start daemon on laptop
-   $ ras daemon start
+   $ ras pair
 
 2. Daemon displays QR code
    ┌─────────────────────────────┐
@@ -116,9 +116,9 @@ End-to-end encryption and authentication.
 
 3. Open Android app, scan QR code
 
-4. Phone connects directly to laptop via P2P
+4. Phone exchanges credentials with daemon via ntfy (<3 seconds)
 
-5. Done - connection persists until you unpair
+5. Pairing complete! Phone connects via P2P when needed.
 ```
 
 ### Reconnection (Automatic)
