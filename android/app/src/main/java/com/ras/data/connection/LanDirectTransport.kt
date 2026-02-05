@@ -188,7 +188,7 @@ class LanDirectTransport private constructor(
     private var lastActivity: Long = connectedAt
 
     override suspend fun send(data: ByteArray) {
-        if (closed.get()) throw TransportException("Transport is closed")
+        if (closed.get()) throw TransportClosedException()
 
         val success = webSocket.send(data.toByteString())
         if (!success) {
@@ -203,7 +203,7 @@ class LanDirectTransport private constructor(
     }
 
     override suspend fun receive(timeoutMs: Long): ByteArray {
-        if (closed.get()) throw TransportException("Transport is closed")
+        if (closed.get()) throw TransportClosedException()
 
         val data = try {
             if (timeoutMs > 0) {
@@ -218,8 +218,8 @@ class LanDirectTransport private constructor(
         } catch (e: TransportException) {
             throw e
         } catch (e: Exception) {
-            if (closed.get()) {
-                throw TransportException("Transport closed", e)
+            if (closed.get() || e is kotlinx.coroutines.channels.ClosedReceiveChannelException) {
+                throw TransportClosedException(e)
             }
             throw TransportException("Receive error: ${e.message}", e, isRecoverable = true)
         }
