@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiohttp import WSMsgType
 from aiohttp.client_exceptions import WSServerHandshakeError
-from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
+from aiohttp.test_utils import AioHTTPTestCase
 
 from ras.crypto import compute_signaling_hmac, derive_key
 from ras.proto.ras import LanDirectAuthRequest, LanDirectAuthResponse
@@ -54,7 +54,6 @@ class TestWebSocketEndpoint(AioHTTPTestCase):
         )
         return self.server.app
 
-    @unittest_run_loop
     async def test_websocket_unknown_device_returns_404(self):
         """Should return 404 for unknown device."""
         with pytest.raises(WSServerHandshakeError) as exc_info:
@@ -62,7 +61,6 @@ class TestWebSocketEndpoint(AioHTTPTestCase):
                 pass
         assert exc_info.value.status == 404
 
-    @unittest_run_loop
     async def test_websocket_auth_success(self):
         """Should authenticate successfully with valid credentials."""
         # Setup device
@@ -97,7 +95,6 @@ class TestWebSocketEndpoint(AioHTTPTestCase):
         # Should have called on_device_connected
         assert self.on_device_connected.called
 
-    @unittest_run_loop
     async def test_websocket_auth_invalid_hmac(self):
         """Should reject connection with invalid HMAC."""
         device_id = "test-device-123"
@@ -122,7 +119,6 @@ class TestWebSocketEndpoint(AioHTTPTestCase):
             assert msg.type == WSMsgType.CLOSE
             assert ws.close_code == 4001
 
-    @unittest_run_loop
     async def test_websocket_auth_expired_timestamp(self):
         """Should reject connection with expired timestamp."""
         device_id = "test-device-123"
@@ -147,7 +143,6 @@ class TestWebSocketEndpoint(AioHTTPTestCase):
             assert msg.type == WSMsgType.CLOSE
             assert ws.close_code == 4001
 
-    @unittest_run_loop
     async def test_websocket_auth_wrong_device_id(self):
         """Should reject connection when auth device_id doesn't match URL."""
         device_id = "test-device-123"

@@ -184,10 +184,12 @@ class ReconnectionServiceImpl @Inject constructor(
             }
 
             // 6. Perform authentication handshake (only for WebRTC)
-            // TailscaleStrategy already does auth during connect(), so skip for Tailscale
-            val isTailscale = transport::class.simpleName?.contains("Tailscale") == true
+            // Tailscale and LAN Direct already authenticate during connect()
+            val skipAuth = transport::class.simpleName?.let {
+                it.contains("Tailscale") || it.contains("LanDirect")
+            } == true
 
-            if (!isTailscale) {
+            if (!skipAuth) {
                 onProgress(ConnectionProgress.Authenticating())
                 val authResult = runAuthentication(transport, authKey)
 
@@ -212,7 +214,7 @@ class ReconnectionServiceImpl @Inject constructor(
                     }
                 }
             } else {
-                Log.i(TAG, "Tailscale auth already completed during connect")
+                Log.i(TAG, "Auth already completed during connect (${transport::class.simpleName})")
                 onProgress(ConnectionProgress.Authenticated)
             }
 

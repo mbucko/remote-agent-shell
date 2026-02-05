@@ -117,6 +117,7 @@ class UnifiedServer:
     """
 
     TIMESTAMP_TOLERANCE = 30  # seconds
+    WS_AUTH_TIMEOUT = 10.0  # seconds
 
     def __init__(
         self,
@@ -988,7 +989,7 @@ class UnifiedServer:
         try:
             # Receive and validate auth message (binary protobuf)
             try:
-                auth_msg = await asyncio.wait_for(ws.receive_bytes(), timeout=10.0)
+                auth_msg = await asyncio.wait_for(ws.receive_bytes(), timeout=self.WS_AUTH_TIMEOUT)
             except asyncio.TimeoutError:
                 logger.warning(f"WebSocket: Auth timeout for {device_id[:8]}...")
                 await ws.close(code=4002, message=b"Auth timeout")

@@ -85,6 +85,15 @@ class LanDirectPeer:
         """
         self._close_handler = handler
 
+    async def wait_connected(self, timeout: float = 30.0) -> None:
+        """Wait for connection to be ready.
+
+        LAN Direct WebSocket is already connected when the peer is created,
+        so this is a no-op. Exists for API compatibility with PeerConnection.
+        """
+        if self._closed:
+            raise ConnectionError("Peer is closed")
+
     async def send(self, data: bytes) -> None:
         """Send data to remote peer.
 

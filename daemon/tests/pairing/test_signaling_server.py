@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import web
-from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
 
 from ras.pairing.signaling_server import SignalingServer, RateLimiter
 from ras.pairing.session import PairingSession, PairingState

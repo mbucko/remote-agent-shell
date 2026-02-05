@@ -51,6 +51,27 @@ class MockWebSocket:
         return mock_msg
 
 
+class TestLanDirectPeerWaitConnected:
+    """Test wait_connected functionality."""
+
+    @pytest.mark.asyncio
+    async def test_wait_connected_noop_when_open(self):
+        """Should succeed immediately when peer is open."""
+        ws = MockWebSocket()
+        peer = LanDirectPeer(ws)
+        await peer.wait_connected()  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_wait_connected_raises_when_closed(self):
+        """Should raise ConnectionError when peer is closed."""
+        ws = MockWebSocket()
+        peer = LanDirectPeer(ws)
+        await peer.close()
+
+        with pytest.raises(ConnectionError, match="Peer is closed"):
+            await peer.wait_connected()
+
+
 class TestLanDirectPeerInit:
     """Test LanDirectPeer initialization."""
 
