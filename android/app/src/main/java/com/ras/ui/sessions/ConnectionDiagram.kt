@@ -176,7 +176,7 @@ private fun ConnectionDiagramCanvas(
     val primaryColor = MaterialTheme.colorScheme.primary
 
     val canvasHeightDp = when (path.type) {
-        PathType.LAN_DIRECT -> 110.dp  // No NAT/VPN hub at top - compact layout
+        PathType.LAN_DIRECT -> 130.dp  // No NAT/VPN hub at top - compact layout
         else -> 160.dp
     }
 
@@ -189,10 +189,15 @@ private fun ConnectionDiagramCanvas(
         val canvasHeight = size.height
 
         // Positions - devices lower in the canvas
+        // LAN Direct uses lower ratio to leave room for labels in compact canvas
+        val deviceYRatio = when (path.type) {
+            PathType.LAN_DIRECT -> 0.62f
+            else -> 0.72f
+        }
         val phoneX = canvasWidth * 0.15f
-        val phoneY = canvasHeight * 0.72f
+        val phoneY = canvasHeight * deviceYRatio
         val laptopX = canvasWidth * 0.85f
-        val laptopY = canvasHeight * 0.72f
+        val laptopY = canvasHeight * deviceYRatio
         val phoneRadius = with(density) { 28.dp.toPx() }
         val laptopWidth = with(density) { 56.dp.toPx() }
         val laptopHeight = with(density) { 40.dp.toPx() }
