@@ -218,7 +218,7 @@ class LanDirectTransport private constructor(
         } catch (e: TransportException) {
             throw e
         } catch (e: Exception) {
-            if (closed.get() || e is kotlinx.coroutines.channels.ClosedReceiveChannelException) {
+            if (closed.get() || e is kotlinx.coroutines.channels.ClosedReceiveChannelException || messageChannel.isClosedForReceive) {
                 throw TransportClosedException(e)
             }
             throw TransportException("Receive error: ${e.message}", e, isRecoverable = true)
