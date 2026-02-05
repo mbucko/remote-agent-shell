@@ -8,6 +8,7 @@ import com.ras.data.connection.ConnectionOrchestrator
 import com.ras.data.connection.ConnectionProgress
 import com.ras.data.connection.FailedAttempt
 import com.ras.data.connection.Transport
+import com.ras.data.connection.TransportClosedException
 import com.ras.data.connection.TransportType
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.credentials.StoredCredentials
@@ -707,6 +708,62 @@ class ReconnectionServiceImplTest {
     }
 
     // ============================================================================
+    // SECTION 8b: Transport Closed During Handoff Tests
+    // ============================================================================
+
+    @Tag("unit")
+    @Test
+    fun `reconnect returns NetworkError when connectWithTransport throws due to TransportClosedException`() = runTest {
+        /**
+         * When the daemon replaces a connection during rapid reconnect,
+         * connectWithTransport throws IllegalStateException wrapping TransportClosedException.
+         * This should be classified as NetworkError (retryable), not Unknown (terminal).
+         */
+        coEvery { credentialRepository.getSelectedDevice() } returns testDevice
+
+        // Use FakeTailscaleTransport so class name contains "Tailscale" and auth is skipped
+        val mockTransport = createFakeTailscaleTransport()
+        coEvery { orchestrator.connect(any(), any()) } returns mockTransport
+
+        // Simulate the daemon closing the old transport during handoff
+        // ConnectionManager wraps TransportClosedException in IllegalStateException
+        coEvery { connectionManager.connectWithTransport(any(), any(), any()) } throws
+            IllegalStateException("Failed to send ConnectionReady: Transport is closed", TransportClosedException())
+
+        val service = createService()
+        val result = service.reconnect()
+
+        assertTrue(
+            result is ReconnectionResult.Failure.NetworkError,
+            "Transport closed during handoff should be NetworkError (retryable), got: $result"
+        )
+    }
+
+    @Tag("unit")
+    @Test
+    fun `reconnect returns Unknown for non-transport IllegalStateException`() = runTest {
+        /**
+         * Other IllegalStateExceptions (not "Transport is closed") should still
+         * be classified as Unknown.
+         */
+        coEvery { credentialRepository.getSelectedDevice() } returns testDevice
+
+        val mockTransport = createFakeTailscaleTransport()
+        coEvery { orchestrator.connect(any(), any()) } returns mockTransport
+
+        coEvery { connectionManager.connectWithTransport(any(), any(), any()) } throws
+            IllegalStateException("Some other state error")
+
+        val service = createService()
+        val result = service.reconnect()
+
+        assertTrue(
+            result is ReconnectionResult.Failure.Unknown,
+            "Non-transport IllegalStateException should be Unknown, got: $result"
+        )
+    }
+
+    // ============================================================================
     // SECTION 9: Multiple Reconnection Attempts
     // ============================================================================
 
@@ -790,6 +847,17 @@ class ReconnectionServiceImplTest {
         return transport
     }
 
+    /**
+     * Fake transport whose class name contains "Tailscale" so
+     * ReconnectionServiceImpl.reconnect() skips the auth handshake.
+     */
+    private fun createFakeTailscaleTransport(): FakeTailscaleTransport {
+        return mockk<FakeTailscaleTransport>(relaxed = true).also {
+            every { it.type } returns TransportType.TAILSCALE
+            every { it.isConnected } returns true
+        }
+    }
+
     private fun createSuccessfulAuthTransport(): Transport {
         val transport = mockk<Transport>(relaxed = true)
         every { transport.type } returns TransportType.WEBRTC
@@ -807,3 +875,9 @@ class ReconnectionServiceImplTest {
         return transport
     }
 }
+
+/**
+ * Named class so `::class.simpleName` contains "Tailscale", matching the
+ * `transport::class.simpleName?.contains("Tailscale")` check in ReconnectionServiceImpl.
+ */
+private abstract class FakeTailscaleTransport : Transport

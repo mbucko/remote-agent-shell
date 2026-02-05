@@ -919,6 +919,83 @@ class ConnectionManagerIntegrationTest {
     }
 
     // ============================================================================
+    // SECTION 4b: Transport Close Detection Tests
+    // ============================================================================
+
+    @Tag("integration")
+    @Test
+    fun `TransportClosedException is treated as expected close`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val testConfig = ConnectionConfig(pingIntervalMs = 0L)
+        val manager = ConnectionManager(
+            webRtcClientFactory = webRTCClientFactory,
+            ioDispatcher = testDispatcher,
+            config = testConfig
+        )
+
+        val mockTransport = mockk<Transport>(relaxed = true)
+        every { mockTransport.type } returns TransportType.TAILSCALE
+        every { mockTransport.isConnected } returns true
+
+        // First receive succeeds (to let event listener start), then throws TransportClosedException
+        var receiveCount = 0
+        coEvery { mockTransport.receive(any()) } coAnswers {
+            receiveCount++
+            if (receiveCount == 1) {
+                delay(100)
+                throw TransportException("Receive timeout", isRecoverable = true)
+            }
+            throw TransportClosedException()
+        }
+
+        manager.connectWithTransport(mockTransport, authKey)
+        assertTrue(manager.isConnected.value, "Should be connected initially")
+
+        // Advance time to trigger the event listener receiving
+        advanceTimeBy(500L)
+
+        // Connection should be marked as disconnected
+        assertFalse(manager.isConnected.value, "Should be disconnected after transport closed")
+
+        manager.disconnect()
+    }
+
+    @Tag("integration")
+    @Test
+    fun `other TransportExceptions are NOT treated as expected close`() = runTest {
+        /**
+         * Only "Transport is closed" should be treated as expected close.
+         * Other TransportExceptions (e.g. "Too many stale handshake packets")
+         * should still be logged as errors and emit a Disconnected error.
+         */
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val testConfig = ConnectionConfig(pingIntervalMs = 0L)
+        val manager = ConnectionManager(
+            webRtcClientFactory = webRTCClientFactory,
+            ioDispatcher = testDispatcher,
+            config = testConfig
+        )
+
+        val mockTransport = mockk<Transport>(relaxed = true)
+        every { mockTransport.type } returns TransportType.TAILSCALE
+        every { mockTransport.isConnected } returns true
+
+        coEvery { mockTransport.receive(any()) } coAnswers {
+            throw TransportException("Too many stale handshake packets")
+        }
+
+        manager.connectWithTransport(mockTransport, authKey)
+        assertTrue(manager.isConnected.value, "Should be connected initially")
+
+        advanceTimeBy(500L)
+
+        // Should still disconnect, but via the error path (not expected close)
+        assertFalse(manager.isConnected.value, "Should be disconnected after error")
+
+        manager.disconnect()
+    }
+
+    // ============================================================================
     // SECTION 5: Command Sending Tests
     // ============================================================================
 

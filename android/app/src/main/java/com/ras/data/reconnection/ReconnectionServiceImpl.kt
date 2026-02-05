@@ -12,6 +12,7 @@ import com.ras.data.connection.ConnectionOrchestrator
 import com.ras.data.connection.ConnectionProgress
 import com.ras.data.connection.NtfySignalingChannel
 import com.ras.data.connection.Transport
+import com.ras.data.connection.TransportClosedException
 import com.ras.data.credentials.CredentialRepository
 import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.domain.startup.ReconnectionResult
@@ -230,6 +231,15 @@ class ReconnectionServiceImpl @Inject constructor(
             Log.e(TAG, "Authentication rejected by daemon", e)
             cleanup(authKey)
             return ReconnectionResult.Failure.AuthenticationFailed
+        } catch (e: IllegalStateException) {
+            if (e.cause is TransportClosedException) {
+                Log.w(TAG, "Transport closed during handoff - transient error, retryable")
+                cleanup(authKey)
+                return ReconnectionResult.Failure.NetworkError
+            }
+            Log.e(TAG, "Reconnection failed: ${e.message}", e)
+            cleanup(authKey)
+            return ReconnectionResult.Failure.Unknown(e.message ?: "Unknown error")
         } catch (e: Exception) {
             Log.e(TAG, "Reconnection failed: ${e.message}", e)
             cleanup(authKey)

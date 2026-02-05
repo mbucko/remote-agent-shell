@@ -379,7 +379,8 @@ class ConnectionManager @Inject constructor(
                 // - ClosedReceiveChannelException: WebRTC channel closed
                 // - SocketException "Socket is closed": TailscaleTransport socket closed
                 val isExpectedClose = e is kotlinx.coroutines.channels.ClosedReceiveChannelException ||
-                    (e is java.net.SocketException && e.message?.contains("Socket is closed") == true)
+                    (e is java.net.SocketException && e.message?.contains("Socket is closed") == true) ||
+                    e is TransportClosedException
                 if (isExpectedClose) {
                     Log.i(TAG, "Transport connection closed")
                 } else {

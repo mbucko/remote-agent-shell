@@ -73,8 +73,18 @@ data class TransportStats(
 /**
  * Exception thrown by transport operations.
  */
-class TransportException(
+open class TransportException(
     message: String,
     cause: Throwable? = null,
     val isRecoverable: Boolean = false
 ) : Exception(message, cause)
+
+/**
+ * Thrown when an operation is attempted on a closed transport.
+ *
+ * Typed subclass so callers can use `is TransportClosedException` instead of
+ * matching on the exception message string.
+ */
+class TransportClosedException(
+    cause: Throwable? = null
+) : TransportException("Transport is closed", cause)

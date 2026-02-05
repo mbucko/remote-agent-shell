@@ -38,6 +38,7 @@ class TailscaleTransport private constructor(
         private const val HANDSHAKE_ATTEMPT_TIMEOUT_MS = 500  // Per-attempt timeout (allows retries within total)
         private const val HANDSHAKE_MAX_RETRIES = 3
         private const val HANDSHAKE_MAGIC = 0x52415354  // "RAST" in hex
+        private const val MAX_STALE_HANDSHAKE_SKIP = 3  // Max stale handshake packets to skip before failing
 
         /**
          * Create a TailscaleTransport by connecting to a remote Tailscale IP.
@@ -163,7 +164,7 @@ class TailscaleTransport private constructor(
 
     override suspend fun send(data: ByteArray) {
         withContext(Dispatchers.IO) {
-            if (closed) throw TransportException("Transport is closed")
+            if (closed) throw TransportClosedException()
             if (data.size > MAX_PACKET_SIZE - HEADER_SIZE) {
                 throw TransportException("Message too large: ${data.size} bytes")
             }
@@ -186,39 +187,55 @@ class TailscaleTransport private constructor(
     }
 
     override suspend fun receive(timeoutMs: Long): ByteArray = withContext(Dispatchers.IO) {
-        if (closed) throw TransportException("Transport is closed")
+        if (closed) throw TransportClosedException()
 
         if (timeoutMs > 0) {
             socket.soTimeout = timeoutMs.toInt()
         }
 
+        val buffer = ByteArray(MAX_PACKET_SIZE)
+        val packet = DatagramPacket(buffer, buffer.size)
+        var skipped = 0
+
         try {
-            // Read packet with length header
-            val buffer = ByteArray(MAX_PACKET_SIZE)
-            val packet = DatagramPacket(buffer, buffer.size)
-            socket.receive(packet)
+            while (true) {
+                socket.receive(packet)
 
-            if (packet.length < HEADER_SIZE) {
-                throw TransportException("Packet too small: ${packet.length} bytes")
+                if (packet.length < HEADER_SIZE) {
+                    throw TransportException("Packet too small: ${packet.length} bytes")
+                }
+
+                val wrapper = ByteBuffer.wrap(buffer, 0, packet.length)
+                val length = wrapper.int
+
+                // Skip stale handshake packets (exactly 8 bytes starting with RAST magic)
+                if (packet.length == 8 && length == HANDSHAKE_MAGIC) {
+                    skipped++
+                    Log.w(TAG, "Skipping stale handshake packet ($skipped)")
+                    if (skipped >= MAX_STALE_HANDSHAKE_SKIP) {
+                        throw TransportException("Too many stale handshake packets")
+                    }
+                    continue
+                }
+
+                if (length < 0 || length > packet.length - HEADER_SIZE) {
+                    throw TransportException("Invalid message length: $length")
+                }
+
+                val data = ByteArray(length)
+                wrapper.get(data)
+
+                bytesReceived += length
+                messagesReceived++
+                lastActivity = System.currentTimeMillis()
+
+                Log.v(TAG, "Received $length bytes")
+                return@withContext data
             }
-
-            val wrapper = ByteBuffer.wrap(buffer, 0, packet.length)
-            val length = wrapper.int
-
-            if (length < 0 || length > packet.length - HEADER_SIZE) {
-                throw TransportException("Invalid message length: $length")
-            }
-
-            val data = ByteArray(length)
-            wrapper.get(data)
-
-            bytesReceived += length
-            messagesReceived++
-            lastActivity = System.currentTimeMillis()
-
-            Log.v(TAG, "Received $length bytes")
-            return@withContext data
-
+            @Suppress("UNREACHABLE_CODE")
+            throw IllegalStateException("Unreachable")
+        } catch (e: TransportException) {
+            throw e
         } catch (e: SocketTimeoutException) {
             throw TransportException("Receive timeout", e, isRecoverable = true)
         } catch (e: IOException) {
