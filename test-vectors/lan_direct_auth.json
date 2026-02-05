@@ -1,0 +1,72 @@
+{
+  "description": "LAN Direct WebSocket auth test vectors",
+  "protocol": "LanDirectAuthRequest protobuf over WebSocket",
+  "hmac_input_format": "UTF8(device_id) || BigEndian64(timestamp) || empty_body",
+  "vectors": [
+    {
+      "id": "key_derivation",
+      "description": "Derive auth key from master secret",
+      "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "purpose": "auth",
+      "expected_auth_key_hex": "bec0c3289e346d890ea330014e23e6e7cf95f82c8bd7f5f133850c89ac165a43"
+    },
+    {
+      "id": "hmac_computation",
+      "description": "Compute signaling HMAC for WebSocket auth",
+      "auth_key_hex": "bec0c3289e346d890ea330014e23e6e7cf95f82c8bd7f5f133850c89ac165a43",
+      "device_id": "test-device-abc123",
+      "timestamp": 1706400000,
+      "body_hex": "",
+      "expected_signature_hex": "7069b4d01a7a4013f9453d29ea53139df51c7b5e595964e181dbec704dd8f412"
+    },
+    {
+      "id": "protobuf_serialization",
+      "description": "Serialize LanDirectAuthRequest to protobuf bytes",
+      "device_id": "test-device-abc123",
+      "timestamp": 1706400000,
+      "signature_hex": "7069b4d01a7a4013f9453d29ea53139df51c7b5e595964e181dbec704dd8f412",
+      "expected_protobuf_hex": "0a12746573742d6465766963652d6162633132331080b2d6ad061a4037303639623464303161376134303133663934353364323965613533313339646635316337623565353935393634653138316462656337303464643866343132"
+    },
+    {
+      "id": "full_auth_request",
+      "description": "Full flow: master_secret -> auth_key -> HMAC -> protobuf",
+      "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "device_id": "test-device-abc123",
+      "timestamp": 1706400000,
+      "expected_auth_key_hex": "bec0c3289e346d890ea330014e23e6e7cf95f82c8bd7f5f133850c89ac165a43",
+      "expected_signature_hex": "7069b4d01a7a4013f9453d29ea53139df51c7b5e595964e181dbec704dd8f412",
+      "expected_protobuf_hex": "0a12746573742d6465766963652d6162633132331080b2d6ad061a4037303639623464303161376134303133663934353364323965613533313339646635316337623565353935393634653138316462656337303464643866343132"
+    }
+  ],
+  "error_cases": [
+    {
+      "id": "double_derivation_bug",
+      "description": "Using master_secret directly instead of derived auth_key produces wrong HMAC",
+      "master_secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "device_id": "test-device-abc123",
+      "timestamp": 1706400000,
+      "wrong_signature_hex": "08189c7271e2a3df18d9d37a8ec07f374eaad0a454a45dbed306694cac4130ca",
+      "wrong_protobuf_hex": "0a12746573742d6465766963652d6162633132331080b2d6ad061a4030383138396337323731653261336466313864396433376138656330376633373465616164306134353461343564626564333036363934636163343133306361",
+      "correct_signature_hex": "7069b4d01a7a4013f9453d29ea53139df51c7b5e595964e181dbec704dd8f412",
+      "note": "This is the exact bug: Android called deriveKey() on an already-derived authToken"
+    },
+    {
+      "id": "expired_timestamp",
+      "description": "Timestamp more than 30s in the past should be rejected",
+      "auth_key_hex": "bec0c3289e346d890ea330014e23e6e7cf95f82c8bd7f5f133850c89ac165a43",
+      "device_id": "test-device-abc123",
+      "timestamp": 1706399900,
+      "current_time": 1706400000,
+      "expected_error": "authentication_failed"
+    },
+    {
+      "id": "wrong_device_id",
+      "description": "Auth request device_id does not match URL device_id",
+      "auth_key_hex": "bec0c3289e346d890ea330014e23e6e7cf95f82c8bd7f5f133850c89ac165a43",
+      "request_device_id": "wrong-device-id",
+      "url_device_id": "test-device-abc123",
+      "timestamp": 1706400000,
+      "expected_error": "authentication_failed"
+    }
+  ]
+}

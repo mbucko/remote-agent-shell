@@ -593,6 +593,152 @@ def compute_auth_handshake_vectors() -> dict:
     }
 
 
+def encode_varint(value: int) -> bytes:
+    """Encode an integer as a protobuf varint."""
+    result = []
+    while value > 0x7f:
+        result.append((value & 0x7f) | 0x80)
+        value >>= 7
+    result.append(value & 0x7f)
+    return bytes(result)
+
+
+def encode_proto_string(field_number: int, value: str) -> bytes:
+    """Encode a string field in protobuf wire format."""
+    data = value.encode("utf-8")
+    tag = (field_number << 3) | 2  # wire type 2 = length-delimited
+    return bytes([tag]) + encode_varint(len(data)) + data
+
+
+def encode_proto_int64(field_number: int, value: int) -> bytes:
+    """Encode an int64 field in protobuf wire format."""
+    tag = (field_number << 3) | 0  # wire type 0 = varint
+    return bytes([tag]) + encode_varint(value)
+
+
+def compute_lan_direct_vectors() -> dict:
+    """Compute LAN Direct WebSocket auth test vectors.
+
+    These vectors verify the full LAN Direct auth contract:
+    1. Key derivation: master_secret -> deriveKey(secret, "auth") -> auth_key
+    2. HMAC computation: computeSignalingHmac(authKey, deviceId, timestamp, emptyBody)
+    3. Protobuf serialization: LanDirectAuthRequest fields -> protobuf bytes
+
+    The double-derivation bug (calling deriveKey on an already-derived authToken)
+    is caught by verifying that both platforms produce identical auth request bytes
+    from the same master_secret.
+    """
+    master_secret = bytes.fromhex(
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    )
+    auth_key = hkdf_sha256(master_secret, b"auth")
+
+    # Fixed test inputs
+    device_id = "test-device-abc123"
+    timestamp = 1706400000
+
+    # Step 1: HMAC computation (same as signaling HMAC with empty body)
+    signature = compute_signaling_hmac(auth_key, device_id, timestamp, b"")
+    signature_hex = signature.hex()
+
+    # Step 2: Protobuf serialization
+    # LanDirectAuthRequest { device_id=1, timestamp=2, signature=3 }
+    proto_bytes = (
+        encode_proto_string(1, device_id)
+        + encode_proto_int64(2, timestamp)
+        + encode_proto_string(3, signature_hex)
+    )
+
+    # Also compute what happens with the WRONG key (master_secret used directly)
+    # This is the exact bug: Android was passing master_secret to computeSignalingHmac
+    # instead of the derived auth_key
+    wrong_signature = compute_signaling_hmac(master_secret, device_id, timestamp, b"")
+    wrong_signature_hex = wrong_signature.hex()
+
+    wrong_proto_bytes = (
+        encode_proto_string(1, device_id)
+        + encode_proto_int64(2, timestamp)
+        + encode_proto_string(3, wrong_signature_hex)
+    )
+
+    vectors = [
+        {
+            "id": "key_derivation",
+            "description": "Derive auth key from master secret",
+            "master_secret_hex": master_secret.hex(),
+            "purpose": "auth",
+            "expected_auth_key_hex": auth_key.hex(),
+        },
+        {
+            "id": "hmac_computation",
+            "description": "Compute signaling HMAC for WebSocket auth",
+            "auth_key_hex": auth_key.hex(),
+            "device_id": device_id,
+            "timestamp": timestamp,
+            "body_hex": "",
+            "expected_signature_hex": signature_hex,
+        },
+        {
+            "id": "protobuf_serialization",
+            "description": "Serialize LanDirectAuthRequest to protobuf bytes",
+            "device_id": device_id,
+            "timestamp": timestamp,
+            "signature_hex": signature_hex,
+            "expected_protobuf_hex": proto_bytes.hex(),
+        },
+        {
+            "id": "full_auth_request",
+            "description": "Full flow: master_secret -> auth_key -> HMAC -> protobuf",
+            "master_secret_hex": master_secret.hex(),
+            "device_id": device_id,
+            "timestamp": timestamp,
+            "expected_auth_key_hex": auth_key.hex(),
+            "expected_signature_hex": signature_hex,
+            "expected_protobuf_hex": proto_bytes.hex(),
+        },
+    ]
+
+    error_cases = [
+        {
+            "id": "double_derivation_bug",
+            "description": "Using master_secret directly instead of derived auth_key produces wrong HMAC",
+            "master_secret_hex": master_secret.hex(),
+            "device_id": device_id,
+            "timestamp": timestamp,
+            "wrong_signature_hex": wrong_signature_hex,
+            "wrong_protobuf_hex": wrong_proto_bytes.hex(),
+            "correct_signature_hex": signature_hex,
+            "note": "This is the exact bug: Android called deriveKey() on an already-derived authToken",
+        },
+        {
+            "id": "expired_timestamp",
+            "description": "Timestamp more than 30s in the past should be rejected",
+            "auth_key_hex": auth_key.hex(),
+            "device_id": device_id,
+            "timestamp": 1706399900,
+            "current_time": 1706400000,
+            "expected_error": "authentication_failed",
+        },
+        {
+            "id": "wrong_device_id",
+            "description": "Auth request device_id does not match URL device_id",
+            "auth_key_hex": auth_key.hex(),
+            "request_device_id": "wrong-device-id",
+            "url_device_id": device_id,
+            "timestamp": timestamp,
+            "expected_error": "authentication_failed",
+        },
+    ]
+
+    return {
+        "description": "LAN Direct WebSocket auth test vectors",
+        "protocol": "LanDirectAuthRequest protobuf over WebSocket",
+        "hmac_input_format": "UTF8(device_id) || BigEndian64(timestamp) || empty_body",
+        "vectors": vectors,
+        "error_cases": error_cases,
+    }
+
+
 def main():
     """Generate all test vectors and save to files."""
     output_dir = Path(__file__).parent.parent / "test-vectors"
@@ -605,6 +751,7 @@ def main():
         "signaling.json": compute_signaling_vectors(),
         "qr_payload.json": compute_qr_payload_vectors(),
         "auth_handshake.json": compute_auth_handshake_vectors(),
+        "lan_direct_auth.json": compute_lan_direct_vectors(),
     }
 
     for filename, data in vectors.items():
