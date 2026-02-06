@@ -5,7 +5,7 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.ras.data.connection.ConnectionManager
-import com.ras.data.connection.ConnectionState
+import com.ras.data.connection.ConnectionLifecycleState
 import com.ras.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -65,24 +65,24 @@ class ConnectionServiceController @Inject constructor(
         scope.launch {
             connectionManager.connectionState.collect { state ->
                 when (state) {
-                    ConnectionState.CONNECTED -> {
+                    ConnectionLifecycleState.CONNECTED -> {
                         pendingStopJob?.cancel()
                         pendingStopJob = null
                         if (!serviceRunning) {
                             startService()
                         }
                     }
-                    ConnectionState.RECOVERING -> {
+                    ConnectionLifecycleState.RECOVERING -> {
                         pendingStopJob?.cancel()
                         pendingStopJob = null
                         Log.d(TAG, "ICE recovering - keeping service alive")
                     }
-                    ConnectionState.RECONNECTING -> {
+                    ConnectionLifecycleState.RECONNECTING -> {
                         pendingStopJob?.cancel()
                         pendingStopJob = null
                         Log.d(TAG, "Reconnecting - keeping service alive")
                     }
-                    ConnectionState.DISCONNECTED -> {
+                    ConnectionLifecycleState.DISCONNECTED -> {
                         if (serviceRunning) {
                             scheduleStop()
                         }

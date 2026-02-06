@@ -1,180 +1,189 @@
 package com.ras.connection
 
-import com.ras.data.connection.ConnectionManager
-import com.ras.data.connection.ConnectionState
-import com.ras.data.webrtc.WebRTCClient
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.verify
+import com.ras.data.webrtc.IceRecoveryHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
-import org.junit.Test
-import org.webrtc.PeerConnection
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.Test
 
+/**
+ * Tests for ICE recovery timeout logic.
+ *
+ * Uses [IceRecoveryHandler] directly - no WebRTC native library needed.
+ * Uses TestCoroutineScheduler for deterministic time control.
+ */
+@Tag("unit")
 @OptIn(ExperimentalCoroutinesApi::class)
 class IceRecoveryTest {
 
+    private var disconnectCount = 0
+
     @Test
-    fun `ICE disconnected then reconnected cancels recovery timer`() = runTest {
-        val onDisconnect = mockk<() -> Unit>(relaxed = true)
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        val scope = TestScope(testDispatcher)
+    fun `ICE disconnected then reconnected within timeout - no teardown`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
 
-        val client = createMockWebRTCClient(scope, onDisconnect)
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(5_000)
+        testScheduler.runCurrent()
 
-        val observer = client.createObserver()
+        handler.onIceRecovered()
+        testScheduler.advanceTimeBy(20_000)
+        testScheduler.runCurrent()
 
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(1000)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.DISCONNECTED)
-        advanceTimeBy(5000)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(20000)
-
-        verify(exactly = 0) { onDisconnect() }
+        assertEquals(0, disconnectCount, "onDisconnect should not be called when ICE recovers in time")
     }
 
     @Test
-    fun `ICE disconnected timeout expires triggers disconnect`() = runTest {
-        val onDisconnect = mockk<() -> Unit>(relaxed = true)
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        val scope = TestScope(testDispatcher)
+    fun `ICE disconnected timeout expires - triggers disconnect`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
 
-        val client = createMockWebRTCClient(scope, onDisconnect)
-        val observer = client.createObserver()
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(15_000)
+        testScheduler.runCurrent()
 
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(1000)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.DISCONNECTED)
-        advanceTimeBy(15000)
-
-        verify(exactly = 1) { onDisconnect() }
+        assertEquals(1, disconnectCount, "onDisconnect should be called exactly once after timeout")
     }
 
     @Test
-    fun `ICE failed triggers immediate disconnect`() = runTest {
-        val onDisconnect = mockk<() -> Unit>(relaxed = true)
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        val scope = TestScope(testDispatcher)
+    fun `ICE failed - immediate disconnect no recovery window`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
 
-        val client = createMockWebRTCClient(scope, onDisconnect)
-        val observer = client.createObserver()
+        handler.onIceFailed()
 
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(1000)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.FAILED)
-        advanceTimeBy(100)
-
-        verify(exactly = 1) { onDisconnect() }
+        assertEquals(1, disconnectCount, "onDisconnect should be called immediately on ICE FAILED")
     }
 
     @Test
-    fun `service stays running during ICE recovery`() = runTest {
-        val connectionManager = mockk<ConnectionManager>(relaxed = true)
-        val connectionState = kotlinx.coroutines.flow.MutableStateFlow(ConnectionState.CONNECTED)
+    fun `ICE failed while recovery timer is pending - cancels timer and disconnects once`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
 
-        every { connectionManager.connectionState } returns connectionState
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(5_000)
+        testScheduler.runCurrent()
 
-        connectionState.value = ConnectionState.RECOVERING
-        advanceTimeBy(5000)
+        handler.onIceFailed()
+        testScheduler.advanceTimeBy(20_000)
+        testScheduler.runCurrent()
 
-        connectionState.value = ConnectionState.CONNECTED
-        advanceTimeBy(1000)
+        assertEquals(1, disconnectCount, "onDisconnect should be called exactly once (from FAILED, not timer)")
     }
 
     @Test
-    fun `service stop only scheduled on DISCONNECTED state`() = runTest {
-        val connectionManager = mockk<ConnectionManager>(relaxed = true)
-        val connectionState = kotlinx.coroutines.flow.MutableStateFlow(ConnectionState.CONNECTED)
+    fun `rapid disconnect-reconnect cycles - no disconnect`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
 
-        every { connectionManager.connectionState } returns connectionState
-
-        connectionState.value = ConnectionState.RECOVERING
-        advanceTimeBy(5000)
-
-        connectionState.value = ConnectionState.DISCONNECTED
-        advanceTimeBy(1000)
-    }
-
-    @Test
-    fun `rapid ICE disconnect reconnect cycles handled correctly`() = runTest {
-        val onDisconnect = mockk<() -> Unit>(relaxed = true)
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        val scope = TestScope(testDispatcher)
-
-        val client = createMockWebRTCClient(scope, onDisconnect)
-        val observer = client.createObserver()
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(100)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.DISCONNECTED)
-        advanceTimeBy(100)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(100)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.DISCONNECTED)
-        advanceTimeBy(100)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(20000)
-
-        verify(exactly = 0) { onDisconnect() }
-    }
-
-    @Test
-    fun `recovery timeout cancelled when ICE reconnects`() = runTest {
-        val onDisconnect = mockk<() -> Unit>(relaxed = true)
-        val testDispatcher = StandardTestDispatcher(testScheduler)
-        val scope = TestScope(testDispatcher)
-
-        val client = createMockWebRTCClient(scope, onDisconnect)
-        val observer = client.createObserver()
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(1000)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.DISCONNECTED)
-        advanceTimeBy(10000)
-
-        observer.onIceConnectionChange(PeerConnection.IceConnectionState.CONNECTED)
-        advanceTimeBy(10000)
-
-        verify(exactly = 0) { onDisconnect() }
-    }
-
-    private fun createMockWebRTCClient(scope: TestScope, onDisconnect: () -> Unit): MockWebRTCClient {
-        return MockWebRTCClient(scope, onDisconnect)
-    }
-
-    private class MockWebRTCClient(
-        private val scope: TestScope,
-        private val onDisconnectCallback: () -> Unit
-    ) {
-        fun createObserver(): PeerConnection.Observer {
-            return object : PeerConnection.Observer {
-                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                }
-
-                override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
-                override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-                override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
-                override fun onIceCandidate(candidate: org.webrtc.IceCandidate?) {}
-                override fun onIceCandidatesRemoved(candidates: Array<out org.webrtc.IceCandidate>?) {}
-                override fun onAddStream(stream: org.webrtc.MediaStream?) {}
-                override fun onRemoveStream(stream: org.webrtc.MediaStream?) {}
-                override fun onDataChannel(channel: org.webrtc.DataChannel?) {}
-                override fun onRenegotiationNeeded() {}
-                override fun onAddTrack(receiver: org.webrtc.RtpReceiver?, streams: Array<out org.webrtc.MediaStream>?) {}
-            }
+        repeat(5) {
+            handler.onIceDisconnected()
+            testScheduler.advanceTimeBy(100)
+            testScheduler.runCurrent()
+            handler.onIceRecovered()
+            testScheduler.advanceTimeBy(100)
+            testScheduler.runCurrent()
         }
+
+        testScheduler.advanceTimeBy(30_000)
+        testScheduler.runCurrent()
+
+        assertEquals(0, disconnectCount, "onDisconnect should never fire during rapid recovery cycles")
+    }
+
+    @Test
+    fun `recovery timeout cancelled when ICE reconnects at 10s mark`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
+
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(10_000)
+        testScheduler.runCurrent()
+
+        handler.onIceRecovered()
+        testScheduler.advanceTimeBy(10_000)
+        testScheduler.runCurrent()
+
+        assertEquals(0, disconnectCount, "Timer cancelled at 10s should not fire at 15s")
+    }
+
+    @Test
+    fun `cancel stops pending recovery timer`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
+
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(5_000)
+        testScheduler.runCurrent()
+
+        handler.cancel()
+        testScheduler.advanceTimeBy(20_000)
+        testScheduler.runCurrent()
+
+        assertEquals(0, disconnectCount, "cancel() should prevent recovery timeout from firing")
+    }
+
+    @Test
+    fun `disconnect then reconnect then disconnect again - only second timeout fires`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
+
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(5_000)
+        testScheduler.runCurrent()
+        handler.onIceRecovered()
+        testScheduler.advanceTimeBy(1_000)
+        testScheduler.runCurrent()
+
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(15_000)
+        testScheduler.runCurrent()
+
+        assertEquals(1, disconnectCount, "Only second disconnect's timeout should fire")
+    }
+
+    @Test
+    fun `multiple disconnects before timeout - only one disconnect fires`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
+
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(5_000)
+        testScheduler.runCurrent()
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(5_000)
+        testScheduler.runCurrent()
+        handler.onIceDisconnected()
+
+        testScheduler.advanceTimeBy(15_000)
+        testScheduler.runCurrent()
+
+        assertEquals(1, disconnectCount, "Multiple disconnects should result in exactly one disconnect call")
+    }
+
+    @Test
+    fun `COMPLETED state cancels recovery like CONNECTED`() = runTest {
+        val handler = IceRecoveryHandler(scope = this, onRecoveryFailed = { disconnectCount++ })
+
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(5_000)
+        testScheduler.runCurrent()
+
+        handler.onIceRecovered()
+        testScheduler.advanceTimeBy(20_000)
+        testScheduler.runCurrent()
+
+        assertEquals(0, disconnectCount, "onIceRecovered (COMPLETED) should cancel recovery timer")
+    }
+
+    @Test
+    fun `custom timeout value is respected`() = runTest {
+        val handler = IceRecoveryHandler(
+            scope = this,
+            recoveryTimeoutMs = 5_000,
+            onRecoveryFailed = { disconnectCount++ }
+        )
+
+        handler.onIceDisconnected()
+        testScheduler.advanceTimeBy(4_999)
+        testScheduler.runCurrent()
+        assertEquals(0, disconnectCount, "Should not fire before custom timeout")
+
+        testScheduler.advanceTimeBy(1)
+        testScheduler.runCurrent()
+        assertEquals(1, disconnectCount, "Should fire at custom timeout boundary")
     }
 }

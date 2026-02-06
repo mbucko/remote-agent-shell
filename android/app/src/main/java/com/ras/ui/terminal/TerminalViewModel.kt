@@ -5,7 +5,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ras.data.connection.ConnectionState
+import com.ras.data.connection.ConnectionLifecycleState
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.ModifierKeySettings
 import com.ras.data.settings.SettingsQuickButton
@@ -154,7 +154,7 @@ class TerminalViewModel @Inject constructor(
     private fun observeConnectionForReattach() {
         repository.connectionState
             .onEach { state ->
-                if (state == ConnectionState.CONNECTED) {
+                if (state == ConnectionLifecycleState.CONNECTED) {
                     val termState = terminalState.value
                     if (termState.sessionId != null && !termState.isAttached && !termState.isAttaching) {
                         Log.d(TAG, "Connection ready, re-attaching to ${termState.sessionId}")

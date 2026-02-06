@@ -3,6 +3,7 @@ package com.ras.service
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import com.ras.data.connection.ConnectionLifecycleState
 import com.ras.data.connection.ConnectionManager
 import io.mockk.every
 import io.mockk.mockk
@@ -43,9 +44,20 @@ class ConnectionServiceControllerTest {
     private lateinit var mockConnectionManager: ConnectionManager
 
     private val isConnectedFlow = MutableStateFlow(false)
+    private val connectionStateFlow = MutableStateFlow(ConnectionLifecycleState.DISCONNECTED)
 
     // Debounce delay constant from ConnectionServiceController
     private val STOP_DELAY_MS = 3000L
+
+    private fun simulateConnect() {
+        isConnectedFlow.value = true
+        connectionStateFlow.value = ConnectionLifecycleState.CONNECTED
+    }
+
+    private fun simulateDisconnect() {
+        isConnectedFlow.value = false
+        connectionStateFlow.value = ConnectionLifecycleState.DISCONNECTED
+    }
 
     @BeforeEach
     fun setup() {
@@ -56,6 +68,7 @@ class ConnectionServiceControllerTest {
         mockConnectionManager = mockk()
 
         every { mockConnectionManager.isConnected } returns isConnectedFlow
+        every { mockConnectionManager.connectionState } returns connectionStateFlow
 
         // Mock ContextCompat.startForegroundService static method
         mockkStatic(ContextCompat::class)
@@ -83,7 +96,7 @@ class ConnectionServiceControllerTest {
 
         controller.initialize()
 
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         verify { ContextCompat.startForegroundService(mockContext, any()) }
@@ -101,11 +114,11 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Connect first
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // Disconnect - use runCurrent() to process the flow emission without advancing time
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
 
         // Service should NOT be stopped yet (debounce delay hasn't elapsed)
@@ -131,11 +144,11 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Connect multiple times
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // Should only start once
@@ -154,7 +167,7 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Never connected, so nothing to stop
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
         advanceTimeBy(STOP_DELAY_MS + 100)
         runCurrent()
@@ -173,7 +186,7 @@ class ConnectionServiceControllerTest {
 
         // Don't call initialize
 
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         verify(exactly = 0) { ContextCompat.startForegroundService(any(), any()) }
@@ -195,11 +208,11 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Connect
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // Disconnect
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
 
         // Wait less than debounce delay
@@ -207,7 +220,7 @@ class ConnectionServiceControllerTest {
         runCurrent()
 
         // Reconnect before debounce completes
-        isConnectedFlow.value = true
+        simulateConnect()
         runCurrent()
 
         // Wait past the original debounce time
@@ -230,11 +243,11 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Connect
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // Disconnect
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
 
         // Advance time to just before debounce delay
@@ -264,11 +277,11 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Connect
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // First disconnect
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
 
         // Wait 2 seconds
@@ -276,9 +289,9 @@ class ConnectionServiceControllerTest {
         runCurrent()
 
         // Quick reconnect/disconnect cycle
-        isConnectedFlow.value = true
+        simulateConnect()
         runCurrent()
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
 
         // Wait another 2 seconds (total 4 seconds since first disconnect)
@@ -314,9 +327,9 @@ class ConnectionServiceControllerTest {
         // Rapid cycles (each within debounce window)
         // Service starts on first connect, stays running since debounce never completes
         repeat(5) {
-            isConnectedFlow.value = true
+            simulateConnect()
             runCurrent()
-            isConnectedFlow.value = false
+            simulateDisconnect()
             runCurrent()
             advanceTimeBy(500) // Less than debounce delay
             runCurrent()
@@ -348,17 +361,17 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Cycle 1: connect, disconnect, wait for debounce
-        isConnectedFlow.value = true
+        simulateConnect()
         runCurrent()
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
         advanceTimeBy(STOP_DELAY_MS + 100)
         runCurrent()
 
         // Cycle 2: connect, disconnect, wait for debounce
-        isConnectedFlow.value = true
+        simulateConnect()
         runCurrent()
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
         advanceTimeBy(STOP_DELAY_MS + 100)
         runCurrent()
@@ -384,13 +397,13 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Connect
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // Immediate disconnect and reconnect (network hiccup scenario)
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
-        isConnectedFlow.value = true
+        simulateConnect()
         runCurrent()
 
         // Wait past debounce
@@ -415,11 +428,11 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Connect
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // Disconnect
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
 
         // Wait almost the full debounce (2999ms of 3000ms)
@@ -427,7 +440,7 @@ class ConnectionServiceControllerTest {
         runCurrent()
 
         // Reconnect at last moment
-        isConnectedFlow.value = true
+        simulateConnect()
         runCurrent()
 
         // Wait long past original debounce
@@ -452,7 +465,7 @@ class ConnectionServiceControllerTest {
         controller.initialize()
         controller.initialize()
 
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // Each initialization creates a new collector, so we might get multiple starts
@@ -472,11 +485,11 @@ class ConnectionServiceControllerTest {
         controller.initialize()
 
         // Connect
-        isConnectedFlow.value = true
+        simulateConnect()
         advanceUntilIdle()
 
         // Disconnect
-        isConnectedFlow.value = false
+        simulateDisconnect()
         runCurrent()
 
         // Advance to just before debounce time (1ms before)
@@ -484,7 +497,7 @@ class ConnectionServiceControllerTest {
         runCurrent()
 
         // Reconnect before debounce completes
-        isConnectedFlow.value = true
+        simulateConnect()
         runCurrent()
 
         // Now advance past the original debounce time

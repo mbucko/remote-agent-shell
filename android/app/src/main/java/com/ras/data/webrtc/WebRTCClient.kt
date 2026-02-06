@@ -6,12 +6,9 @@ import com.ras.util.GlobalConnectionTimer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -53,7 +50,6 @@ class WebRTCClient(
         // ICE gathering timeout - increased to 5s to allow more time for STUN candidates
         // Host candidates are gathered immediately, STUN candidates within 1-2 seconds
         private const val ICE_GATHERING_TIMEOUT_MS = 5_000L
-        private const val ICE_RECOVERY_TIMEOUT_MS = 15_000L // 15 seconds to recover from ICE disconnected
     }
 
     // Lock for thread-safe access to connection state
@@ -95,9 +91,12 @@ class WebRTCClient(
     // Callback for when connection is lost (data channel closed or ICE failed)
     private var onDisconnect: (() -> Unit)? = null
 
-    private var iceRecoveryJob: Job? = null
-
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // ICE recovery: handles transient DISCONNECTED vs terminal FAILED
+    private val iceRecoveryHandler = IceRecoveryHandler(scope) {
+        onDisconnect?.invoke()
+    }
 
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
@@ -444,8 +443,7 @@ class WebRTCClient(
             if (isClosed) return
             isClosed = true
 
-            iceRecoveryJob?.cancel()
-            iceRecoveryJob = null
+            iceRecoveryHandler.cancel()
             scope.cancel()
 
             try {
@@ -491,8 +489,7 @@ class WebRTCClient(
                         Log.d(TAG, "ICE checking - testing candidate pairs")
                     }
                     PeerConnection.IceConnectionState.CONNECTED -> {
-                        iceRecoveryJob?.cancel()
-                        iceRecoveryJob = null
+                        iceRecoveryHandler.onIceRecovered()
                         GlobalConnectionTimer.logMark("ice_connected")
                         // Log connection stats to see which candidate pair succeeded
                         peerConnection?.getStats { report ->
@@ -515,27 +512,17 @@ class WebRTCClient(
                         Log.i(TAG, "ICE connected! Peer-to-peer connection established")
                     }
                     PeerConnection.IceConnectionState.COMPLETED -> {
-                        iceRecoveryJob?.cancel()
-                        iceRecoveryJob = null
+                        iceRecoveryHandler.onIceRecovered()
                         GlobalConnectionTimer.logMark("ice_completed")
                         Log.i(TAG, "ICE completed - all checks done")
                     }
                     PeerConnection.IceConnectionState.DISCONNECTED -> {
                         GlobalConnectionTimer.logMark("ice_disconnected")
-                        Log.w(TAG, "ICE disconnected - starting recovery timeout (${ICE_RECOVERY_TIMEOUT_MS}ms)")
-                        iceRecoveryJob?.cancel()
-                        iceRecoveryJob = scope.launch {
-                            delay(ICE_RECOVERY_TIMEOUT_MS)
-                            Log.w(TAG, "ICE recovery timeout expired - treating as failed")
-                            onDisconnect?.invoke()
-                        }
+                        iceRecoveryHandler.onIceDisconnected()
                     }
                     PeerConnection.IceConnectionState.FAILED -> {
                         GlobalConnectionTimer.logMark("ice_failed")
-                        Log.e(TAG, "ICE failed - connection is terminal")
-                        iceRecoveryJob?.cancel()
-                        iceRecoveryJob = null
-                        onDisconnect?.invoke()
+                        iceRecoveryHandler.onIceFailed()
                     }
                     else -> {}
                 }

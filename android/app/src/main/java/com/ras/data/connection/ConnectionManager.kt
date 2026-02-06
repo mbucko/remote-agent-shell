@@ -115,8 +115,8 @@ class ConnectionManager @Inject constructor(
     private val _isHealthy = MutableStateFlow(true)
     val isHealthy: StateFlow<Boolean> = _isHealthy.asStateFlow()
 
-    private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
-    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+    private val _connectionState = MutableStateFlow(ConnectionLifecycleState.DISCONNECTED)
+    val connectionState: StateFlow<ConnectionLifecycleState> = _connectionState.asStateFlow()
 
     // Session events (emitted when a SessionEvent proto is received)
     private val _sessionEvents = MutableSharedFlow<ProtoSessionEvent>(
@@ -283,7 +283,7 @@ class ConnectionManager @Inject constructor(
             codec = BytesCodec(authKey.copyOf())  // Copy to avoid external mutation
             _isConnected.value = true
             _isHealthy.value = true
-            _connectionState.value = ConnectionState.CONNECTED
+            _connectionState.value = ConnectionLifecycleState.CONNECTED
             _connectedDeviceId.value = deviceId
 
             // Set up disconnect callback to handle connection loss
@@ -347,7 +347,7 @@ class ConnectionManager @Inject constructor(
             codec = BytesCodec(authKey.copyOf())
             _isConnected.value = true
             _isHealthy.value = true
-            _connectionState.value = ConnectionState.CONNECTED
+            _connectionState.value = ConnectionLifecycleState.CONNECTED
             _connectedDeviceId.value = deviceId
 
             // Set up disconnect callback for WebRTC transports
@@ -471,7 +471,7 @@ class ConnectionManager @Inject constructor(
         pingJob = null
         _isConnected.value = false
         _isHealthy.value = false
-        _connectionState.value = ConnectionState.DISCONNECTED
+        _connectionState.value = ConnectionLifecycleState.DISCONNECTED
         _connectedDeviceId.value = null
         clearConnectionPath()
         transport?.close()
@@ -489,14 +489,14 @@ class ConnectionManager @Inject constructor(
      */
     private fun handleConnectionLost(reason: String) {
         synchronized(connectionLock) {
-            if (!_isConnected.value && _connectionState.value != ConnectionState.RECOVERING) {
+            if (!_isConnected.value && _connectionState.value != ConnectionLifecycleState.RECOVERING) {
                 return
             }
             Log.w(TAG, "Connection lost: $reason (state=${_connectionState.value})")
 
             _isConnected.value = false
             _isHealthy.value = false
-            _connectionState.value = ConnectionState.DISCONNECTED
+            _connectionState.value = ConnectionLifecycleState.DISCONNECTED
             clearConnectionPath()
             _connectionErrors.tryEmit(ConnectionError.Disconnected(reason))
 
@@ -929,7 +929,7 @@ sealed class ConnectionError {
  *                                        → RECONNECTING → CONNECTED (if reconnect succeeds)
  *                                                       → DISCONNECTED (if reconnect fails)
  */
-enum class ConnectionState {
+enum class ConnectionLifecycleState {
     DISCONNECTED,
     CONNECTED,
     RECOVERING,

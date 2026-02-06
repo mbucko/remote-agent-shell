@@ -1,6 +1,7 @@
 package com.ras.terminal
 
 import app.cash.turbine.test
+import com.ras.data.connection.ConnectionLifecycleState
 import com.ras.data.sessions.SessionInfo
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.sessions.SessionStatus
@@ -49,6 +50,7 @@ class TerminalViewModelTest {
     private lateinit var terminalOutputFlow: MutableSharedFlow<ByteArray>
     private lateinit var terminalEventsFlow: MutableSharedFlow<TerminalEvent>
     private lateinit var isConnectedFlow: MutableStateFlow<Boolean>
+    private lateinit var connectionStateFlow: MutableStateFlow<ConnectionLifecycleState>
     private lateinit var sessionsFlow: MutableStateFlow<List<SessionInfo>>
 
     @BeforeEach
@@ -59,6 +61,7 @@ class TerminalViewModelTest {
         terminalOutputFlow = MutableSharedFlow()
         terminalEventsFlow = MutableSharedFlow()
         isConnectedFlow = MutableStateFlow(true)
+        connectionStateFlow = MutableStateFlow(ConnectionLifecycleState.CONNECTED)
         sessionsFlow = MutableStateFlow(listOf(
             SessionInfo(
                 id = "abc123def456",
@@ -77,6 +80,7 @@ class TerminalViewModelTest {
             every { output } returns terminalOutputFlow
             every { events } returns terminalEventsFlow
             every { isConnected } returns isConnectedFlow
+            every { connectionState } returns connectionStateFlow
         }
 
         sessionRepository = mockk(relaxed = true) {
@@ -188,10 +192,12 @@ class TerminalViewModelTest {
             lastSequence = 42
         )
         isConnectedFlow.value = false
+        connectionStateFlow.value = ConnectionLifecycleState.DISCONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Connection restores
         isConnectedFlow.value = true
+        connectionStateFlow.value = ConnectionLifecycleState.CONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Verify re-attach was called with lastSequence
@@ -220,8 +226,10 @@ class TerminalViewModelTest {
 
         // Connection briefly drops and restores
         isConnectedFlow.value = false
+        connectionStateFlow.value = ConnectionLifecycleState.DISCONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
         isConnectedFlow.value = true
+        connectionStateFlow.value = ConnectionLifecycleState.CONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
 
         // attach() should NOT be called again (still attached)
@@ -247,8 +255,10 @@ class TerminalViewModelTest {
 
         // Connection drops and restores
         isConnectedFlow.value = false
+        connectionStateFlow.value = ConnectionLifecycleState.DISCONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
         isConnectedFlow.value = true
+        connectionStateFlow.value = ConnectionLifecycleState.CONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
 
         // attach() should NOT be called by connection observer
@@ -274,8 +284,10 @@ class TerminalViewModelTest {
 
         // Connection restores
         isConnectedFlow.value = false
+        connectionStateFlow.value = ConnectionLifecycleState.DISCONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
         isConnectedFlow.value = true
+        connectionStateFlow.value = ConnectionLifecycleState.CONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
 
         // attach() should NOT be called (already attaching)
@@ -300,11 +312,13 @@ class TerminalViewModelTest {
             isAttaching = false
         )
         isConnectedFlow.value = false
+        connectionStateFlow.value = ConnectionLifecycleState.DISCONNECTED
         testDispatcher.scheduler.advanceUntilIdle()
 
         viewModel.uiEvents.test {
             // Connection restores - triggers re-attach which fails
             isConnectedFlow.value = true
+            connectionStateFlow.value = ConnectionLifecycleState.CONNECTED
             testDispatcher.scheduler.advanceUntilIdle()
 
             // Should emit ShowError for reconnect failure
