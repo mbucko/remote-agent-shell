@@ -2,6 +2,7 @@ package com.ras.data.terminal
 
 import android.util.Log
 import com.ras.data.connection.ConnectionManager
+import com.ras.data.connection.ConnectionState
 import com.ras.di.AttachTimeoutMs
 import com.ras.di.IoDispatcher
 import com.ras.notifications.NotificationHandler
@@ -86,6 +87,7 @@ class TerminalRepository @Inject constructor(
 
     // Connection state passthrough
     val isConnected: StateFlow<Boolean> = connectionManager.isConnected
+    val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
 
     init {
         // Subscribe to terminal events from connection manager

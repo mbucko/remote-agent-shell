@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ras.data.connection.ConnectionState
 import com.ras.data.sessions.SessionRepository
 import com.ras.data.settings.ModifierKeySettings
 import com.ras.data.settings.SettingsQuickButton
@@ -151,18 +152,16 @@ class TerminalViewModel @Inject constructor(
     }
 
     private fun observeConnectionForReattach() {
-        isConnected
-            .onEach { connected ->
-                if (connected) {
-                    val state = terminalState.value
-                    if (state.sessionId != null && !state.isAttached && !state.isAttaching) {
-                        Log.d(TAG, "Connection restored, re-attaching to ${state.sessionId}")
+        repository.connectionState
+            .onEach { state ->
+                if (state == ConnectionState.CONNECTED) {
+                    val termState = terminalState.value
+                    if (termState.sessionId != null && !termState.isAttached && !termState.isAttaching) {
+                        Log.d(TAG, "Connection ready, re-attaching to ${termState.sessionId}")
                         viewModelScope.launch {
                             try {
                                 repository.clearError()
-                                // Don't reset emulator - keep existing content visible
-                                // while new data from lastSequence fills in incrementally
-                                repository.attach(sessionId, state.lastSequence)
+                                repository.attach(sessionId, termState.lastSequence)
                                 if (currentCols > 0 && currentRows > 0) {
                                     repository.resize(currentCols, currentRows)
                                 }
@@ -262,12 +261,10 @@ class TerminalViewModel @Inject constructor(
                 }
             }
             is TerminalEvent.Snapshot -> {
-                // Snapshot during reconnect (buffer was evicted): reset emulator
-                // so snapshot content replaces stale screen, not appends to it.
-                // The snapshot data flows through the output stream and will be
-                // processed by observeTerminalOutput after this reset.
+                // Reset emulator so snapshot replaces any stale content.
+                // Fires on both fresh attach and reconnect (buffer evicted).
                 if (terminalState.value.isAttached) {
-                    Log.d(TAG, "Snapshot received during reconnect - resetting emulator")
+                    Log.d(TAG, "Snapshot received - resetting emulator")
                     terminalEmulator.reset()
                 }
             }

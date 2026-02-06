@@ -5,6 +5,7 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.ras.data.connection.ConnectionManager
+import com.ras.data.connection.ConnectionState
 import com.ras.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -62,18 +63,30 @@ class ConnectionServiceController @Inject constructor(
      */
     fun initialize() {
         scope.launch {
-            connectionManager.isConnected.collect { isConnected ->
-                if (isConnected) {
-                    // Cancel any pending stop - we're reconnecting
-                    pendingStopJob?.cancel()
-                    pendingStopJob = null
-
-                    if (!serviceRunning) {
-                        startService()
+            connectionManager.connectionState.collect { state ->
+                when (state) {
+                    ConnectionState.CONNECTED -> {
+                        pendingStopJob?.cancel()
+                        pendingStopJob = null
+                        if (!serviceRunning) {
+                            startService()
+                        }
                     }
-                } else if (serviceRunning) {
-                    // Delay stopping to avoid rapid stop/start cycles during reconnection
-                    scheduleStop()
+                    ConnectionState.RECOVERING -> {
+                        pendingStopJob?.cancel()
+                        pendingStopJob = null
+                        Log.d(TAG, "ICE recovering - keeping service alive")
+                    }
+                    ConnectionState.RECONNECTING -> {
+                        pendingStopJob?.cancel()
+                        pendingStopJob = null
+                        Log.d(TAG, "Reconnecting - keeping service alive")
+                    }
+                    ConnectionState.DISCONNECTED -> {
+                        if (serviceRunning) {
+                            scheduleStop()
+                        }
+                    }
                 }
             }
         }
