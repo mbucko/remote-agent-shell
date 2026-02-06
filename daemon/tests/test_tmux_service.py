@@ -446,6 +446,36 @@ class TestCapturePane:
         assert "-S" in capture_call  # Start line
         assert "-100" in capture_call
 
+    @pytest.mark.asyncio
+    async def test_capture_pane_with_escapes(self):
+        """capture_pane() with include_escapes=True passes -e flag."""
+        executor = MockCommandExecutor()
+        executor.add_response("-V", "tmux 3.4")
+        executor.add_response("capture-pane", "\x1b[32mgreen text\x1b[0m\n")
+        service = TmuxService(executor=executor)
+
+        result = await service.capture_pane("$0", lines=72, include_escapes=True)
+
+        capture_call = [c for c in executor.calls if "capture-pane" in c][0]
+        assert "-e" in capture_call
+        assert "-p" in capture_call
+        assert "-S" in capture_call
+        assert "-72" in capture_call
+        assert "\x1b[32mgreen text\x1b[0m" in result
+
+    @pytest.mark.asyncio
+    async def test_capture_pane_without_escapes_no_e_flag(self):
+        """capture_pane() without include_escapes does not pass -e flag."""
+        executor = MockCommandExecutor()
+        executor.add_response("-V", "tmux 3.4")
+        executor.add_response("capture-pane", "plain text\n")
+        service = TmuxService(executor=executor)
+
+        await service.capture_pane("$0", lines=100, include_escapes=False)
+
+        capture_call = [c for c in executor.calls if "capture-pane" in c][0]
+        assert "-e" not in capture_call
+
 
 class TestSetWindowSizeLatest:
     """Test set_window_size_latest functionality."""

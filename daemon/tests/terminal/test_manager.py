@@ -4,13 +4,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import betterproto
+
 from ras.proto.ras import (
     AttachTerminal,
     DetachTerminal,
     TerminalCommand,
     TerminalInput,
+    TerminalSnapshot,
 )
 from ras.terminal.manager import TerminalManager
+
+
+def event_type(event) -> str:
+    """Get the active oneof field name from a TerminalEvent."""
+    name, _ = betterproto.which_one_of(event, "event")
+    return name
 
 
 class MockSessionProvider:
@@ -510,6 +519,7 @@ class MockTmuxService:
 
     def __init__(self):
         self.set_window_size_latest = AsyncMock()
+        self.capture_pane = AsyncMock(return_value="$ echo hello\nhello\n$ ")
 
 
 class TestTerminalManagerConnectionClosed:
@@ -680,3 +690,211 @@ class TestTerminalManagerHelpers:
         assert manager.is_session_attached("session1") is True
         assert manager.is_session_attached("session2") is False
         assert manager.is_session_attached("nonexistent") is False
+
+
+class TestTerminalManagerSnapshot:
+    """Test snapshot-based attach flow."""
+
+    @pytest.fixture
+    def setup(self):
+        """Set up test fixtures with tmux service for snapshot tests."""
+        session_provider = MockSessionProvider()
+        session_provider.add_session("abc123def456", "ras-test-session")
+
+        tmux_executor = MockTmuxExecutor()
+        tmux_service = MockTmuxService()
+        events = []
+
+        def capture_event(conn_id: str, event):
+            events.append((conn_id, event))
+
+        manager = TerminalManager(
+            session_provider=session_provider,
+            tmux_executor=tmux_executor,
+            send_event=capture_event,
+            tmux_service=tmux_service,
+        )
+
+        return manager, tmux_service, events
+
+    @pytest.mark.asyncio
+    async def test_fresh_attach_sends_snapshot(self, setup):
+        """Fresh attach (from_sequence=0) should send TerminalSnapshot."""
+        manager, tmux_service, events = setup
+
+        command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        with patch(
+            "ras.terminal.manager.OutputCapture"
+        ) as mock_capture_class:
+            mock_capture = AsyncMock()
+            mock_capture.start = AsyncMock()
+            mock_capture_class.return_value = mock_capture
+
+            await manager.handle_command("conn1", command)
+
+        # Should have: attached event + snapshot event
+        attached_events = [(c, e) for c, e in events if event_type(e) == "attached"]
+        snapshot_events = [(c, e) for c, e in events if event_type(e) == "snapshot"]
+
+        assert len(attached_events) == 1
+        assert len(snapshot_events) == 1
+
+        snapshot = snapshot_events[0][1].snapshot
+        assert snapshot.session_id == "abc123def456"
+        assert snapshot.data == b"$ echo hello\nhello\n$ "
+
+        # capture_pane should have been called with include_escapes=True
+        tmux_service.capture_pane.assert_called_once_with(
+            "ras-test-session", lines=72, include_escapes=True
+        )
+
+    @pytest.mark.asyncio
+    async def test_reconnect_sends_chunks_not_snapshot(self, setup):
+        """Reconnect (from_sequence>0) with available buffer sends chunks, not snapshot."""
+        manager, tmux_service, events = setup
+
+        command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        # First: do a fresh attach to set up buffer with data
+        with patch(
+            "ras.terminal.manager.OutputCapture"
+        ) as mock_capture_class:
+            mock_capture = AsyncMock()
+            mock_capture.start = AsyncMock()
+            mock_capture_class.return_value = mock_capture
+
+            await manager.handle_command("conn1", command)
+
+        # Simulate some output in the buffer
+        manager._on_output("abc123def456", b"some output data")
+
+        events.clear()
+
+        # Now reconnect with from_sequence=0 but capture already running
+        reconnect_command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        await manager.handle_command("conn2", reconnect_command)
+
+        # Should have attached event + output chunks, but NOT a snapshot
+        # (capture already running, from_sequence=0 but capture exists)
+        attached_events = [(c, e) for c, e in events if event_type(e) == "attached"]
+        snapshot_events = [(c, e) for c, e in events if event_type(e) == "snapshot"]
+        output_events = [(c, e) for c, e in events if event_type(e) == "output"]
+
+        assert len(attached_events) == 1
+        # Snapshot should only be sent when capture is first started
+        # Second connection joining existing capture should get buffered output
+        assert len(snapshot_events) == 0
+        assert len(output_events) >= 1
+
+    @pytest.mark.asyncio
+    async def test_reconnect_evicted_sends_snapshot(self, setup):
+        """Reconnect with evicted buffer should send snapshot instead of OutputSkipped."""
+        manager, tmux_service, events = setup
+
+        # Set up with a very small buffer
+        command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        with patch(
+            "ras.terminal.manager.OutputCapture"
+        ) as mock_capture_class:
+            mock_capture = AsyncMock()
+            mock_capture.start = AsyncMock()
+            mock_capture_class.return_value = mock_capture
+
+            await manager.handle_command("conn1", command)
+
+        # Fill buffer and evict old data
+        buffer = manager._buffers["abc123def456"]
+        # Each append increments sequence, fill buffer to force eviction
+        for i in range(100):
+            buffer.append(b"x" * 1024)
+
+        events.clear()
+
+        # Reconnect with a sequence that's been evicted (seq 5 is long gone)
+        reconnect_command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=5)
+        )
+
+        await manager.handle_command("conn2", reconnect_command)
+
+        # Should have attached event + snapshot (instead of OutputSkipped)
+        attached_events = [(c, e) for c, e in events if event_type(e) == "attached"]
+        snapshot_events = [(c, e) for c, e in events if event_type(e) == "snapshot"]
+        skipped_events = [(c, e) for c, e in events if event_type(e) == "skipped"]
+
+        assert len(attached_events) == 1
+        assert len(snapshot_events) == 1
+        assert len(skipped_events) == 0  # No OutputSkipped - we sent snapshot instead
+
+        snapshot = snapshot_events[0][1].snapshot
+        assert snapshot.session_id == "abc123def456"
+
+    @pytest.mark.asyncio
+    async def test_snapshot_failure_non_fatal(self, setup):
+        """capture_pane failure should log but not block attach."""
+        manager, tmux_service, events = setup
+        tmux_service.capture_pane = AsyncMock(side_effect=Exception("tmux error"))
+
+        command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        with patch(
+            "ras.terminal.manager.OutputCapture"
+        ) as mock_capture_class:
+            mock_capture = AsyncMock()
+            mock_capture.start = AsyncMock()
+            mock_capture_class.return_value = mock_capture
+
+            await manager.handle_command("conn1", command)
+
+        # Should still have attached event even though snapshot failed
+        attached_events = [(c, e) for c, e in events if event_type(e) == "attached"]
+        snapshot_events = [(c, e) for c, e in events if event_type(e) == "snapshot"]
+
+        assert len(attached_events) == 1
+        assert len(snapshot_events) == 0  # No snapshot due to error
+
+    @pytest.mark.asyncio
+    async def test_fresh_attach_without_tmux_service_skips_snapshot(self):
+        """Fresh attach without tmux_service should skip snapshot."""
+        session_provider = MockSessionProvider()
+        session_provider.add_session("abc123def456", "ras-test-session")
+        events = []
+
+        manager = TerminalManager(
+            session_provider=session_provider,
+            tmux_executor=MockTmuxExecutor(),
+            send_event=lambda conn_id, event: events.append((conn_id, event)),
+        )
+
+        command = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+
+        with patch(
+            "ras.terminal.manager.OutputCapture"
+        ) as mock_capture_class:
+            mock_capture = AsyncMock()
+            mock_capture.start = AsyncMock()
+            mock_capture_class.return_value = mock_capture
+
+            await manager.handle_command("conn1", command)
+
+        # Should have attached event but no snapshot
+        attached_events = [(c, e) for c, e in events if event_type(e) == "attached"]
+        snapshot_events = [(c, e) for c, e in events if event_type(e) == "snapshot"]
+
+        assert len(attached_events) == 1
+        assert len(snapshot_events) == 0

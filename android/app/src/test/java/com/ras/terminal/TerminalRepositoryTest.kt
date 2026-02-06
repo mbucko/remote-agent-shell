@@ -13,6 +13,7 @@ import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalDetached
 import com.ras.proto.TerminalError
 import com.ras.proto.TerminalOutput
+import com.ras.proto.TerminalSnapshot
 import com.ras.proto.OutputSkipped
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import com.google.protobuf.ByteString
@@ -1299,6 +1300,102 @@ class TerminalRepositoryTest {
 
 
         assertNull(repository.state.value.error?.sessionId)
+    }
+
+    // ==========================================================================
+    // Event Handling - Snapshot
+    // ==========================================================================
+
+    @Tag("unit")
+    @Test
+    fun `handleSnapshot emits to output flow`() = runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttachedState()
+
+        repository.output.test {
+            val event = ProtoTerminalEvent.newBuilder()
+                .setSnapshot(TerminalSnapshot.newBuilder()
+                    .setSessionId("abc123def456")
+                    .setData(ByteString.copyFromUtf8("$ echo hello\nhello\n$ "))
+                    .setStreamSeq(42)
+                    .build())
+                .build()
+
+            terminalEventsFlow.emit(event)
+
+            val bytes = awaitItem()
+            assertEquals("$ echo hello\nhello\n$ ", String(bytes))
+        }
+    }
+
+    @Tag("unit")
+    @Test
+    fun `handleSnapshot updates lastSequence`() = runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttachedState()
+
+        val event = ProtoTerminalEvent.newBuilder()
+            .setSnapshot(TerminalSnapshot.newBuilder()
+                .setSessionId("abc123def456")
+                .setData(ByteString.copyFromUtf8("data"))
+                .setStreamSeq(99)
+                .build())
+            .build()
+
+        terminalEventsFlow.emit(event)
+
+        assertEquals(99L, repository.state.value.lastSequence)
+    }
+
+    @Tag("unit")
+    @Test
+    fun `handleSnapshot emits Snapshot event`() = runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttachedState()
+
+        repository.events.test {
+            val event = ProtoTerminalEvent.newBuilder()
+                .setSnapshot(TerminalSnapshot.newBuilder()
+                    .setSessionId("abc123def456")
+                    .setData(ByteString.copyFromUtf8("screen content"))
+                    .setStreamSeq(50)
+                    .build())
+                .build()
+
+            terminalEventsFlow.emit(event)
+
+            val emitted = awaitItem() as TerminalEvent.Snapshot
+            assertEquals("abc123def456", emitted.sessionId)
+            assertEquals("screen content", String(emitted.data))
+            assertEquals(50L, emitted.streamSeq)
+        }
+    }
+
+    @Tag("unit")
+    @Test
+    fun `handleSnapshot does not regress lastSequence`() = runTest(testDispatcher, timeout = 1.seconds) {
+        simulateAttachedState()
+
+        // First set a high sequence via output
+        val outputEvent = ProtoTerminalEvent.newBuilder()
+            .setOutput(TerminalOutput.newBuilder()
+                .setSessionId("abc123def456")
+                .setData(ByteString.copyFromUtf8("data"))
+                .setSequence(100)
+                .build())
+            .build()
+        terminalEventsFlow.emit(outputEvent)
+
+        assertEquals(100L, repository.state.value.lastSequence)
+
+        // Now snapshot with lower sequence should not regress
+        val snapshotEvent = ProtoTerminalEvent.newBuilder()
+            .setSnapshot(TerminalSnapshot.newBuilder()
+                .setSessionId("abc123def456")
+                .setData(ByteString.copyFromUtf8("snapshot"))
+                .setStreamSeq(50)
+                .build())
+            .build()
+        terminalEventsFlow.emit(snapshotEvent)
+
+        assertEquals(100L, repository.state.value.lastSequence)
     }
 
     // ==========================================================================

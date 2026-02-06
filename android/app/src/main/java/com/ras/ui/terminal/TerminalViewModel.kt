@@ -261,6 +261,16 @@ class TerminalViewModel @Inject constructor(
                     }
                 }
             }
+            is TerminalEvent.Snapshot -> {
+                // Snapshot during reconnect (buffer was evicted): reset emulator
+                // so snapshot content replaces stale screen, not appends to it.
+                // The snapshot data flows through the output stream and will be
+                // processed by observeTerminalOutput after this reset.
+                if (terminalState.value.isAttached) {
+                    Log.d(TAG, "Snapshot received during reconnect - resetting emulator")
+                    terminalEmulator.reset()
+                }
+            }
             else -> { /* Handled via state */ }
         }
     }

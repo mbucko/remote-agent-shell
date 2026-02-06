@@ -274,26 +274,33 @@ class TmuxService:
 
         await self._run("select-window", "-t", f"{session_id}:{window_id}")
 
-    async def capture_pane(self, session_id: str, lines: int = 100) -> str:
+    async def capture_pane(
+        self, session_id: str, lines: int = 100, include_escapes: bool = False
+    ) -> str:
         """Capture pane content.
 
         Args:
             session_id: Session ID (e.g., "$0").
             lines: Number of lines to capture from history.
+            include_escapes: If True, include ANSI escape sequences (-e flag).
 
         Returns:
             Captured content as string.
         """
         await self.verify()
 
-        stdout, _, _ = await self._run(
+        args = [
             "capture-pane",
             "-t",
             session_id,
             "-p",  # Print to stdout
             "-S",
             f"-{lines}",  # Start line (negative = from history)
-        )
+        ]
+        if include_escapes:
+            args.append("-e")
+
+        stdout, _, _ = await self._run(*args)
 
         return stdout.decode()
 

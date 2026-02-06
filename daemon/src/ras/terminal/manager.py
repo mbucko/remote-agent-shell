@@ -14,6 +14,7 @@ from ras.proto.ras import (
     TerminalError,
     TerminalEvent,
     TerminalOutput,
+    TerminalSnapshot,
 )
 from ras.terminal.buffer import CircularBuffer
 from ras.terminal.capture import OutputCapture
@@ -58,6 +59,12 @@ class TmuxServiceProtocol(Protocol):
         """Set session window-size option to 'latest'."""
         ...
 
+    async def capture_pane(
+        self, session_id: str, lines: int = 100, include_escapes: bool = False
+    ) -> str:
+        """Capture pane content."""
+        ...
+
 
 class TerminalManager:
     """Manages terminal I/O for all sessions.
@@ -71,7 +78,7 @@ class TerminalManager:
         session_provider: SessionProvider,
         tmux_executor: TmuxExecutor,
         send_event: Callable[[str, TerminalEvent], None],
-        buffer_size_kb: int = 100,
+        buffer_size_kb: int = 16,
         chunk_interval_ms: int = 50,
         tmux_path: str = "tmux",
         socket_path: Optional[str] = None,
@@ -202,8 +209,11 @@ class TerminalManager:
 
         buffer = self._buffers[session_id]
 
-        # Start capture if not running
-        if session_id not in self._captures:
+        # Track whether capture was already running before this attach
+        just_started_capture = session_id not in self._captures
+
+        # Start capture if not running (before snapshot so no output is lost)
+        if just_started_capture:
             capture = OutputCapture(
                 session_id=session_id,
                 tmux_name=tmux_name,
@@ -258,22 +268,32 @@ class TerminalManager:
         )
         self._send_event(connection_id, event)
 
-        # Send buffered output from requested sequence
-        if attach.from_sequence >= 0:
+        # Decide what to send after attached event
+        if attach.from_sequence == 0 and just_started_capture:
+            # Fresh attach: send snapshot of current screen
+            await self._send_snapshot(connection_id, session_id, tmux_name, buffer)
+        elif attach.from_sequence > 0:
+            # Reconnect: try to send buffered chunks
             chunks, missing_from = buffer.get_from_sequence(attach.from_sequence)
 
             if missing_from is not None:
-                # Some data was dropped
-                skip_event = TerminalEvent(
-                    skipped=OutputSkipped(
-                        session_id=session_id,
-                        from_sequence=missing_from,
-                        to_sequence=buffer.start_sequence - 1,
+                # Buffer evicted - send snapshot instead of OutputSkipped
+                await self._send_snapshot(connection_id, session_id, tmux_name, buffer)
+            else:
+                # Send buffered chunks
+                for chunk in chunks:
+                    out_event = TerminalEvent(
+                        output=TerminalOutput(
+                            session_id=session_id,
+                            data=chunk.data,
+                            sequence=chunk.sequence,
+                        )
                     )
-                )
-                self._send_event(connection_id, skip_event)
-
-            # Send buffered chunks
+                    self._send_event(connection_id, out_event)
+        else:
+            # from_sequence=0 but capture already running (second client joining)
+            # Send buffered output
+            chunks, _ = buffer.get_from_sequence(0)
             for chunk in chunks:
                 out_event = TerminalEvent(
                     output=TerminalOutput(
@@ -348,6 +368,42 @@ class TerminalManager:
             self._send_error(
                 connection_id, session_id, error_code, f"Input failed: {error_code}"
             )
+
+    async def _send_snapshot(
+        self,
+        connection_id: str,
+        session_id: str,
+        tmux_name: str,
+        buffer: CircularBuffer,
+    ) -> None:
+        """Send a terminal snapshot via tmux capture-pane.
+
+        Non-fatal: if capture fails, log and continue (live streaming still works).
+
+        Args:
+            connection_id: The connection ID to send to.
+            session_id: The session ID.
+            tmux_name: The tmux session name.
+            buffer: The output buffer (for current sequence).
+        """
+        if not self._tmux_service:
+            return
+
+        try:
+            # 3 screens of 24 rows = 72 lines of scrollback
+            content = await self._tmux_service.capture_pane(
+                tmux_name, lines=72, include_escapes=True
+            )
+            snapshot_event = TerminalEvent(
+                snapshot=TerminalSnapshot(
+                    session_id=session_id,
+                    data=content.encode("utf-8"),
+                    stream_seq=buffer.current_sequence,
+                )
+            )
+            self._send_event(connection_id, snapshot_event)
+        except Exception as e:
+            logger.warning(f"Failed to capture snapshot for {session_id}: {e}")
 
     def _on_output(self, session_id: str, data: bytes) -> None:
         """Called when output is captured from tmux.

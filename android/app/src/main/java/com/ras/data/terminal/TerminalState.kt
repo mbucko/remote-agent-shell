@@ -233,6 +233,30 @@ sealed class TerminalEvent {
         val snippet: String,
         val timestamp: Long
     ) : TerminalEvent()
+
+    /**
+     * Terminal snapshot received (screen capture from tmux).
+     */
+    data class Snapshot(
+        val sessionId: String,
+        val data: ByteArray,
+        val streamSeq: Long
+    ) : TerminalEvent() {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is Snapshot) return false
+            return sessionId == other.sessionId &&
+                data.contentEquals(other.data) &&
+                streamSeq == other.streamSeq
+        }
+
+        override fun hashCode(): Int {
+            var result = sessionId.hashCode()
+            result = 31 * result + data.contentHashCode()
+            result = 31 * result + streamSeq.hashCode()
+            return result
+        }
+    }
 }
 
 /**

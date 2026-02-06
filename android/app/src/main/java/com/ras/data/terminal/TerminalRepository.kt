@@ -14,6 +14,7 @@ import com.ras.proto.TerminalCommand
 import com.ras.proto.TerminalInput
 import com.ras.proto.TerminalNotification
 import com.ras.proto.TerminalResize
+import com.ras.proto.TerminalSnapshot
 import com.ras.proto.TerminalEvent as ProtoTerminalEvent
 import com.ras.proto.clipboard.ClipboardMessage
 import com.google.protobuf.ByteString
@@ -126,6 +127,7 @@ class TerminalRepository @Inject constructor(
             event.hasError() -> handleError(event.error)
             event.hasSkipped() -> handleSkipped(event.skipped)
             event.hasNotification() -> handleNotification(event.notification)
+            event.hasSnapshot() -> handleSnapshot(event.snapshot)
         }
     }
 
@@ -287,6 +289,28 @@ class TerminalRepository @Inject constructor(
                 body = notification.body,
                 snippet = notification.snippet,
                 timestamp = notification.timestamp
+            )
+        )
+    }
+
+    private suspend fun handleSnapshot(snapshot: TerminalSnapshot) {
+        val data = snapshot.data.toByteArray()
+        Log.d(TAG, "Snapshot: ${data.size} bytes, stream_seq=${snapshot.streamSeq}")
+
+        // Update sequence from snapshot
+        _state.update { current ->
+            current.copy(lastSequence = maxOf(current.lastSequence, snapshot.streamSeq))
+        }
+
+        // Emit raw output for terminal emulator (same path as regular output)
+        _output.emit(data)
+
+        // Emit event for listeners (e.g., ViewModel needs to know it's a snapshot)
+        _events.emit(
+            TerminalEvent.Snapshot(
+                sessionId = snapshot.sessionId,
+                data = data,
+                streamSeq = snapshot.streamSeq
             )
         )
     }

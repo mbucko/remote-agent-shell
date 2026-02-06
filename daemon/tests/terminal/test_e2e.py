@@ -114,6 +114,9 @@ class EventCollector:
     def get_skipped_events(self) -> list:
         return [(cid, e) for cid, e in self.events if self._get_event_type(e) == "skipped"]
 
+    def get_snapshot_events(self) -> list:
+        return [(cid, e) for cid, e in self.events if self._get_event_type(e) == "snapshot"]
+
 
 @pytest.fixture
 def mock_session_provider():
@@ -253,35 +256,44 @@ class TestE2EAttachFlow:
         assert output_events[1][1].output.data == b"chunk3"
 
     @pytest.mark.asyncio
-    async def test_attach_with_from_sequence_zero_sends_all_buffered_output(
+    async def test_attach_with_from_sequence_zero_second_client_sends_buffered_output(
         self, manager, mock_session_provider, event_collector
     ):
-        """Attach with from_sequence=0 sends all buffered output from beginning."""
+        """Second client joining (from_sequence=0, capture already running) gets buffered output."""
         mock_session_provider.add_session("abc123def456", "ras-test-session")
 
-        # Pre-populate buffer with data
-        manager._buffers["abc123def456"] = CircularBuffer(max_size_bytes=10000)
-        manager._buffers["abc123def456"].append(b"first")
-        manager._buffers["abc123def456"].append(b"second")
-        manager._buffers["abc123def456"].append(b"third")
-
+        # First attach to start capture
         with patch("ras.terminal.manager.OutputCapture") as mock_capture_class:
             mock_capture = AsyncMock()
             mock_capture.start = AsyncMock()
             mock_capture_class.return_value = mock_capture
 
-            # Attach requesting from sequence 0 (all output from beginning)
             command = TerminalCommand(
                 attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
             )
             await manager.handle_command("conn1", command)
 
+        # Simulate some output arriving via pipe-pane
+        manager._on_output("abc123def456", b"first")
+        manager._on_output("abc123def456", b"second")
+        manager._on_output("abc123def456", b"third")
+
+        event_collector.clear()
+
+        # Second client joins with from_sequence=0 (capture already running)
+        command2 = TerminalCommand(
+            attach=AttachTerminal(session_id="abc123def456", from_sequence=0)
+        )
+        await manager.handle_command("conn2", command2)
+
         # Should get attached + ALL buffered chunks
-        events = event_collector.events
+        events = event_collector.get_events_for("conn2")
         # First event: attached
-        assert events[0][1].attached.session_id == "abc123def456"
+        assert event_collector._get_event_type(events[0]) == "attached"
+        assert events[0].attached.session_id == "abc123def456"
         # Next events: all buffered output starting from sequence 0
-        output_events = event_collector.get_output_events()
+        output_events = [(cid, e) for cid, e in event_collector.events
+                         if cid == "conn2" and event_collector._get_event_type(e) == "output"]
         assert len(output_events) == 3
         assert output_events[0][1].output.data == b"first"
         assert output_events[0][1].output.sequence == 0
@@ -778,7 +790,7 @@ class TestE2EBufferOverflow:
     async def test_buffer_overflow_evicts_old_data(
         self, manager, mock_session_provider, event_collector
     ):
-        """Buffer overflow evicts old data and reports skipped sequences."""
+        """Buffer overflow evicts old data; reconnect with evicted sequence sends snapshot fallback."""
         mock_session_provider.add_session("abc123def456", "ras-test-session")
 
         # Create small buffer (100 bytes)
@@ -804,10 +816,15 @@ class TestE2EBufferOverflow:
             )
             await manager.handle_command("conn1", command)
 
-        # Should receive skipped event indicating data loss
+        # With snapshot-based attach, evicted buffer sends snapshot instead of OutputSkipped.
+        # Since this manager has no tmux_service, snapshot is silently skipped.
+        # No OutputSkipped event and no snapshot event.
         skipped = event_collector.get_skipped_events()
-        assert len(skipped) == 1
-        assert skipped[0][1].skipped.from_sequence == 5
+        assert len(skipped) == 0
+
+        # Should still have attached event
+        attached = event_collector.get_attached_events()
+        assert len(attached) == 1
 
     @pytest.mark.asyncio
     async def test_reconnect_with_valid_sequence_no_skip(

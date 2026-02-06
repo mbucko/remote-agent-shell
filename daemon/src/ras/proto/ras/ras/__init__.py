@@ -359,6 +359,7 @@ class TerminalEvent(betterproto.Message):
     error: "TerminalError" = betterproto.message_field(4, group="event")
     skipped: "OutputSkipped" = betterproto.message_field(5, group="event")
     notification: "TerminalNotification" = betterproto.message_field(6, group="event")
+    snapshot: "TerminalSnapshot" = betterproto.message_field(7, group="event")
 
 
 @dataclass(eq=False, repr=False)
@@ -399,6 +400,13 @@ class OutputSkipped(betterproto.Message):
     from_sequence: int = betterproto.uint64_field(2)
     to_sequence: int = betterproto.uint64_field(3)
     bytes_skipped: int = betterproto.uint32_field(4)
+
+
+@dataclass(eq=False, repr=False)
+class TerminalSnapshot(betterproto.Message):
+    session_id: str = betterproto.string_field(1)
+    data: bytes = betterproto.bytes_field(2)
+    stream_seq: int = betterproto.uint64_field(3)
 
 
 @dataclass(eq=False, repr=False)
