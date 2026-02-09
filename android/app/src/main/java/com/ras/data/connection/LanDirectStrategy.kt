@@ -79,6 +79,16 @@ class LanDirectStrategy @Inject constructor(
             val wsUrl = "ws://${daemon.host}:${daemon.port}/ws/${context.deviceId}"
             Log.i(TAG, "Connecting to $wsUrl")
 
+            // Use network-bound client to bypass VPN if the daemon was discovered on a specific network
+            val client = if (daemon.network != null) {
+                Log.i(TAG, "Using network-bound socket factory to bypass VPN")
+                okHttpClient.newBuilder()
+                    .socketFactory(daemon.network.socketFactory)
+                    .build()
+            } else {
+                okHttpClient
+            }
+
             // Step 2: Connect and authenticate
             onProgress(ConnectionStep("Authenticating", "Verifying connection"))
             val transport = LanDirectTransport.connect(
@@ -86,7 +96,7 @@ class LanDirectStrategy @Inject constructor(
                 port = daemon.port,
                 deviceId = context.deviceId,
                 authKey = context.authToken,
-                client = okHttpClient
+                client = client
             )
 
             Log.i(TAG, "LAN Direct connection established!")

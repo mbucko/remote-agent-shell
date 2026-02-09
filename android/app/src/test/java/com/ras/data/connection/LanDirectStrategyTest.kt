@@ -1,6 +1,7 @@
 package com.ras.data.connection
 
 import android.content.Context
+import android.net.Network
 import com.ras.data.discovery.DiscoveredDaemon
 import com.ras.data.discovery.MdnsDiscoveryService
 import io.mockk.*
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Tag
+import javax.net.SocketFactory
 
 /**
  * Tests for LanDirectStrategy.
@@ -28,14 +30,14 @@ class LanDirectStrategyTest {
     private lateinit var strategy: LanDirectStrategy
     private lateinit var mockContext: Context
     private lateinit var mockMdnsService: MdnsDiscoveryService
-    private lateinit var mockOkHttpClient: OkHttpClient
+    private lateinit var mockOkHttpClient: OkHttpClient  // Real OkHttpClient for newBuilder() support
     private lateinit var mockSignaling: SignalingChannel
 
     @BeforeEach
     fun setup() {
         mockContext = mockk(relaxed = true)
         mockMdnsService = mockk(relaxed = true)
-        mockOkHttpClient = mockk(relaxed = true)
+        mockOkHttpClient = OkHttpClient()
         mockSignaling = mockk(relaxed = true)
         strategy = LanDirectStrategy(mockContext, mockMdnsService, mockOkHttpClient)
         mockkObject(LanDirectTransport.Companion)
@@ -294,5 +296,73 @@ class LanDirectStrategyTest {
                 client = mockOkHttpClient
             )
         }
+    }
+
+    // ==================== VPN Bypass Tests ====================
+
+    @Tag("unit")
+    @Test
+    fun `connect uses network-bound client when daemon has network`() = runTest {
+        val mockNetwork = mockk<Network>()
+        val mockSocketFactory = mockk<SocketFactory>()
+        every { mockNetwork.socketFactory } returns mockSocketFactory
+
+        val daemon = createDaemon().copy(network = mockNetwork)
+        coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
+
+        strategy.detect()
+
+        val mockTransport = mockk<LanDirectTransport>(relaxed = true)
+        val clientSlot = slot<OkHttpClient>()
+        coEvery { LanDirectTransport.connect(any(), any(), any(), any(), capture(clientSlot)) } returns mockTransport
+
+        strategy.connect(createContext()) {}
+
+        // Should have passed a client with the network's socket factory, not the injected one
+        assertNotEquals(mockOkHttpClient, clientSlot.captured, "Should create a new client, not use injected one")
+        assertEquals(mockSocketFactory, clientSlot.captured.socketFactory, "Client should use network's socket factory")
+    }
+
+    @Tag("unit")
+    @Test
+    fun `connect uses default client when daemon has no network`() = runTest {
+        val daemon = createDaemon() // network defaults to null
+        coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
+
+        strategy.detect()
+
+        val mockTransport = mockk<LanDirectTransport>(relaxed = true)
+        val clientSlot = slot<OkHttpClient>()
+        coEvery { LanDirectTransport.connect(any(), any(), any(), any(), capture(clientSlot)) } returns mockTransport
+
+        strategy.connect(createContext()) {}
+
+        // Should pass the injected client unchanged
+        assertEquals(mockOkHttpClient, clientSlot.captured, "Should use injected client when no network")
+    }
+
+    @Tag("unit")
+    @Test
+    fun `detect populates network from mDNS`() = runTest {
+        val mockNetwork = mockk<Network>()
+        val daemon = createDaemon().copy(network = mockNetwork)
+        coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
+
+        val result = strategy.detect()
+
+        assertTrue(result is DetectionResult.Available)
+
+        // Now connect and verify the network-bound daemon is cached
+        val mockSocketFactory = mockk<SocketFactory>()
+        every { mockNetwork.socketFactory } returns mockSocketFactory
+
+        val mockTransport = mockk<LanDirectTransport>(relaxed = true)
+        val clientSlot = slot<OkHttpClient>()
+        coEvery { LanDirectTransport.connect(any(), any(), any(), any(), capture(clientSlot)) } returns mockTransport
+
+        strategy.connect(createContext()) {}
+
+        // Cached daemon should have network, so client should use network socket factory
+        assertEquals(mockSocketFactory, clientSlot.captured.socketFactory, "Cached daemon should preserve network")
     }
 }

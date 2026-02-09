@@ -1,6 +1,7 @@
 package com.ras.data.discovery
 
 import android.content.Context
+import android.net.Network
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
@@ -22,7 +23,8 @@ data class DiscoveredDaemon(
     val host: String,
     val port: Int,
     val deviceId: String?,
-    val addresses: List<String>
+    val addresses: List<String>,
+    val network: Network? = null
 )
 
 /**
@@ -220,7 +222,8 @@ class MdnsDiscoveryService(
                     host = resolvedService.host?.hostAddress ?: return callback(null),
                     port = resolvedService.port,
                     deviceId = deviceId,
-                    addresses = addresses
+                    addresses = addresses,
+                    network = resolvedService.network
                 )
                 callback(daemon)
             }

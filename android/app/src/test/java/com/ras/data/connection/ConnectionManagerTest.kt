@@ -188,6 +188,35 @@ class ConnectionManagerTest {
 
     @Tag("unit")
     @Test
+    fun `startPingLoop sends ping immediately`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+
+        val fastConfig = ConnectionConfig(pingIntervalMs = 15_000L)
+        val fastPingManager = ConnectionManager(
+            webRtcClientFactory = webRTCClientFactory,
+            ioDispatcher = testDispatcher,
+            config = fastConfig
+        )
+
+        fastPingManager.connect(webRTCClient, authKey)
+        sentMessages.clear()
+
+        // Advance just enough for the immediate ping to fire (not 15s)
+        advanceTimeBy(100L)
+
+        // Should have sent at least one ping immediately (not waiting for 15s)
+        assertTrue(sentMessages.isNotEmpty(), "Should send immediate ping at t=0")
+
+        val codec = BytesCodec(authKey.copyOf())
+        val decrypted = codec.decode(sentMessages[0])
+        val rasCommand = RasCommand.parseFrom(decrypted)
+        assertTrue(rasCommand.hasPing(), "First message after connect should be a Ping")
+
+        fastPingManager.disconnect()
+    }
+
+    @Tag("unit")
+    @Test
     fun `ping loop sends pings periodically to keep connection alive`() = runTest {
         val testDispatcher = StandardTestDispatcher(testScheduler)
 

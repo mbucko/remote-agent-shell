@@ -996,6 +996,175 @@ class ConnectionManagerIntegrationTest {
     }
 
     // ============================================================================
+    // SECTION 4c: Connection Path Resolution Tests
+    // ============================================================================
+
+    @Tag("integration")
+    @Test
+    fun `pong resolves connection path when initially null`() = runTest {
+        // Use a LanDirectTransport mock - updateConnectionPath builds path from host/port
+        val mockLanTransport = mockk<LanDirectTransport>(relaxed = true)
+        every { mockLanTransport.type } returns TransportType.LAN_DIRECT
+        every { mockLanTransport.isConnected } returns true
+        every { mockLanTransport.host } returns "192.168.1.38"
+        every { mockLanTransport.port } returns 8765
+
+        val transportSentMessages = mutableListOf<ByteArray>()
+        val transportIncoming = Channel<ByteArray>(Channel.UNLIMITED)
+
+        coEvery { mockLanTransport.send(any()) } coAnswers {
+            transportSentMessages.add(firstArg())
+        }
+        coEvery { mockLanTransport.receive(any()) } coAnswers {
+            val timeoutMs = firstArg<Long>()
+            withTimeout(timeoutMs) {
+                transportIncoming.receive()
+            }
+        }
+
+        // Use a config with ping disabled so we control timing
+        val config = ConnectionConfig(pingIntervalMs = 0L)
+        val manager = ConnectionManager(
+            webRtcClientFactory = webRTCClientFactory,
+            ioDispatcher = Dispatchers.Unconfined,
+            config = config
+        )
+
+        manager.connectWithTransport(mockLanTransport, authKey)
+
+        // For LanDirectTransport, path is resolved eagerly (no ICE race), so it should be set
+        // But after our fix, the eager call is removed — path should be null initially
+        // (This test validates the pong-driven mechanism)
+        assertNull(manager.connectionPath.value, "Connection path should be null initially (no eager call)")
+
+        // Send a ping to set lastPingTimestamp
+        manager.sendPing()
+
+        // Parse the ping to get timestamp
+        val pingDecrypted = codec.decode(transportSentMessages.last())
+        val pingCommand = RasCommand.parseFrom(pingDecrypted)
+        val pingTimestamp = pingCommand.ping.timestamp
+
+        // Simulate pong response
+        val pongEvent = RasEvent.newBuilder()
+            .setPong(Pong.newBuilder().setTimestamp(pingTimestamp))
+            .build()
+        val encrypted = codec.encode(pongEvent.toByteArray())
+
+        delay(50)
+        transportIncoming.send(encrypted)
+        delay(50)
+
+        // Path should now be resolved via pong handler
+        assertNotNull(manager.connectionPath.value, "Connection path should be resolved after pong")
+        assertEquals(PathType.LAN_DIRECT, manager.connectionPath.value?.type)
+
+        manager.disconnect()
+        transportIncoming.close()
+    }
+
+    @Tag("integration")
+    @Test
+    fun `immediate ping sent on connection`() = runTest {
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val config = ConnectionConfig(pingIntervalMs = 5000L)
+        val manager = ConnectionManager(
+            webRtcClientFactory = webRTCClientFactory,
+            ioDispatcher = testDispatcher,
+            config = config
+        )
+
+        manager.connect(webRTCClient, authKey)
+
+        // ConnectionReady is sent first, then immediate ping
+        // Advance just past 0 to let the immediate ping fire
+        advanceTimeBy(100L)
+
+        // Should have sent: ConnectionReady + at least one ping (immediate)
+        assertTrue(sentMessages.size >= 2, "Should send ConnectionReady and immediate ping")
+
+        val secondDecrypted = codec.decode(sentMessages[1])
+        val secondCommand = RasCommand.parseFrom(secondDecrypted)
+        assertTrue(secondCommand.hasPing(), "Second message should be immediate ping")
+
+        manager.disconnect()
+    }
+
+    @Tag("integration")
+    @Test
+    fun `connection path retried on subsequent pongs if first attempt fails`() = runTest {
+        // Use WebRTC transport where getActivePath() can return null initially
+        val mockWebRTCClient = mockk<WebRTCClient>(relaxed = true)
+        coEvery { mockWebRTCClient.send(any()) } coAnswers {
+            sentMessages.add(firstArg())
+        }
+        coEvery { mockWebRTCClient.receive(any()) } coAnswers {
+            val timeoutMs = firstArg<Long>()
+            withTimeout(timeoutMs) {
+                incomingMessages.receive()
+            }
+        }
+        every { mockWebRTCClient.isHealthy(any()) } returns true
+        every { mockWebRTCClient.getIdleTimeMs() } returns 0L
+        every { mockWebRTCClient.isReady() } returns true
+
+        // First getActivePath call returns null (ICE not ready), second returns path
+        val path = ConnectionPath(
+            local = CandidateInfo("srflx", "1.2.3.4", 12345, false),
+            remote = CandidateInfo("srflx", "5.6.7.8", 54321, false),
+            type = PathType.RELAY
+        )
+        coEvery { mockWebRTCClient.getActivePath() } returns null andThen path
+
+        val config = ConnectionConfig(pingIntervalMs = 0L)
+        val manager = ConnectionManager(
+            webRtcClientFactory = webRTCClientFactory,
+            ioDispatcher = Dispatchers.Unconfined,
+            config = config
+        )
+
+        manager.connect(mockWebRTCClient, authKey)
+
+        // Path should be null (eager call removed + getActivePath returns null)
+        assertNull(manager.connectionPath.value, "Path should be null initially")
+
+        // Send ping then simulate pong (first attempt - getActivePath returns null)
+        sentMessages.clear()
+        manager.sendPing()
+        val pingDecrypted = codec.decode(sentMessages.last())
+        val pingCommand = RasCommand.parseFrom(pingDecrypted)
+
+        val pong1 = RasEvent.newBuilder()
+            .setPong(Pong.newBuilder().setTimestamp(pingCommand.ping.timestamp))
+            .build()
+        delay(50)
+        incomingMessages.send(codec.encode(pong1.toByteArray()))
+        delay(50)
+
+        // Still null because getActivePath returned null
+        assertNull(manager.connectionPath.value, "Path should still be null after first pong")
+
+        // Second pong - getActivePath now returns a path
+        sentMessages.clear()
+        manager.sendPing()
+        val pingDecrypted2 = codec.decode(sentMessages.last())
+        val pingCommand2 = RasCommand.parseFrom(pingDecrypted2)
+
+        val pong2 = RasEvent.newBuilder()
+            .setPong(Pong.newBuilder().setTimestamp(pingCommand2.ping.timestamp))
+            .build()
+        delay(50)
+        incomingMessages.send(codec.encode(pong2.toByteArray()))
+        delay(50)
+
+        // Should be resolved now
+        assertNotNull(manager.connectionPath.value, "Path should be resolved on second pong")
+        assertEquals(PathType.RELAY, manager.connectionPath.value?.type)
+
+        manager.disconnect()
+    }
+
+    // ============================================================================
     // SECTION 5: Command Sending Tests
     // ============================================================================
 

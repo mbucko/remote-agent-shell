@@ -296,7 +296,6 @@ class ConnectionManager @Inject constructor(
 
             startEventListener()
             startHeartbeatMonitor()
-            startPingLoop()
             Log.i(TAG, "Connected to daemon with encryption")
         }
 
@@ -308,9 +307,6 @@ class ConnectionManager @Inject constructor(
                 sendConnectionReady()
             }
             Log.i(TAG, "Sent ConnectionReady to daemon - handoff complete")
-
-            // Query and store the connection path for visualization
-            updateConnectionPath()
         } catch (e: TimeoutCancellationException) {
             Log.e(TAG, "Timeout sending ConnectionReady - daemon unresponsive")
             disconnect()
@@ -321,6 +317,9 @@ class ConnectionManager @Inject constructor(
             disconnect()
             throw IllegalStateException("Failed to send ConnectionReady: ${e.message}", e)
         }
+
+        // Start ping loop AFTER ConnectionReady to ensure correct message ordering
+        startPingLoop()
     }
 
     /**
@@ -360,7 +359,6 @@ class ConnectionManager @Inject constructor(
 
             startTransportEventListener()
             startHeartbeatMonitor()
-            startPingLoop()
             Log.i(TAG, "Connected via ${t.type.displayName} with encryption")
         }
 
@@ -370,9 +368,6 @@ class ConnectionManager @Inject constructor(
                 sendConnectionReady()
             }
             Log.i(TAG, "Sent ConnectionReady - handoff complete")
-
-            // Query and store the connection path for visualization
-            updateConnectionPath()
         } catch (e: TimeoutCancellationException) {
             Log.e(TAG, "Timeout sending ConnectionReady")
             disconnect()
@@ -382,6 +377,9 @@ class ConnectionManager @Inject constructor(
             disconnect()
             throw IllegalStateException("Failed to send ConnectionReady: ${e.message}", e)
         }
+
+        // Start ping loop AFTER ConnectionReady to ensure correct message ordering
+        startPingLoop()
     }
 
     /**
@@ -782,13 +780,13 @@ class ConnectionManager @Inject constructor(
         pingJob?.cancel()
         pingJob = scope.launch {
             while (_isConnected.value && isActive) {
-                delay(config.pingIntervalMs)
                 try {
                     sendPing()
                     Log.d(TAG, "Sent keepalive ping")
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to send keepalive ping", e)
                 }
+                delay(config.pingIntervalMs)
             }
         }
     }
@@ -855,6 +853,9 @@ class ConnectionManager @Inject constructor(
             RasEvent.EventCase.PONG -> {
                 val latency = System.currentTimeMillis() - event.pong.timestamp
                 Log.d(TAG, "Pong received, latency: ${latency}ms")
+                if (_connectionPath.value == null) {
+                    updateConnectionPath()
+                }
                 updateLatency(latency)
             }
             RasEvent.EventCase.ERROR -> {

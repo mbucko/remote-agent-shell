@@ -81,13 +81,12 @@ class ConnectionHandoffContractTest {
         // After connect() returns, ConnectionReady MUST have been sent
         // If this fails, it means ConnectionReady is being sent asynchronously
         // which can cause race conditions
-        assertEquals(
-            1,
-            sentMessages.size,
+        assertTrue(
+            sentMessages.isNotEmpty(),
             "ConnectionReady must be sent synchronously during connect()"
         )
 
-        // Verify it's actually a ConnectionReady message
+        // Verify the FIRST message is ConnectionReady (immediate ping may follow)
         val codec = BytesCodec(authKey.copyOf())
         val decrypted = codec.decode(sentMessages[0])
         val command = RasCommand.parseFrom(decrypted)
