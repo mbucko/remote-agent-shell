@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 /**
@@ -15,6 +16,11 @@ import kotlin.coroutines.resume
  *
  * This grants kernel-level socket binding permission, which is required to
  * bypass VPN routing. The NSD-discovered Network doesn't carry this permission.
+ *
+ * Uses the persistent variant of requestNetwork() (no timeout parameter) because
+ * the timeout variant is one-shot: the system auto-releases the network request
+ * after onAvailable, revoking binding permission before OkHttp creates the socket.
+ * Timeout is handled via coroutine withTimeoutOrNull instead.
  *
  * The returned [WifiNetworkLease] keeps the network request alive. The binding
  * permission is valid until the lease is closed. Callers must close the lease
@@ -28,39 +34,37 @@ class ConnectivityManagerWifiNetworkProvider(
 
     companion object {
         private const val TAG = "WifiNetworkProvider"
-        private const val REQUEST_TIMEOUT_MS = 2000
+        private const val REQUEST_TIMEOUT_MS = 2000L
     }
 
     override suspend fun acquireWifiNetwork(): WifiNetworkLease? {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         return try {
-            suspendCancellableCoroutine { cont ->
-                val request = NetworkRequest.Builder()
-                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                    .build()
+            withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
+                suspendCancellableCoroutine { cont ->
+                    val request = NetworkRequest.Builder()
+                        .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                        .build()
 
-                val callback = object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) {
-                        // Don't unregister here — the binding permission is revoked on unregister.
-                        // Return a lease that the caller closes after socket creation.
-                        if (cont.isActive) {
-                            val lease = WifiNetworkLease(network) {
-                                try { cm.unregisterNetworkCallback(this) } catch (_: Exception) {}
+                    val callback = object : ConnectivityManager.NetworkCallback() {
+                        override fun onAvailable(network: Network) {
+                            if (cont.isActive) {
+                                val lease = WifiNetworkLease(network) {
+                                    try { cm.unregisterNetworkCallback(this) } catch (_: Exception) {}
+                                }
+                                cont.resume(lease)
                             }
-                            cont.resume(lease)
                         }
                     }
 
-                    override fun onUnavailable() {
-                        if (cont.isActive) cont.resume(null)
+                    cont.invokeOnCancellation {
+                        try { cm.unregisterNetworkCallback(callback) } catch (_: Exception) {}
                     }
-                }
 
-                cont.invokeOnCancellation {
-                    try { cm.unregisterNetworkCallback(callback) } catch (_: Exception) {}
+                    // Use persistent variant — the timeout variant (3-arg) auto-releases
+                    // the network after onAvailable, revoking binding permission.
+                    cm.requestNetwork(request, callback)
                 }
-
-                cm.requestNetwork(request, callback, REQUEST_TIMEOUT_MS)
             }
         } catch (e: CancellationException) {
             throw e
