@@ -88,7 +88,11 @@ class LanDirectTransport private constructor(
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    Log.e(TAG, "WebSocket failure: ${t.message}")
+                    if (t.message?.contains("EPERM") == true) {
+                        Log.w(TAG, "WebSocket failure: ${t.message}")
+                    } else {
+                        Log.e(TAG, "WebSocket failure: ${t.message}")
+                    }
                     connectionResult.trySend(Result.failure(IOException("WebSocket failed: ${t.message}", t)))
                     messageChannel.close(t)
                 }

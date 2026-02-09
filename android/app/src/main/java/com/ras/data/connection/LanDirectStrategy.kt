@@ -130,13 +130,14 @@ class LanDirectStrategy @Inject constructor(
                 canRetry = false  // Don't retry auth failures
             )
         } catch (e: Exception) {
-            if (e.message?.contains("EPERM") == true) {
+            val isVpnBlocked = e.message?.contains("EPERM") == true
+            if (isVpnBlocked) {
                 Log.w(TAG, "VPN blocks WiFi network bypass (allowBypass not enabled) — falling back to next strategy")
             } else {
                 Log.e(TAG, "LAN Direct connection failed", e)
             }
             return ConnectionResult.Failed(
-                error = e.message ?: "Connection failed",
+                error = if (isVpnBlocked) "VPN blocks local network" else (e.message ?: "Connection failed"),
                 exception = e,
                 canRetry = false  // Fall back to next strategy
             )
