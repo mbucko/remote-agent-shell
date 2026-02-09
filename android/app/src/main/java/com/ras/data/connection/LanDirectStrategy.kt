@@ -130,7 +130,11 @@ class LanDirectStrategy @Inject constructor(
                 canRetry = false  // Don't retry auth failures
             )
         } catch (e: Exception) {
-            Log.e(TAG, "LAN Direct connection failed", e)
+            if (e.message?.contains("EPERM") == true) {
+                Log.w(TAG, "VPN blocks WiFi network bypass (allowBypass not enabled) — falling back to next strategy")
+            } else {
+                Log.e(TAG, "LAN Direct connection failed", e)
+            }
             return ConnectionResult.Failed(
                 error = e.message ?: "Connection failed",
                 exception = e,

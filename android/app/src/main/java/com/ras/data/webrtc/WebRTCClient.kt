@@ -1,6 +1,8 @@
 package com.ras.data.webrtc
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import com.ras.util.GlobalConnectionTimer
 import kotlinx.coroutines.CompletableDeferred
@@ -88,10 +90,17 @@ class WebRTCClient(
     @Volatile
     private var lastReceiveTime: Long = 0
 
+    // Track when ICE connected for duration logging on disconnect
+    @Volatile
+    private var iceConnectedTime: Long = 0
+
     // Callback for when connection is lost (data channel closed or ICE failed)
     private var onDisconnect: (() -> Unit)? = null
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // ICE diagnostics: logs candidate pair details on disconnect
+    private val iceStatsLogger = IceStatsLogger()
 
     // ICE recovery: handles transient DISCONNECTED vs terminal FAILED
     private val iceRecoveryHandler = IceRecoveryHandler(scope) {
@@ -469,6 +478,55 @@ class WebRTCClient(
         Log.d(TAG, "WebRTC client closed")
     }
 
+    /**
+     * Log diagnostic ICE stats when connection degrades.
+     * Queries RTCStatsReport for the active candidate pair to help diagnose
+     * why ICE disconnected (VPN interference, NAT timeout, network change, etc.)
+     */
+    private fun logIceStats(trigger: String) {
+        val pc = synchronized(lock) { peerConnection } ?: return
+
+        val durationSec = if (iceConnectedTime > 0) {
+            (System.currentTimeMillis() - iceConnectedTime) / 1000
+        } else {
+            -1L
+        }
+
+        // Check VPN and network type
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val activeNetwork = connectivityManager?.activeNetwork
+        val caps = activeNetwork?.let { connectivityManager.getNetworkCapabilities(it) }
+        val hasVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        val hasWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val hasCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+        val networkType = buildList {
+            if (hasWifi) add("WiFi")
+            if (hasCellular) add("Cellular")
+            if (hasVpn) add("VPN")
+        }.ifEmpty { listOf("Unknown") }.joinToString("+")
+
+        Log.w(TAG, "ICE $trigger — duration=${durationSec}s, network=$networkType, vpn=$hasVpn")
+
+        pc.getStats { report ->
+            try {
+                // Convert RTCStats to our testable StatsEntry format
+                val statsMap = report.statsMap.mapValues { (_, stats) ->
+                    StatsEntry(type = stats.type, id = stats.id, members = stats.members)
+                }
+
+                val iceStats = iceStatsLogger.extractStats(statsMap)
+                if (iceStats == null) {
+                    Log.w(TAG, "ICE $trigger — no active candidate pair in stats")
+                    return@getStats
+                }
+
+                Log.w(TAG, iceStatsLogger.formatLogLine(trigger, iceStats))
+            } catch (e: Exception) {
+                Log.w(TAG, "ICE $trigger — failed to parse stats: ${e.message}")
+            }
+        }
+    }
+
     private fun checkNotClosed() {
         if (isClosed) {
             throw IllegalStateException("WebRTC client is closed")
@@ -490,6 +548,7 @@ class WebRTCClient(
                     }
                     PeerConnection.IceConnectionState.CONNECTED -> {
                         iceRecoveryHandler.onIceRecovered()
+                        iceConnectedTime = System.currentTimeMillis()
                         GlobalConnectionTimer.logMark("ice_connected")
                         // Log connection stats to see which candidate pair succeeded
                         peerConnection?.getStats { report ->
@@ -518,10 +577,12 @@ class WebRTCClient(
                     }
                     PeerConnection.IceConnectionState.DISCONNECTED -> {
                         GlobalConnectionTimer.logMark("ice_disconnected")
+                        logIceStats("DISCONNECTED")
                         iceRecoveryHandler.onIceDisconnected()
                     }
                     PeerConnection.IceConnectionState.FAILED -> {
                         GlobalConnectionTimer.logMark("ice_failed")
+                        logIceStats("FAILED")
                         iceRecoveryHandler.onIceFailed()
                     }
                     else -> {}

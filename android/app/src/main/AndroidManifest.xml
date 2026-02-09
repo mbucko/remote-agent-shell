@@ -17,6 +17,10 @@
     <!-- Required for connectedDevice foreground service type -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
+    <!-- WiFi direct discovery (Android 16+ Local Network Protection) -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+
     <!-- Vibration for notifications -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
