@@ -69,14 +69,11 @@ class ConnectionOrchestrator @Inject constructor(
             return@coroutineScope existingTransport
         }
 
-        // Guard: Don't start if already in CONNECTING state
-        if (_state.value == ConnectionState.CONNECTING) {
-            Log.w(TAG, "connect() called but already connecting - skipping")
-            return@coroutineScope null
-        }
-
-        // Cancel any existing connection attempt
+        // Reset state for new attempt — previous attempt may have left state as
+        // CONNECTING/FAILED/CANCELLED which would be stale for this new call
         connectionJob?.cancel()
+        _state.value = ConnectionState.IDLE
+        _currentTransport.value = null
 
         // Start global connection timer
         GlobalConnectionTimer.start("connection")

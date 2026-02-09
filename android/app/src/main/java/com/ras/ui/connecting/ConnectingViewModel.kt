@@ -12,6 +12,8 @@ import com.ras.domain.startup.ReconnectionResult
 import com.ras.domain.unpair.UnpairDeviceUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -46,6 +48,9 @@ class ConnectingViewModel @Inject constructor(
     private val _events = MutableSharedFlow<ConnectingUiEvent>()
     val events: SharedFlow<ConnectingUiEvent> = _events.asSharedFlow()
 
+    // Track active connection job so retry cancels the previous attempt
+    private var connectionJob: Job? = null
+
     init {
         // Ensure this device is selected before connecting
         viewModelScope.launch {
@@ -57,9 +62,12 @@ class ConnectingViewModel @Inject constructor(
 
     /**
      * Start or restart connection attempt.
+     * Cancels any in-flight attempt before starting a new one.
      */
     fun connect() {
-        viewModelScope.launch {
+        val oldJob = connectionJob
+        connectionJob = viewModelScope.launch {
+            oldJob?.cancelAndJoin()
             _state.value = ConnectingState.Connecting()
             attemptConnection()
         }
