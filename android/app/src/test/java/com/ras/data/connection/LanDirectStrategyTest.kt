@@ -32,6 +32,7 @@ class LanDirectStrategyTest {
     private lateinit var mockMdnsService: MdnsDiscoveryService
     private lateinit var mockOkHttpClient: OkHttpClient  // Real OkHttpClient for newBuilder() support
     private lateinit var mockSignaling: SignalingChannel
+    private lateinit var mockWifiNetworkProvider: WifiNetworkProvider
 
     @BeforeEach
     fun setup() {
@@ -39,7 +40,8 @@ class LanDirectStrategyTest {
         mockMdnsService = mockk(relaxed = true)
         mockOkHttpClient = OkHttpClient()
         mockSignaling = mockk(relaxed = true)
-        strategy = LanDirectStrategy(mockContext, mockMdnsService, mockOkHttpClient)
+        mockWifiNetworkProvider = mockk(relaxed = true)
+        strategy = LanDirectStrategy(mockContext, mockMdnsService, mockOkHttpClient, mockWifiNetworkProvider)
         mockkObject(LanDirectTransport.Companion)
     }
 
@@ -302,13 +304,16 @@ class LanDirectStrategyTest {
 
     @Tag("unit")
     @Test
-    fun `connect uses network-bound client when daemon has network`() = runTest {
-        val mockNetwork = mockk<Network>()
-        val mockSocketFactory = mockk<SocketFactory>()
-        every { mockNetwork.socketFactory } returns mockSocketFactory
-
-        val daemon = createDaemon().copy(network = mockNetwork)
+    fun `connect uses WiFi network socket factory when daemon has network`() = runTest {
+        val mockNsdNetwork = mockk<Network>()
+        val daemon = createDaemon().copy(network = mockNsdNetwork)
         coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
+
+        // WifiNetworkProvider returns a network with binding permission
+        val mockWifiNetwork = mockk<Network>()
+        val mockSocketFactory = mockk<SocketFactory>()
+        every { mockWifiNetwork.socketFactory } returns mockSocketFactory
+        coEvery { mockWifiNetworkProvider.getWifiNetwork() } returns mockWifiNetwork
 
         strategy.detect()
 
@@ -318,9 +323,8 @@ class LanDirectStrategyTest {
 
         strategy.connect(createContext()) {}
 
-        // Should have passed a client with the network's socket factory, not the injected one
         assertNotEquals(mockOkHttpClient, clientSlot.captured, "Should create a new client, not use injected one")
-        assertEquals(mockSocketFactory, clientSlot.captured.socketFactory, "Client should use network's socket factory")
+        assertEquals(mockSocketFactory, clientSlot.captured.socketFactory, "Client should use WiFi network's socket factory")
     }
 
     @Tag("unit")
@@ -337,24 +341,22 @@ class LanDirectStrategyTest {
 
         strategy.connect(createContext()) {}
 
-        // Should pass the injected client unchanged
+        // Should pass the injected client unchanged — no WiFi network request needed
         assertEquals(mockOkHttpClient, clientSlot.captured, "Should use injected client when no network")
+        coVerify(exactly = 0) { mockWifiNetworkProvider.getWifiNetwork() }
     }
 
     @Tag("unit")
     @Test
-    fun `detect populates network from mDNS`() = runTest {
-        val mockNetwork = mockk<Network>()
-        val daemon = createDaemon().copy(network = mockNetwork)
+    fun `connect falls back to default client when WiFi network unavailable`() = runTest {
+        val mockNsdNetwork = mockk<Network>()
+        val daemon = createDaemon().copy(network = mockNsdNetwork)
         coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
 
-        val result = strategy.detect()
+        // WiFi network request returns null
+        coEvery { mockWifiNetworkProvider.getWifiNetwork() } returns null
 
-        assertTrue(result is DetectionResult.Available)
-
-        // Now connect and verify the network-bound daemon is cached
-        val mockSocketFactory = mockk<SocketFactory>()
-        every { mockNetwork.socketFactory } returns mockSocketFactory
+        strategy.detect()
 
         val mockTransport = mockk<LanDirectTransport>(relaxed = true)
         val clientSlot = slot<OkHttpClient>()
@@ -362,7 +364,31 @@ class LanDirectStrategyTest {
 
         strategy.connect(createContext()) {}
 
-        // Cached daemon should have network, so client should use network socket factory
-        assertEquals(mockSocketFactory, clientSlot.captured.socketFactory, "Cached daemon should preserve network")
+        assertEquals(mockOkHttpClient, clientSlot.captured, "Should fall back to injected client when WiFi unavailable")
+    }
+
+    @Tag("unit")
+    @Test
+    fun `detect caches network from mDNS for VPN bypass`() = runTest {
+        val mockNsdNetwork = mockk<Network>()
+        val daemon = createDaemon().copy(network = mockNsdNetwork)
+        coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
+
+        val mockWifiNetwork = mockk<Network>()
+        val mockSocketFactory = mockk<SocketFactory>()
+        every { mockWifiNetwork.socketFactory } returns mockSocketFactory
+        coEvery { mockWifiNetworkProvider.getWifiNetwork() } returns mockWifiNetwork
+
+        val result = strategy.detect()
+        assertTrue(result is DetectionResult.Available)
+
+        // Connect — cached daemon should trigger VPN bypass
+        val mockTransport = mockk<LanDirectTransport>(relaxed = true)
+        val clientSlot = slot<OkHttpClient>()
+        coEvery { LanDirectTransport.connect(any(), any(), any(), any(), capture(clientSlot)) } returns mockTransport
+
+        strategy.connect(createContext()) {}
+
+        assertEquals(mockSocketFactory, clientSlot.captured.socketFactory, "Cached daemon should trigger VPN bypass")
     }
 }

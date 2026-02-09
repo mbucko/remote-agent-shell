@@ -23,12 +23,18 @@ import javax.inject.Inject
  * - Uses mDNS to discover daemon on local network
  * - Caches discovery result between detect() and connect()
  *
+ * VPN bypass:
+ * - When mDNS discovers daemon on a specific network (e.g., WiFi while VPN is active),
+ *   uses WifiNetworkProvider to get a network handle with socket binding permission,
+ *   then uses its socket factory to bypass VPN routing.
+ *
  * Authentication uses HMAC-SHA256 with derived auth key.
  */
 class LanDirectStrategy @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val mdnsService: MdnsDiscoveryService,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val wifiNetworkProvider: WifiNetworkProvider
 ) : ConnectionStrategy {
 
     companion object {
@@ -79,12 +85,20 @@ class LanDirectStrategy @Inject constructor(
             val wsUrl = "ws://${daemon.host}:${daemon.port}/ws/${context.deviceId}"
             Log.i(TAG, "Connecting to $wsUrl")
 
-            // Use network-bound client to bypass VPN if the daemon was discovered on a specific network
+            // Bypass VPN if daemon was discovered on a specific network (e.g., WiFi while VPN active).
+            // NSD-obtained Network doesn't carry socket binding permission, so WifiNetworkProvider
+            // requests a network handle through ConnectivityManager which grants kernel-level permission.
             val client = if (daemon.network != null) {
-                Log.i(TAG, "Using network-bound socket factory to bypass VPN")
-                okHttpClient.newBuilder()
-                    .socketFactory(daemon.network.socketFactory)
-                    .build()
+                val wifiNetwork = wifiNetworkProvider.getWifiNetwork()
+                if (wifiNetwork != null) {
+                    Log.i(TAG, "Using WiFi network socket factory to bypass VPN")
+                    okHttpClient.newBuilder()
+                        .socketFactory(wifiNetwork.socketFactory)
+                        .build()
+                } else {
+                    Log.w(TAG, "WiFi network request failed, using default client")
+                    okHttpClient
+                }
             } else {
                 okHttpClient
             }

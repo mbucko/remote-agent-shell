@@ -2,11 +2,13 @@ package com.ras.di
 
 import android.content.Context
 import com.ras.data.connection.ConnectionStrategy
+import com.ras.data.connection.ConnectivityManagerWifiNetworkProvider
 import com.ras.data.connection.DatagramSocketFactory
 import com.ras.data.connection.DefaultDatagramSocketFactory
 import com.ras.data.connection.LanDirectStrategy
 import com.ras.data.connection.TailscaleStrategy
 import com.ras.data.connection.WebRTCStrategy
+import com.ras.data.connection.WifiNetworkProvider
 import okhttp3.OkHttpClient
 import com.ras.data.discovery.MdnsDiscoveryService
 import com.ras.data.webrtc.WebRTCClient
@@ -62,6 +64,19 @@ object ConnectionModule {
     }
 
     /**
+     * Provides WifiNetworkProvider for VPN bypass.
+     * Uses ConnectivityManager.requestNetwork() to get a WiFi network handle
+     * with socket binding permission.
+     */
+    @Provides
+    @Singleton
+    fun provideWifiNetworkProvider(
+        @ApplicationContext context: Context
+    ): WifiNetworkProvider {
+        return ConnectivityManagerWifiNetworkProvider(context)
+    }
+
+    /**
      * Provides LanDirectStrategy for WebSocket connections over LAN.
      *
      * This has the highest priority (5) and is tried first when
@@ -73,9 +88,10 @@ object ConnectionModule {
     fun provideLanDirectStrategy(
         @ApplicationContext context: Context,
         mdnsService: MdnsDiscoveryService,
-        okHttpClient: OkHttpClient
+        okHttpClient: OkHttpClient,
+        wifiNetworkProvider: WifiNetworkProvider
     ): ConnectionStrategy {
-        return LanDirectStrategy(context, mdnsService, okHttpClient)
+        return LanDirectStrategy(context, mdnsService, okHttpClient, wifiNetworkProvider)
     }
 
     /**
