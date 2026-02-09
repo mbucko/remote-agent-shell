@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Network
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -218,12 +219,19 @@ class MdnsDiscoveryService(
                 val addresses = mutableListOf<String>()
                 resolvedService.host?.hostAddress?.let { addresses.add(it) }
 
+                // NsdServiceInfo.getNetwork() requires API 33+
+                val network = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    resolvedService.network
+                } else {
+                    null
+                }
+
                 val daemon = DiscoveredDaemon(
                     host = resolvedService.host?.hostAddress ?: return callback(null),
                     port = resolvedService.port,
                     deviceId = deviceId,
                     addresses = addresses,
-                    network = resolvedService.network
+                    network = network
                 )
                 callback(daemon)
             }
