@@ -16,6 +16,10 @@ import kotlin.coroutines.resume
  * This grants kernel-level socket binding permission, which is required to
  * bypass VPN routing. The NSD-discovered Network doesn't carry this permission.
  *
+ * The returned [WifiNetworkLease] keeps the network request alive. The binding
+ * permission is valid until the lease is closed. Callers must close the lease
+ * after the socket is connected to release the system network request.
+ *
  * Requires CHANGE_NETWORK_STATE permission (normal, auto-granted).
  */
 class ConnectivityManagerWifiNetworkProvider(
@@ -27,7 +31,7 @@ class ConnectivityManagerWifiNetworkProvider(
         private const val REQUEST_TIMEOUT_MS = 2000
     }
 
-    override suspend fun getWifiNetwork(): Network? {
+    override suspend fun acquireWifiNetwork(): WifiNetworkLease? {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         return try {
             suspendCancellableCoroutine { cont ->
@@ -37,8 +41,14 @@ class ConnectivityManagerWifiNetworkProvider(
 
                 val callback = object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
-                        try { cm.unregisterNetworkCallback(this) } catch (_: Exception) {}
-                        if (cont.isActive) cont.resume(network)
+                        // Don't unregister here — the binding permission is revoked on unregister.
+                        // Return a lease that the caller closes after socket creation.
+                        if (cont.isActive) {
+                            val lease = WifiNetworkLease(network) {
+                                try { cm.unregisterNetworkCallback(this) } catch (_: Exception) {}
+                            }
+                            cont.resume(lease)
+                        }
                     }
 
                     override fun onUnavailable() {

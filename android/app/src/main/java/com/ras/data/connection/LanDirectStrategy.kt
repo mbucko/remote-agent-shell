@@ -79,21 +79,24 @@ class LanDirectStrategy @Inject constructor(
                 canRetry = false
             )
 
+        // Acquire WiFi network lease for VPN bypass. The lease keeps the network
+        // request alive so binding permission isn't revoked before OkHttp connects.
+        var wifiLease: WifiNetworkLease? = null
+
         try {
             // Step 1: Build WebSocket URL
             onProgress(ConnectionStep("Connecting", "Opening WebSocket to ${daemon.host}"))
-            val wsUrl = "ws://${daemon.host}:${daemon.port}/ws/${context.deviceId}"
-            Log.i(TAG, "Connecting to $wsUrl")
+            Log.i(TAG, "Connecting to ws://${daemon.host}:${daemon.port}/ws/${context.deviceId}")
 
             // Bypass VPN if daemon was discovered on a specific network (e.g., WiFi while VPN active).
             // NSD-obtained Network doesn't carry socket binding permission, so WifiNetworkProvider
             // requests a network handle through ConnectivityManager which grants kernel-level permission.
             val client = if (daemon.network != null) {
-                val wifiNetwork = wifiNetworkProvider.getWifiNetwork()
-                if (wifiNetwork != null) {
+                wifiLease = wifiNetworkProvider.acquireWifiNetwork()
+                if (wifiLease != null) {
                     Log.i(TAG, "Using WiFi network socket factory to bypass VPN")
                     okHttpClient.newBuilder()
-                        .socketFactory(wifiNetwork.socketFactory)
+                        .socketFactory(wifiLease.network.socketFactory)
                         .build()
                 } else {
                     Log.w(TAG, "WiFi network request failed, using default client")
@@ -134,6 +137,8 @@ class LanDirectStrategy @Inject constructor(
                 canRetry = false  // Fall back to next strategy
             )
         } finally {
+            // Release WiFi network lease — socket fwmark persists after release
+            wifiLease?.close()
             // Clear cache after connect attempt
             cachedDaemon = null
         }

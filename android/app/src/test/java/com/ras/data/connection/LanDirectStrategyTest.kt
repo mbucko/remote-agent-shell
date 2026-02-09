@@ -309,11 +309,11 @@ class LanDirectStrategyTest {
         val daemon = createDaemon().copy(network = mockNsdNetwork)
         coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
 
-        // WifiNetworkProvider returns a network with binding permission
+        // WifiNetworkProvider returns a lease with binding permission
         val mockWifiNetwork = mockk<Network>()
         val mockSocketFactory = mockk<SocketFactory>()
         every { mockWifiNetwork.socketFactory } returns mockSocketFactory
-        coEvery { mockWifiNetworkProvider.getWifiNetwork() } returns mockWifiNetwork
+        coEvery { mockWifiNetworkProvider.acquireWifiNetwork() } returns WifiNetworkLease(mockWifiNetwork) {}
 
         strategy.detect()
 
@@ -325,6 +325,52 @@ class LanDirectStrategyTest {
 
         assertNotEquals(mockOkHttpClient, clientSlot.captured, "Should create a new client, not use injected one")
         assertEquals(mockSocketFactory, clientSlot.captured.socketFactory, "Client should use WiFi network's socket factory")
+    }
+
+    @Tag("unit")
+    @Test
+    fun `connect releases WiFi lease after connection`() = runTest {
+        val mockNsdNetwork = mockk<Network>()
+        val daemon = createDaemon().copy(network = mockNsdNetwork)
+        coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
+
+        val mockWifiNetwork = mockk<Network>()
+        val mockSocketFactory = mockk<SocketFactory>()
+        every { mockWifiNetwork.socketFactory } returns mockSocketFactory
+        var leaseReleased = false
+        coEvery { mockWifiNetworkProvider.acquireWifiNetwork() } returns WifiNetworkLease(mockWifiNetwork) { leaseReleased = true }
+
+        strategy.detect()
+
+        val mockTransport = mockk<LanDirectTransport>(relaxed = true)
+        coEvery { LanDirectTransport.connect(any(), any(), any(), any(), any()) } returns mockTransport
+
+        strategy.connect(createContext()) {}
+
+        assertTrue(leaseReleased, "WiFi lease should be released after connection")
+    }
+
+    @Tag("unit")
+    @Test
+    fun `connect releases WiFi lease on failure`() = runTest {
+        val mockNsdNetwork = mockk<Network>()
+        val daemon = createDaemon().copy(network = mockNsdNetwork)
+        coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
+
+        val mockWifiNetwork = mockk<Network>()
+        val mockSocketFactory = mockk<SocketFactory>()
+        every { mockWifiNetwork.socketFactory } returns mockSocketFactory
+        var leaseReleased = false
+        coEvery { mockWifiNetworkProvider.acquireWifiNetwork() } returns WifiNetworkLease(mockWifiNetwork) { leaseReleased = true }
+
+        strategy.detect()
+
+        coEvery { LanDirectTransport.connect(any(), any(), any(), any(), any()) } throws
+            java.io.IOException("Connection refused")
+
+        strategy.connect(createContext()) {}
+
+        assertTrue(leaseReleased, "WiFi lease should be released even on failure")
     }
 
     @Tag("unit")
@@ -343,7 +389,7 @@ class LanDirectStrategyTest {
 
         // Should pass the injected client unchanged — no WiFi network request needed
         assertEquals(mockOkHttpClient, clientSlot.captured, "Should use injected client when no network")
-        coVerify(exactly = 0) { mockWifiNetworkProvider.getWifiNetwork() }
+        coVerify(exactly = 0) { mockWifiNetworkProvider.acquireWifiNetwork() }
     }
 
     @Tag("unit")
@@ -354,7 +400,7 @@ class LanDirectStrategyTest {
         coEvery { mockMdnsService.getDiscoveredDaemon(deviceId = any(), timeoutMs = any()) } returns daemon
 
         // WiFi network request returns null
-        coEvery { mockWifiNetworkProvider.getWifiNetwork() } returns null
+        coEvery { mockWifiNetworkProvider.acquireWifiNetwork() } returns null
 
         strategy.detect()
 
@@ -377,7 +423,7 @@ class LanDirectStrategyTest {
         val mockWifiNetwork = mockk<Network>()
         val mockSocketFactory = mockk<SocketFactory>()
         every { mockWifiNetwork.socketFactory } returns mockSocketFactory
-        coEvery { mockWifiNetworkProvider.getWifiNetwork() } returns mockWifiNetwork
+        coEvery { mockWifiNetworkProvider.acquireWifiNetwork() } returns WifiNetworkLease(mockWifiNetwork) {}
 
         val result = strategy.detect()
         assertTrue(result is DetectionResult.Available)
